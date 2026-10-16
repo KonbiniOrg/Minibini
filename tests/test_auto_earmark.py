@@ -34,7 +34,7 @@ class EarmarkOnCreateFromTemplateTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
             first_name='Test', last_name='Contact',
-            email='test@example.com', work_number='555-0100',
+            email='test@example.com', phones=[{'number': '555-0100', 'label': 'work'}],
         )
         self.job = Job.objects.create(
             job_number='J-AEM-002', contact=self.contact,
@@ -114,7 +114,7 @@ class EstimateAcceptanceCreatesEarmarksTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
             first_name='Test', last_name='Contact',
-            email='test@example.com', work_number='555-0100',
+            email='test@example.com', phones=[{'number': '555-0100', 'label': 'work'}],
         )
         self.job = Job.objects.create(
             job_number='J-AEM-004', contact=self.contact,
@@ -163,7 +163,7 @@ class PreApprovalNoEarmarkTest(TestCase):
         from apps.core.models import AccountingCategory
         self.contact = Contact.objects.create(
             first_name='Gate', last_name='Test',
-            email='gate@example.com', work_number='555-0200',
+            email='gate@example.com', phones=[{'number': '555-0200', 'label': 'work'}],
         )
         self.category = AccountingCategory.objects.create(
             name='GateMat', code='GM01',

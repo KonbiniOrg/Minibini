@@ -9,7 +9,7 @@
 // env, docs/designs/e2e-testing.md §3) is positive proof the category gate
 // let the comment through. UI: InvoicePanel's client-side
 // allLinesHaveCategory mirrors the backend filter's is_comment exemption
-// (fixed 2026-09-22, this backfill), so the Send Invoice link stays
+// (fixed 2026-09-22, this backfill), so the Send Invoice button stays
 // available with a comment line present and the send flow is driven
 // through to the documented no-QBO failure (same exemption pattern as
 // invoice-skeleton/seeded-invoice.spec.js — the alert proves the gate was
@@ -86,18 +86,19 @@ test('invoice comment line: AC-free add form, excluded from the total, passes th
 
   await test.step('The Send affordance stays available with the comment present, and the send flow reaches the QBO push', async () => {
     // Positive anchor + regression guard for the client-side gate: the
-    // blocked-state note must NOT appear, and Send Invoice is a real link.
+    // blocked-state note must NOT appear, and Send Invoice is enabled.
     await expect(page.getByText('Assign an accounting category to every line before sending.')).toHaveCount(0);
-    await page.getByRole('link', { name: 'Send Invoice' }).click();
-    await expect(page.getByRole('heading', { name: 'Send Invoice' })).toBeVisible();
-    await page.getByLabel('To *').fill('e2e-comment-send@example.invalid');
-    page.once('dialog', (dialog) => dialog.accept());
     await page.getByRole('button', { name: 'Send Invoice' }).click();
+    const send = page.getByRole('dialog', { name: 'Send invoice' });
+    await expect(send.getByRole('heading', { name: 'Send Invoice' })).toBeVisible();
+    await send.getByLabel('To *').fill('e2e-comment-send@example.invalid');
+    page.once('dialog', (dialog) => dialog.accept());
+    await send.getByRole('button', { name: 'Send Invoice' }).click();
     // No QBO connection in this env — the push fails server-side and the
     // invoice stays draft. Reaching THIS failure (surfaced as the form's
     // role="alert") proves the categorization gate let the comment line
     // through end-to-end; the API step below pins the exact error text.
-    await expect(page.getByRole('alert')).toBeVisible({ timeout: 15_000 });
+    await expect(send.getByRole('alert')).toBeVisible({ timeout: 15_000 });
   });
 
   await test.step('The pre-send categorization gate passes: send fails on the QBO connection, never on the comment\'s missing category', async () => {

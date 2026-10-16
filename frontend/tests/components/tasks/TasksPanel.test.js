@@ -187,14 +187,25 @@ describe('TasksPanel — material fulfillment actions', () => {
     });
   }
 
-  function mockApiWithMaterial(material, { drafts = [] } = {}) {
+  const ORDER_HISTORY = {
+    vendors: [{ business_id: 17, business_name: 'Rugby Architectural', contact_id: 88, last_ordered: '2026-08-02',
+      last_price: '62.40', vendor_sku: 'BB34P-48', po_number: 'PO0120', times: 6 }],
+    earmarks: [], open_drafts: [],
+  };
+
+  function mockApiWithMaterial(material) {
     api.get.mockReset();
     api.get.mockImplementation((url) => {
       if (url === '/api/tasks/10/materials/') return Promise.resolve([material]);
       if (url === '/api/tasks/10/subtasks/') return Promise.resolve([]);
-      if (url.startsWith('/api/purchase-orders/')) return Promise.resolve(drafts);
       if (url.startsWith('/api/service-items/')) return Promise.resolve([]);
-      if (url.startsWith('/api/accounting-categories/')) return Promise.resolve([]);
+      if (url === '/api/inventory/7/') return Promise.resolve({ inventory_item_id: 7, code: 'BB34P',
+        description: 'Steel', units: 'kg', purchase_price: '60.00', accounting_category: 3 });
+      if (url.startsWith('/api/inventory/7/vendor-history/')) return Promise.resolve(ORDER_HISTORY);
+      if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: [{ id: 3, name: 'Materials' }] });
+      if (url.startsWith('/api/contacts/?business=')) return Promise.resolve({ results: [{ contact_id: 88, first_name: 'Ann', last_name: 'Rugby' }] });
+      if (url.startsWith('/api/businesses/')) return Promise.resolve({ business_id: 17, business_name: 'Rugby Architectural', default_contact: 88 });
+      if (url.startsWith('/api/units')) return Promise.resolve(['none', 'kg']);
       return Promise.resolve([]);
     });
   }
@@ -205,41 +216,16 @@ describe('TasksPanel — material fulfillment actions', () => {
     qty_on_hand: '0', po_line_item_id: null, po_number: null, job: 3, task: 10,
   };
 
-  it('Order with zero drafts POSTs immediately and links to the PO', async () => {
+  it('Order opens the Order modal seeded from the material and its vendor history', async () => {
     user.set({ id: 1, permissions: ['can_manage_financials'] });
-    mockApiWithMaterial(neededMat, { drafts: [] });
-    api.post.mockResolvedValueOnce({ po_id: 9, po_number: 'PO-2026-0007' });
+    mockApiWithMaterial(neededMat);
+    api.post.mockReset();
     const { findByRole } = render(TasksPanel, { props: { job: jobWithMaterial() } });
     await fireEvent.click(await findByRole('button', { name: 'Order' }));
-    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/api/materials/55/order/', {}));
-    await waitFor(() => expect(get(overlayMessage)).toEqual({
-      kind: 'success', text: 'Added to',
-      link: { href: '#/purchase-orders/9', label: 'PO-2026-0007' },
-    }));
-  });
-
-  it('Order with drafts opens the chooser and posts the picked po_id', async () => {
-    user.set({ id: 1, permissions: ['can_manage_financials'] });
-    mockApiWithMaterial(neededMat, {
-      drafts: [{ po_id: 5, po_number: 'PO-5', business_name: 'Acme' }],
-    });
-    api.post.mockResolvedValueOnce({ po_number: 'PO-5' });
-    const { findByRole, getByRole } = render(TasksPanel, { props: { job: jobWithMaterial() } });
-    await fireEvent.click(await findByRole('button', { name: 'Order' }));
-    // chooser dialog lists the draft with its vendor
-    await waitFor(() => getByRole('dialog'));
-    await fireEvent.click(await findByRole('button', { name: /PO-5 — Acme/ }));
-    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/api/materials/55/order/', { po_id: 5 }));
-  });
-
-  it('a draft with no vendor renders "no vendor"', async () => {
-    user.set({ id: 1, permissions: ['can_manage_financials'] });
-    mockApiWithMaterial(neededMat, {
-      drafts: [{ po_id: 6, po_number: 'PO-6', business_name: null }],
-    });
-    const { findByRole } = render(TasksPanel, { props: { job: jobWithMaterial() } });
-    await fireEvent.click(await findByRole('button', { name: 'Order' }));
-    expect(await findByRole('button', { name: /PO-6 — no vendor/ })).toBeInTheDocument();
+    const dialog = await findByRole('dialog', { name: 'Order' });
+    expect(dialog).toBeInTheDocument();
+    expect((await findByRole('combobox', { name: /Vendor/ })).value).toBe('17');
+    expect(api.post).not.toHaveBeenCalled();     // nothing is created until Submit
   });
 
   it('Mark received opens a qty prompt and POSTs mark-on-hand', async () => {
@@ -1031,5 +1017,50 @@ describe('TasksPanel — estimate context (Task 2)', () => {
       await findByRole('button', { name: /add expense/i });
       expect(queryByText(/start a change order/i)).toBeNull();
     });
+  });
+});
+
+
+describe('TasksPanel — degraded load notice', () => {
+  const twoTasks = () => makeJob({ tasks: [
+    { task_id: 1, name: 'Cut', status: 'pending', qty_source: 'est', assigned_to: null },
+    { task_id: 2, name: 'Sand', status: 'pending', qty_source: 'est', assigned_to: null },
+  ] });
+
+  it('keeps the tasks visible and names what failed when a sub-fetch rejects', async () => {
+    api.get.mockImplementation((url) => {
+      if (url.includes('/materials/')) return Promise.reject(new Error('boom'));
+      if (url.startsWith('/api/estimates/')) return Promise.reject(new Error('boom'));
+      return Promise.resolve([]);
+    });
+    const { findByText, findByRole } = render(TasksPanel, { props: { job: twoTasks() } });
+    await findByText('Cut');
+    await findByText('Sand');
+    const notice = await findByRole('status');
+    expect(notice).toHaveTextContent(/couldn't be loaded/i);
+    expect(notice).toHaveTextContent('materials');
+    expect(notice).toHaveTextContent('estimate context');
+    expect(notice).not.toHaveTextContent('expenses');
+  });
+
+  it('shows no notice when every sub-fetch succeeds', async () => {
+    api.get.mockImplementation(() => Promise.resolve([]));
+    const { findByText, queryByRole } = render(TasksPanel, { props: { job: twoTasks() } });
+    await findByText('Cut');
+    expect(queryByRole('status')).toBeNull();
+  });
+
+  it('the notice offers a Retry that reloads the panel data', async () => {
+    let fail = true;
+    api.get.mockImplementation((url) => {
+      if (url.includes('/materials/') && fail) return Promise.reject(new Error('boom'));
+      return Promise.resolve([]);
+    });
+    const { findByText, findByRole, queryByRole } = render(TasksPanel, { props: { job: twoTasks() } });
+    await findByText('Cut');
+    const notice = await findByRole('status');
+    fail = false;
+    await fireEvent.click(within(notice).getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(queryByRole('status')).toBeNull());
   });
 });

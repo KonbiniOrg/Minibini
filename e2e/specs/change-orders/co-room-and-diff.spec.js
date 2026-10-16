@@ -114,12 +114,13 @@ test('§2 The CO page — JobShell chrome, full-code subnav, diff grids, inline 
     await expect(page.locator('table.co-edit-table')).toHaveCount(1);
   });
 
-  await test.step('+ New deliverable → fill → Add lands a green added row', async () => {
+  await test.step('+ New deliverable → modal → Add lands a green added row', async () => {
     await page.getByRole('button', { name: '+ New deliverable' }).click();
-    const editRow = page.locator('tr.row-editing');
-    await editRow.locator('input').first().fill('2'); // qty
-    await editRow.getByPlaceholder('Description').fill(`${stamp} extra bracket`);
-    await editRow.getByRole('button', { name: 'Add', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'New deliverable' });
+    await dialog.getByLabel('Qty').fill('2');
+    await dialog.getByLabel('Description').fill(`${stamp} extra bracket`);
+    await dialog.getByRole('button', { name: 'Add', exact: true }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(page.locator('tr.row-added')).toContainText(`${stamp} extra bracket`);
   });
 });

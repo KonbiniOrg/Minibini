@@ -39,7 +39,7 @@ class WorkDeclinedSetup(TestCase):
             taxable=False, is_deposit=True,
         )
         self.contact = Contact.objects.create(
-            first_name='J', last_name='D', email='jd@wd.test', mobile_number='555-0100',
+            first_name='J', last_name='D', email='jd@wd.test', phones=[{'number': '555-0100', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(
             contact=self.contact, job_number='JOB-WD-0001', status=Job.STATUS_APPROVED,

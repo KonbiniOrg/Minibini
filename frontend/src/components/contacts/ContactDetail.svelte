@@ -1,244 +1,136 @@
 <script>
-  import FullOnly from '../FullOnly.svelte';
-  import HistoryPanel from '../HistoryPanel.svelte';
+  // ContactDetail — the body of /contacts/:id (contacts UI redesign,
+  // 2026-10-10): identity panels (Contact / Business / Tags) on the left,
+  // CustomerActivity (Recent Jobs → Open Invoices → POs → History) on the
+  // right. `business` is the contact's business DETAIL payload (contacts[] +
+  // jobs[]), fetched by the page so the "Also here" list can show job counts
+  // without a new endpoint. The banner and its modals are the page's.
+  import CustomerActivity from './CustomerActivity.svelte';
   import TagEditor from '../TagEditor.svelte';
-  import { canManageJobs, canManageFinancials } from '../../stores/permissions.js';
-  import { viewMode } from '../../stores/viewMode.js';
-  import { pageFromUrl, pageRange } from '../../lib/pagination.js';
+  import { canManageJobs } from '../../stores/permissions.js';
+  import { siblingJobCounts } from '../../lib/customerActivity.js';
+
   const {
     contact,
-    invoices = null,
-    purchaseOrders = null,
+    business = null,
+    invoices = [],
+    purchaseOrders = [],
     history = null,
-    onEdit = null,
-    onDelete = null,
-    onInvoicePageChange = null,
-    onPOPageChange = null,
     onAddNote = null,
+    readonly = false,
   } = $props();
 
-  const closedJobStatuses = ['completed', 'cancelled'];
-  const closedInvoiceStatuses = ['paid', 'cancelled', 'superseded'];
-  const closedPOStatuses = ['received_in_full', 'cancelled'];
+  let siblings = $derived(siblingJobCounts(business, contact.contact_id));
+  let hasAddress = $derived(!!(contact.addr1 || contact.city || contact.postal_code));
+  // "City, Municipality Postal" — built here because whitespace at {#if}
+  // block edges doesn't survive the template.
+  let cityLine = $derived(
+    [[contact.city, contact.municipality].filter(Boolean).join(', '), contact.postal_code]
+      .filter(Boolean).join(' ')
+  );
+  let businessLine = $derived([
+    business?.phone || null,
+    business?.terms_name || null,
+    business ? (business.tax_exemption_number ? 'tax exempt' : null) : null,
+  ].filter(Boolean).join(' · '));
 
-  function formatAmount(v) {
-    if (v == null || v === '') return '$—';
-    return Number(v).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+  let copied = $state(false);
+  async function copyEmail() {
+    try {
+      await navigator.clipboard?.writeText(contact.email);
+      copied = true;
+      setTimeout(() => { copied = false; }, 1200);
+    } catch { /* clipboard unavailable — the address is still selectable text */ }
   }
-
-
-  let visibleJobs = $derived(
-    contact.jobs
-      ? $viewMode === 'full'
-        ? contact.jobs
-        : contact.jobs.filter(j => !closedJobStatuses.includes(j.status))
-      : []
-  );
-
-  let visibleInvoices = $derived(
-    invoices?.results
-      ? $viewMode === 'full'
-        ? invoices.results
-        : invoices.results.filter(inv => !closedInvoiceStatuses.includes(inv.status))
-      : []
-  );
-
-  let visiblePOs = $derived(
-    purchaseOrders?.results
-      ? $viewMode === 'full'
-        ? purchaseOrders.results
-        : purchaseOrders.results.filter(po => !closedPOStatuses.includes(po.status))
-      : []
-  );
-
-
-
 </script>
 
-<div class="page-body">
-<dl>
-  <dt>Name</dt>
-  <dd>{contact.name}</dd>
-
-  <dt>Email</dt>
-  <dd>{contact.email}</dd>
-
-  {#if contact.work_number}
-    <dt>Work</dt>
-    <dd>{contact.work_number}</dd>
-  {/if}
-
-  {#if contact.mobile_number}
-    <dt>Mobile</dt>
-    <dd>{contact.mobile_number}</dd>
-  {/if}
-
-  {#if contact.home_number}
-    <dt>Home</dt>
-    <dd>{contact.home_number}</dd>
-  {/if}
-
-  {#if contact.addr1}
-    <dt>Address</dt>
-    <dd>
-      {contact.addr1}
-      {#if contact.addr2}<br>{contact.addr2}{/if}
-      {#if contact.addr3}<br>{contact.addr3}{/if}
-      {#if contact.city}<br>{contact.city}{/if}
-      {#if contact.municipality}, {contact.municipality}{/if}
-      {#if contact.postal_code} {contact.postal_code}{/if}
-      {#if contact.country_code}<br>{contact.country_code}{/if}
-    </dd>
-  {/if}
-
-  <dt>Business</dt>
-  <dd>
-    {#if contact.business}
-      <a href="#/businesses/{contact.business.business_id}">{contact.business.business_name}</a>
-    {:else}
-      None
-    {/if}
-  </dd>
-</dl>
-
-{#if contact.business}
-  <FullOnly>
-    <h3>Business Details</h3>
-    <dl>
-      <dt>Phone</dt>
-      <dd>{contact.business.business_phone}</dd>
-
-      <dt>Address</dt>
-      <dd class="preserve-breaks">{contact.business.business_address}</dd>
-
-      <dt>Website</dt>
-      <dd>{contact.business.website || ''}</dd>
-
-      <dt>Tax Exemption</dt>
-      <dd>{contact.business.tax_exemption_number || "(Not exempt)"}</dd>
-
-      <dt>Payment Terms</dt>
-      <dd>{contact.business.terms || 'None'}</dd>
-
-      <dt>Default Contact</dt>
-      <dd>
-        {#if contact.business.default_contact}
-          <a href="#/contacts/{contact.business.default_contact.contact_id}">{contact.business.default_contact.name}</a>
-        {:else}
-          None
+<div class="page-body customer-body">
+  <aside class="identity">
+    <div class="panel">
+      <div class="panel-head">Contact</div>
+      <dl class="facts">
+        <dt>Email</dt>
+        <dd>
+          <a href="mailto:{contact.email}">{contact.email}</a>
+          <button type="button" class="copy" onclick={copyEmail}>{copied ? 'copied' : 'copy'}</button>
+        </dd>
+        {#each contact.phones || [] as p}<dt>{p.label || 'Phone'}</dt><dd><a href="tel:{p.number}">{p.number}</a></dd>{/each}
+        {#if hasAddress}
+          <dt>Address</dt>
+          <dd>
+            {#if contact.addr1}{contact.addr1}<br>{/if}
+            {#if contact.addr2}{contact.addr2}<br>{/if}
+            {#if contact.addr3}{contact.addr3}<br>{/if}
+            {#if cityLine}{cityLine}{/if}
+            {#if contact.country_code}<br>{contact.country_code}{/if}
+          </dd>
         {/if}
-      </dd>
-    </dl>
-  </FullOnly>
-{/if}
+      </dl>
+    </div>
 
-<h3>Tags</h3>
-<TagEditor endpoint="/api/contacts/{contact.contact_id}" initialTags={contact.tags || []}
-  readonly={!$canManageJobs} />
+    {#if contact.business}
+      <div class="panel">
+        <div class="panel-head">Business</div>
+        <div class="business-card">
+          <a class="name" href="#/businesses/{contact.business.business_id}">{contact.business.business_name}</a>
+          {#if businessLine}<span class="line">{businessLine}</span>{/if}
+          {#if siblings.length > 0}
+            <div class="also">Also here</div>
+            <ul class="siblings">
+              {#each siblings as s (s.contact_id)}
+                <li>
+                  <a href="#/contacts/{s.contact_id}">{s.name}</a>
+                  <small>{s.jobCount === 0 ? 'no jobs' : s.jobCount === 1 ? '1 job' : `${s.jobCount} jobs`}</small>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
+      </div>
+    {/if}
 
-<h3>Jobs
-  {#if $canManageJobs}
-    — <a href="#/jobs/new?contact={contact.contact_id}">New Job</a>
-  {/if}
-</h3>
-{#if visibleJobs.length > 0}
-  <table class="data-table">
-    <thead>
-      <tr><th>Job #</th><th>Name</th><th>Status</th></tr>
-    </thead>
-    <tbody>
-      {#each visibleJobs as job}
-        <tr>
-          <td><a href="#/jobs/{job.job_id}">{job.job_number}</a></td>
-          <td>{job.name}</td>
-          <td>{job.status}</td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
-{:else}
-  <p>No {$viewMode === 'lite' ? 'open ' : ''}jobs.</p>
-{/if}
+    <div class="panel">
+      <div class="panel-head">Tags</div>
+      <TagEditor endpoint="/api/contacts/{contact.contact_id}" initialTags={contact.tags || []}
+        readonly={!$canManageJobs || readonly} />
+    </div>
+  </aside>
 
-<h3>Invoices</h3>
-{#if visibleInvoices.length > 0}
-  <table class="data-table">
-    <thead>
-      <tr><th>Invoice #</th><th>Job</th><th>Status</th><th>Total</th><th>Paid</th><th>Balance</th></tr>
-    </thead>
-    <tbody>
-      {#each visibleInvoices as inv}
-        <tr>
-          <td><a href="#/invoices/{inv.invoice_id}">{inv.display_number}</a></td>
-          <td><a href="#/jobs/{inv.job}">{inv.job_number}</a></td>
-          <td>{inv.status}</td>
-          <td>{formatAmount(inv.total)}</td>
-          <td>{formatAmount(inv.amount_paid)}</td>
-          <td>{formatAmount(inv.balance)}</td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
-  {#if invoices}
-    <p>
-      {pageRange(invoices)}
-      {#if invoices.previous}
-        | <button type="button" onclick={() => onInvoicePageChange(pageFromUrl(invoices.previous))}>Previous</button>
-      {/if}
-      {#if invoices.next}
-        | <button type="button" onclick={() => onInvoicePageChange(pageFromUrl(invoices.next))}>Next</button>
-      {/if}
-    </p>
-  {/if}
-{:else}
-  <p>No {$viewMode === 'lite' ? 'open ' : ''}invoices.</p>
-{/if}
-
-<h3>Purchase Orders
-  {#if $canManageFinancials && contact.business}
-    — <a href="#/purchase-orders/new?business={contact.business.business_id}&contact={contact.contact_id}">New Purchase Order</a>
-  {/if}
-</h3>
-{#if visiblePOs.length > 0}
-  <table class="data-table">
-    <thead>
-      <tr><th>PO #</th><th>Status</th></tr>
-    </thead>
-    <tbody>
-      {#each visiblePOs as po}
-        <tr>
-          <td><a href="#/purchase-orders/{po.po_id}">{po.po_number}</a></td>
-          <td>{po.status}</td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
-  {#if purchaseOrders}
-    <p>
-      {pageRange(purchaseOrders)}
-      {#if purchaseOrders.previous}
-        | <button type="button" onclick={() => onPOPageChange(pageFromUrl(purchaseOrders.previous))}>Previous</button>
-      {/if}
-      {#if purchaseOrders.next}
-        | <button type="button" onclick={() => onPOPageChange(pageFromUrl(purchaseOrders.next))}>Next</button>
-      {/if}
-    </p>
-  {/if}
-{:else}
-  <p>No {$viewMode === 'lite' ? 'open ' : ''}purchase orders.</p>
-{/if}
-
-<HistoryPanel {history} {onAddNote} />
-
-<p>
-  {#if onEdit && $canManageJobs}
-    <button onclick={onEdit}>Edit</button>
-  {/if}
-  {#if onDelete && $canManageJobs}
-    <button onclick={onDelete}>Delete</button>
-  {/if}
-</p>
+  <CustomerActivity
+    jobs={contact.jobs || []}
+    {invoices}
+    {purchaseOrders}
+    newPOHref={contact.business ? `#/purchase-orders/new?business=${contact.business.business_id}&contact=${contact.contact_id}` : null}
+    {history}
+    {onAddNote}
+  />
 </div>
 
 <style>
+  .customer-body {
+    padding-top: 16px;
+    display: grid;
+    grid-template-columns: 300px minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
+  }
+  .identity { display: grid; gap: 12px; }
+  .facts { grid-template-columns: auto 1fr; gap: 6px 12px; margin: 0; font-size: 13px; }
+  .facts dt { color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; padding-top: 2px; }
+  .facts dd { min-width: 0; overflow-wrap: anywhere; }
+  .copy {
+    font: inherit; font-size: 10px; border: 1px solid #d1d5db; background: #fff; border-radius: 3px;
+    padding: 0 5px; margin-left: 6px; cursor: pointer; color: #64748b;
+  }
+  .copy:hover { background: #f3f4f6; }
+  .business-card { display: grid; gap: 4px; font-size: 13px; }
+  .business-card .name { font-weight: 700; font-size: 14px; }
+  .business-card .line { color: #64748b; }
+  .also { margin-top: 6px; padding-top: 8px; border-top: 1px dashed #e5e7eb; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #888; }
+  .siblings { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+  .siblings li { display: flex; justify-content: space-between; gap: 8px; }
+  .siblings small { color: #94a3b8; }
+  @media (max-width: 720px) {
+    .customer-body { grid-template-columns: 1fr; }
+  }
 </style>

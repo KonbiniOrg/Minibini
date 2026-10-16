@@ -1,12 +1,14 @@
 <script>
   import { link, push } from 'svelte-spa-router';
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
+  import LoadState from '../../components/LoadState.svelte';
   import { user as currentUser } from '../../stores/auth.js';
   import { fieldErrors } from '../../lib/formErrors.js';
   import UserReimbursementPanel from '../../components/expenses/UserReimbursementPanel.svelte';
   import EnvelopeEditor from '../../components/schedule/EnvelopeEditor.svelte';
   import WorkSessionsList from '../../components/time/WorkSessionsList.svelte';
   import PmJobList from '../../components/jobs/PmJobList.svelte';
+  import ResetPasswordModal from '../../components/users/ResetPasswordModal.svelte';
 
   const { params = {} } = $props();
 
@@ -31,10 +33,8 @@
   let permMessage = $state('');
   let permSaving = $state(false);
 
-  let pwForm = $state({ password: '', password_confirm: '' });
-  let pwErrors = $state({});
-  let pwMessage = $state('');
-  let pwSaving = $state(false);
+  // Password reset lives in ResetPasswordModal (2026-10-10).
+  let resetOpen = $state(false);
 
   let statusErrors = $state({});
   let statusMessage = $state('');
@@ -57,7 +57,7 @@
       user = await api.get(`/api/users/${params.id}/`);
       seedFormsFromUser();
     } catch (err) {
-      loadError = err.message || 'Could not load user.';
+      loadError = errorMessage(err, 'Could not load user.');
     } finally {
       loading = false;
     }
@@ -150,27 +150,6 @@
     }
   }
 
-  async function resetPassword(e) {
-    e.preventDefault();
-    pwErrors = {};
-    pwMessage = '';
-    pwSaving = true;
-    try {
-      await api.post(`/api/users/${user.id}/reset-password/`, pwForm);
-      pwForm.password = '';
-      pwForm.password_confirm = '';
-      pwMessage = 'Password reset.';
-    } catch (err) {
-      if (err.data && typeof err.data === 'object') {
-        pwErrors = err.data;
-      } else {
-        pwErrors = { non_field_errors: ['Could not reset password.'] };
-      }
-    } finally {
-      pwSaving = false;
-    }
-  }
-
   async function toggleStatus() {
     statusErrors = {};
     statusMessage = '';
@@ -199,12 +178,8 @@
 </script>
 
 <div class="page-body">
-{#if loading}
-  <p>Loading...</p>
-{:else if loadError}
-  <p>{loadError}</p>
-  <p><a href="/users" use:link>← Back to users</a></p>
-{:else if user}
+<LoadState {loading} error={loadError}>
+{#if user}
   <h2>User: {user.username}</h2>
   <p>
     <a href="/users" use:link>← Back to users</a>
@@ -287,39 +262,9 @@
     {#if permMessage}<p>{permMessage}</p>{/if}
   </form>
 
-  <h3>Reset password</h3>
-  <form onsubmit={resetPassword}>
-    <p>
-      <label for="reset-pw"><strong>New password</strong></label><br>
-      <input
-        type="password"
-        id="reset-pw"
-        autocomplete="new-password"
-        bind:value={pwForm.password}
-      >
-    </p>
-    {#each fieldErrors(pwErrors, 'password') as msg}<p>{msg}</p>{/each}
-
-    <p>
-      <label for="reset-pw-confirm"><strong>Confirm new password</strong></label><br>
-      <input
-        type="password"
-        id="reset-pw-confirm"
-        autocomplete="new-password"
-        bind:value={pwForm.password_confirm}
-      >
-    </p>
-    {#each fieldErrors(pwErrors, 'password_confirm') as msg}<p>{msg}</p>{/each}
-
-    {#each fieldErrors(pwErrors, 'non_field_errors') as msg}<p>{msg}</p>{/each}
-
-    <p>
-      <button type="submit" disabled={pwSaving}>
-        {pwSaving ? 'Resetting...' : 'Reset password'}
-      </button>
-    </p>
-    {#if pwMessage}<p>{pwMessage}</p>{/if}
-  </form>
+  <h3>Password</h3>
+  <p><button type="button" onclick={() => { resetOpen = true; }}>Reset password…</button></p>
+  <ResetPasswordModal open={resetOpen} {user} onClose={() => { resetOpen = false; }} />
 
   <h3>Account status</h3>
   <p>
@@ -362,4 +307,6 @@
        column is suppressed — every row is this user. -->
   <WorkSessionsList userId={user.id} />
 {/if}
+</LoadState>
+{#if loadError && !loading}<p><a href="/users" use:link>← Back to users</a></p>{/if}
 </div>

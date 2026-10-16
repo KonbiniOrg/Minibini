@@ -325,6 +325,11 @@ class ChangeOrderServiceSeedNewAdjustmentTests(FixtureTestCase):
         super().setUp()
         self.job = Job.objects.first()
         Estimate.objects.filter(job=self.job).delete()
+        # A CO can't leave draft while the job has no deliverables
+        # (ChangeOrderService.assert_job_has_deliverables).
+        Deliverable.objects.get_or_create(
+            job=self.job, description='Guard deliverable',
+            defaults={'qty_ordered': Decimal('1'), 'units': 'ea', 'sort_order': 10})
         self.labor = AccountingCategory.objects.create(
             code='LAB-SEEDADJ', name='Labor-SeedAdj', taxable=False)
         self.materials = AccountingCategory.objects.create(

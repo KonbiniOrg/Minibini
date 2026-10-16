@@ -1,7 +1,18 @@
 <script>
   import UnpaidCard from './UnpaidCard.svelte';
   import NewJobButton from './NewJobButton.svelte';
+  import { UNPAID_SECTIONS } from '../../lib/unpaidSections.js';
   let { jobs = [] } = $props();
+
+  // Column order, top to bottom: Needs Invoice / Invoice Drafted / Awaiting
+  // Payment / Needs Pickup. Each card's `section` is computed server-side
+  // (BoardService.unpaid_section); header colors match the card tab, so a
+  // header reads as the tab of the cards beneath it.
+  let sections = $derived(
+    UNPAID_SECTIONS
+      .map(s => ({ ...s, jobs: jobs.filter(j => j.section === s.key) }))
+      .filter(s => s.jobs.length > 0)
+  );
 </script>
 
 <div class="column-header">
@@ -10,10 +21,15 @@
   <NewJobButton />
 </div>
 <div class="column-body">
-  {#each jobs as job (job.job_id)}
-    <a href="#/jobs/{job.job_id}" class="card-link">
-      <UnpaidCard {job} />
-    </a>
+  {#each sections as section (section.key)}
+    <div class="section-divider" style="--section-color: {section.color};">
+      <span class="section-label">{section.label}</span>
+    </div>
+    {#each section.jobs as job (job.job_id)}
+      <a href="#/jobs/{job.job_id}" class="card-link">
+        <UnpaidCard {job} />
+      </a>
+    {/each}
   {/each}
   {#if jobs.length === 0}
     <p class="empty">No unpaid jobs</p>
@@ -31,5 +47,12 @@
     align-content: start;
   }
   .card-link { text-decoration: none; color: inherit; display: block; }
+  .section-divider {
+    grid-column: 1 / -1;
+    display: flex; align-items: center; gap: 8px; margin: 8px 0 6px;
+  }
+  .section-divider::before,
+  .section-divider::after { content: ''; flex: 1; height: 1px; background: var(--section-color); opacity: 0.4; }
+  .section-label { font-size: 10px; font-weight: 700; color: var(--section-color); letter-spacing: 0.5px; text-transform: uppercase; white-space: nowrap; }
   .empty { font-size: 13px; color: #999; text-align: center; padding: 20px 0; }
 </style>

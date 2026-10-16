@@ -12,7 +12,7 @@ class EstimatePublicTokenTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
             first_name='Pat', last_name='Customer',
-            email='pat@acme.com', work_number='555-0000',
+            email='pat@acme.com', phones=[{'number': '555-0000', 'label': 'work'}],
         )
         self.job = JobService.create_job(name='Token Job', contact=self.contact)
 

@@ -16,6 +16,10 @@ class Invoice(models.Model):
     STATUS_PAID = 'paid'
     STATUS_DEFAULTED = 'defaulted'
 
+    # Statuses where a balance is still owed. Shared by the A/R serializer's
+    # due-date / late logic and the contact/business financials rollup.
+    UNPAID_STATUSES = frozenset({STATUS_OPEN, STATUS_PARTLY_PAID, STATUS_DEFAULTED})
+
     INVOICE_STATUS_CHOICES = [
         (STATUS_DRAFT, 'Draft'),
         (STATUS_OPEN, 'Open'),

@@ -4,10 +4,107 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from apps.contacts.models import Contact, Business
+from apps.core.history import record_history
 from apps.core.services import NotFoundError
+
+
+
+def _open_statuses():
+    from apps.invoicing.models import Invoice
+    from apps.jobs.models import Job
+    from apps.purchasing.models import PurchaseOrder
+    return (
+        (Job.STATUS_DRAFT, Job.STATUS_SUBMITTED, Job.STATUS_APPROVED,
+         Job.STATUS_IN_PROGRESS, Job.STATUS_WORK_COMPLETE),
+        (Invoice.STATUS_DRAFT, Invoice.STATUS_OPEN, Invoice.STATUS_PARTLY_PAID),
+        (PurchaseOrder.STATUS_DRAFT, PurchaseOrder.STATUS_ISSUED,
+         PurchaseOrder.STATUS_PARTLY_RECEIVED),
+    )
+
+
+def _numbers(qs, field, limit=5):
+    nums = [n or '(draft)' for n in qs.order_by(field).values_list(field, flat=True)[:limit + 1]]
+    return ', '.join(nums[:limit]) + (', …' if len(nums) > limit else '')
+
+
+def _plural(n, noun):
+    return f'{n} open {noun}' + ('' if n == 1 else 's')
+
+
+def _open_record_blockers(contacts):
+    """Open jobs / invoices / POs attached to any of `contacts` (an iterable
+    or queryset), as human sentences (spec §4.2 blockers 2–4)."""
+    from apps.invoicing.models import Invoice
+    from apps.jobs.models import Job
+    from apps.purchasing.models import PurchaseOrder
+    open_jobs, open_invoices, open_pos = _open_statuses()
+    blockers = []
+    jobs = Job.objects.filter(contact__in=contacts, status__in=open_jobs)
+    if (n := jobs.count()):
+        blockers.append(f'{_plural(n, "job")} ({_numbers(jobs, "job_number")})')
+    invoices = Invoice.objects.filter(job__contact__in=contacts, status__in=open_invoices)
+    if (n := invoices.count()):
+        blockers.append(f'{_plural(n, "invoice")} ({_numbers(invoices, "invoice_number")})')
+    pos = PurchaseOrder.objects.filter(contact__in=contacts, status__in=open_pos)
+    if (n := pos.count()):
+        blockers.append(f'{_plural(n, "PO")} ({_numbers(pos, "po_number")})')
+    return blockers
+
+
+def _vendor_po_blockers(business):
+    from apps.purchasing.models import PurchaseOrder
+    _, _, open_pos = _open_statuses()
+    pos = PurchaseOrder.objects.filter(business=business, status__in=open_pos)
+    n = pos.count()
+    return [f'{_plural(n, "PO")} ({_numbers(pos, "po_number")})'] if n else []
+
 
 # Sentinel for distinguishing "not passed" from None
 _sentinel = object()
+
+
+def _active_replacement_default(business, exclude_pk):
+    """Lowest-pk ACTIVE contact at `business` other than `exclude_pk`, or
+    None. RM 2026-10-11: an active business's default contact must stay
+    active, so deleting/moving the default needs an active stand-in and the
+    replacement never lands on an inactive contact."""
+    return (business.contacts.filter(is_active=True).exclude(pk=exclude_pk)
+            .order_by('contact_id').first())
+
+
+def _assert_default_replaceable(contact, business, verb):
+    if business is None or business.default_contact_id != contact.pk:
+        return None
+    replacement = _active_replacement_default(business, contact.pk)
+    if replacement is None:
+        raise ValidationError(
+            f'Cannot {verb} {contact}: it is the default contact for '
+            f'{business.business_name} and no other active contact exists there. '
+            f'Add or reactivate another contact and make it the default first.')
+    return replacement
+
+
+def _push_status_to_qbo(obj, active):
+    """Spec 6.6 failure policy: no QBO id or no connection -> nothing to
+    push. Otherwise QBO must accept; its error becomes the user's error and
+    the caller never reaches the local flip. Runs outside the local
+    transaction so a failed push's QBOSyncLog row survives."""
+    from apps.qbo.services import (QBOCustomerSyncService, QBOService,
+                                   QBOVendorSyncService)
+    has_customer = bool(getattr(obj, 'qbo_customer_id', None))
+    has_vendor = bool(getattr(obj, 'qbo_vendor_id', None))
+    if not (has_customer or has_vendor):
+        return
+    if QBOService.get_active_connection() is None:
+        return
+    verb = 'reactivate' if active else 'deactivate'
+    try:
+        if has_customer:
+            QBOCustomerSyncService.set_active(obj, active)
+        if has_vendor:
+            QBOVendorSyncService.set_active(obj, active)
+    except Exception as e:  # QBO/network/token - surfaced verbatim
+        raise ValidationError(f'QuickBooks refused to {verb} {obj}: {e}')
 
 
 class ContactService:
@@ -40,6 +137,8 @@ class ContactService:
                 business = Business.objects.get(pk=business_pk)
             except Business.DoesNotExist:
                 raise NotFoundError(f'Business {business_pk} not found')
+            if not business.is_active:
+                raise ValidationError({'business_id': [f'{business.business_name} is inactive.']})
 
         contact = Contact(business=business, **kwargs)
         contact.full_clean()
@@ -53,18 +152,25 @@ class ContactService:
             contact = Contact.objects.get(pk=pk)
         except Contact.DoesNotExist:
             raise NotFoundError(f'Contact {pk} not found')
+        ContactService.assert_active(contact)
 
         for field, value in kwargs.items():
             setattr(contact, field, value)
 
         if business_pk is not _sentinel:
+            old_business = contact.business
+            if old_business is not None and business_pk != old_business.pk:
+                _assert_default_replaceable(contact, old_business, 'move')
             if business_pk is None:
                 contact.business = None
             else:
                 try:
-                    contact.business = Business.objects.get(pk=business_pk)
+                    new_business = Business.objects.get(pk=business_pk)
                 except Business.DoesNotExist:
                     raise NotFoundError(f'Business {business_pk} not found')
+                if not new_business.is_active:
+                    raise ValidationError({'business_id': [f'{new_business.business_name} is inactive.']})
+                contact.business = new_business
 
         contact.full_clean()
         contact.save()
@@ -98,14 +204,14 @@ class ContactService:
 
         business = contact.business
         if business and business.default_contact == contact:
-            other_contacts = business.contacts.exclude(pk=pk)
-            if not other_contacts.exists():
+            if not business.contacts.exclude(pk=pk).exists():
                 raise ValidationError(
                     f'Cannot delete "{contact}" — it is the only contact for '
                     f'business "{business.business_name}".'
                 )
+            replacement = _assert_default_replaceable(contact, business, 'delete')
 
-            # Determine new default
+            # Determine new default (explicit pick must be active too)
             if new_default_contact_pk:
                 try:
                     new_default = Contact.objects.get(
@@ -115,8 +221,9 @@ class ContactService:
                     raise NotFoundError(
                         f'Contact {new_default_contact_pk} not found in business'
                     )
+                ContactService.assert_active(new_default)
             else:
-                new_default = other_contacts.first()
+                new_default = replacement
 
             # Set new default before deleting to avoid PROTECT
             business.default_contact = new_default
@@ -213,6 +320,10 @@ class ContactService:
             business = Business.objects.get(pk=pk)
         except Business.DoesNotExist:
             raise NotFoundError(f'Business {pk} not found')
+        ContactService.assert_active(business)
+        new_default = kwargs.get('default_contact')
+        if new_default is not None and new_default.pk != business.default_contact_id:
+            ContactService.assert_active(new_default)
 
         for field, value in kwargs.items():
             setattr(business, field, value)
@@ -231,6 +342,8 @@ class ContactService:
             contact = Contact.objects.get(pk=contact_pk)
         except Contact.DoesNotExist:
             raise NotFoundError(f'Contact {contact_pk} not found')
+        ContactService.assert_active(business)
+        ContactService.assert_active(contact)
         if contact.business != business:
             raise ValidationError(
                 f'Contact "{contact}" is not associated with business '
@@ -238,6 +351,109 @@ class ContactService:
             )
         business.default_contact = contact
         business.save(update_fields=['default_contact'])
+
+    # --- Active / inactive (spec §4) ---
+
+    @staticmethod
+    def assert_active(obj):
+        """Refuse any edit to an inactive record (spec §4.7)."""
+        if not obj.is_active:
+            raise ValidationError(f'{obj} is inactive. Reactivate it before editing.')
+
+    @staticmethod
+    def contact_deactivation_blockers(contact):
+        blockers = []
+        business = contact.business
+        if (business is not None and business.is_active
+                and business.default_contact_id == contact.pk):
+            blockers.append(f'default contact for {business.business_name} '
+                            f'(choose another default first)')
+        blockers.extend(_open_record_blockers([contact]))
+        return blockers
+
+    @staticmethod
+    def deactivate_contact(contact, *, push_to_qbo=True):
+        if not contact.is_active:
+            return contact
+        blockers = ContactService.contact_deactivation_blockers(contact)
+        if blockers:
+            raise ValidationError(f'Cannot deactivate {contact}: ' + '; '.join(blockers) + '.')
+        if push_to_qbo:
+            _push_status_to_qbo(contact, False)
+        with transaction.atomic():
+            contact.is_active = False
+            contact.save()
+        return contact
+
+    @staticmethod
+    def reactivate_contact(contact, *, push_to_qbo=True):
+        if contact.is_active:
+            return contact
+        business = contact.business
+        if business is not None and not business.is_active:
+            raise ValidationError(
+                f'Cannot reactivate {contact}: business {business.business_name} is inactive. '
+                f'Reactivate the business first.')
+        if push_to_qbo:
+            _push_status_to_qbo(contact, True)
+        with transaction.atomic():
+            contact.is_active = True
+            contact.save()
+        return contact
+
+    @staticmethod
+    def business_deactivation_blockers(business):
+        return (_open_record_blockers(business.contacts.all())
+                + _vendor_po_blockers(business))
+
+    @staticmethod
+    def deactivate_business_impact(business):
+        contacts = list(business.contacts.all())
+        return {
+            'contact_count': len(contacts),
+            'contact_names': [c.name for c in contacts],
+            'blockers': ([] if not business.is_active
+                         else ContactService.business_deactivation_blockers(business)),
+        }
+
+    @staticmethod
+    def deactivate_business(business, *, push_to_qbo=True):
+        if not business.is_active:
+            return business
+        blockers = ContactService.business_deactivation_blockers(business)
+        if blockers:
+            raise ValidationError(f'Cannot deactivate {business}: ' + '; '.join(blockers) + '.')
+        if push_to_qbo:
+            _push_status_to_qbo(business, False)
+        with transaction.atomic():
+            business.is_active = False
+            business.save()
+            for contact in list(business.contacts.all()):
+                if contact.is_active:
+                    contact.is_active = False
+                    contact.save()
+        return business
+
+    @staticmethod
+    def reactivate_business(business, *, push_to_qbo=True):
+        if business.is_active:
+            return business
+        if push_to_qbo:
+            _push_status_to_qbo(business, True)
+        with transaction.atomic():
+            business.is_active = True
+            business.save()
+            for contact in list(business.contacts.all()):
+                if not contact.is_active:
+                    contact.is_active = True
+                    contact.save()
+        return business
+
+    @staticmethod
+    def add_note(obj, object_type, text):
+        ContactService.assert_active(obj)
+        return record_history(entry_type='note', object_type=object_type,
+                              object_id=obj.pk, text=text)
 
     @staticmethod
     def delete_business(pk, po_actions=None, bill_actions=None,
@@ -333,11 +549,13 @@ class TagService:
     @staticmethod
     def attach(obj, name):
         from apps.contacts.models import Tag
+        ContactService.assert_active(obj)
         tag, _ = Tag.objects.get_or_create(name=name)
         obj.tags.add(tag)
         return obj.tags.all()
 
     @staticmethod
     def detach(obj, tag_id):
+        ContactService.assert_active(obj)
         obj.tags.remove(tag_id)
         return obj.tags.all()

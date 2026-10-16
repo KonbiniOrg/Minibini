@@ -11,8 +11,8 @@ function po() {
     po_id: 1, po_number: 'PO-1', status: 'draft', business: 2, business_name: 'Acme',
     created_date: '2026-01-01',
     line_items: [
-      { line_item_id: 1, line_number: 1, description: 'A', qty: 2, price: '5.00' },
-      { line_item_id: 2, line_number: 2, description: 'B', qty: 1, price: '10.00' },
+      { line_item_id: 1, line_number: 1, description: 'A', qty: 2, price: '5.00', item_code: 'BB34P', vendor_sku: 'BB34P-48' },
+      { line_item_id: 2, line_number: 2, description: 'B', qty: 1, price: '10.00', item_code: null, vendor_sku: '' },
     ],
   };
 }
@@ -23,15 +23,33 @@ beforeEach(() => {
 });
 
 describe('PurchaseOrderDetail', () => {
+  it('badges an inactive vendor and an inactive contact', () => {
+    const { container } = render(PurchaseOrderDetail, {
+      props: { po: { ...po(), contact: 5, contact_name: 'Sam', business_is_active: false, contact_is_active: false }, canManage: true },
+    });
+    const ps = Array.from(container.querySelectorAll('p'));
+    const vendor = ps.find((p) => p.textContent.includes('Vendor:'));
+    const contact = ps.find((p) => p.textContent.includes('Contact:'));
+    expect(vendor.querySelector('.status-inactive')).not.toBeNull();
+    expect(contact.querySelector('.status-inactive')).not.toBeNull();
+  });
+
+  it('shows no inactive badge for active parties', () => {
+    const { container } = render(PurchaseOrderDetail, {
+      props: { po: { ...po(), contact: 5, contact_name: 'Sam', business_is_active: true, contact_is_active: true }, canManage: true },
+    });
+    expect(container.querySelector('.status-inactive')).toBeNull();
+  });
+
   it('computes the order total', () => {
-    const { getByText } = render(PurchaseOrderDetail, { props: { po: po(), canManageFinancials: true } });
+    const { getByText } = render(PurchaseOrderDetail, { props: { po: po(), canManage: true } });
     expect(getByText('$20.00')).toBeInTheDocument();
   });
 
   it('reorders a line via the callback', async () => {
     const onReorder = vi.fn();
     const { getAllByRole } = render(PurchaseOrderDetail, {
-      props: { po: po(), canManageFinancials: true, onReorder },
+      props: { po: po(), canManage: true, onReorder },
     });
     // Two up-arrow buttons (one per row); the first row's is disabled.
     const ups = getAllByRole('button', { name: '▲' });
@@ -42,21 +60,21 @@ describe('PurchaseOrderDetail', () => {
   it('edits a line and saves via the callback', async () => {
     const onEditLineItem = vi.fn();
     const { getAllByRole, getByRole } = render(PurchaseOrderDetail, {
-      props: { po: po(), canManageFinancials: true, onEditLineItem },
+      props: { po: po(), canManage: true, onEditLineItem },
     });
     // [0] is the action-bar Edit (a link); [1] is the first line's Edit.
     await fireEvent.click(getAllByRole('button', { name: 'Edit' })[1]);
     await fireEvent.click(getByRole('button', { name: 'Save' }));
 
     expect(onEditLineItem).toHaveBeenCalledWith(1, {
-      description: 'A', qty: 2, units: 'none', price: '5.00',
+      description: 'A', qty: 2, units: 'none', price: '5.00', vendor_sku: 'BB34P-48',
     });
   });
 
   it('fires the issue action', async () => {
     const onIssue = vi.fn();
     const { getByRole } = render(PurchaseOrderDetail, {
-      props: { po: po(), canManageFinancials: true, onIssue },
+      props: { po: po(), canManage: true, onIssue },
     });
     await fireEvent.click(getByRole('button', { name: 'Mark as Issued' }));
     expect(onIssue).toHaveBeenCalled();
@@ -69,7 +87,7 @@ describe('PurchaseOrderDetail', () => {
       task_id: 9, name: 'Mill part', job_id: 4, job_number: 'JOB-4',
     };
     const { getByRole, getByText } = render(PurchaseOrderDetail, {
-      props: { po: withTask, canManageFinancials: true },
+      props: { po: withTask, canManage: true },
     });
     const link = getByRole('link', { name: /Mill part/ });
     expect(link).toHaveAttribute('href', '#/jobs/4/tasks/9');
@@ -78,7 +96,7 @@ describe('PurchaseOrderDetail', () => {
 
   it('shows a dash in the Task column when a line has no task link', () => {
     const { getAllByRole } = render(PurchaseOrderDetail, {
-      props: { po: po(), canManageFinancials: true },
+      props: { po: po(), canManage: true },
     });
     // No task-detail links anywhere in the table.
     const links = getAllByRole('link').filter((a) => a.className === 'task-chip');
@@ -93,7 +111,7 @@ describe('PurchaseOrderDetail', () => {
         task_id: 9, name: 'Mill part', job_id: 4, job_number: 'JOB-4',
       };
       const { getAllByRole, queryByPlaceholderText, getByText } = render(PurchaseOrderDetail, {
-        props: { po: withTask, canManageFinancials: true },
+        props: { po: withTask, canManage: true },
       });
       await fireEvent.click(getAllByRole('button', { name: 'Edit' })[1]); // line 1's Edit
       // No JobPicker (its SearchPicker search input) rendered in this row.
@@ -103,10 +121,56 @@ describe('PurchaseOrderDetail', () => {
 
     it('still offers a JobPicker on an ordinary (non-task) line\'s edit row', async () => {
       const { getAllByRole, getByPlaceholderText } = render(PurchaseOrderDetail, {
-        props: { po: po(), canManageFinancials: true },
+        props: { po: po(), canManage: true },
       });
       await fireEvent.click(getAllByRole('button', { name: 'Edit' })[1]);
       expect(getByPlaceholderText('Search jobs…')).toBeInTheDocument();
     });
+  });
+
+  it('shows the frozen banner with the swap when the contact is inactive', () => {
+    const { getByText, getByRole } = render(PurchaseOrderDetail, {
+      props: { po: { ...po(), contact: 4, contact_name: 'Jo', contact_is_active: false, business_is_active: true }, canManage: true },
+    });
+    expect(getByText(/Frozen:/)).toBeInTheDocument();
+    expect(getByRole('button', { name: 'Change contact…' })).toBeInTheDocument();
+  });
+
+  it('shows the frozen banner without the swap when the vendor is inactive', () => {
+    const { getByText, queryByRole } = render(PurchaseOrderDetail, {
+      props: { po: { ...po(), contact: 4, contact_name: 'Jo', contact_is_active: false, business_is_active: false }, canManage: true },
+    });
+    expect(getByText(/Frozen:/)).toBeInTheDocument();
+    expect(queryByRole('button', { name: 'Change contact…' })).toBeNull();
+  });
+
+  it('prints Code and SKU columns, blank for freeform and LOT lines', () => {
+    const data = po();
+    data.line_items.push({ line_item_id: 3, line_number: 3, description: 'lot', qty: 1, price: '1.00', item_code: 'LOT-5', vendor_sku: '' });
+    const { getByRole, getAllByRole } = render(PurchaseOrderDetail, { props: { po: data, canManage: false } });
+    expect(getByRole('columnheader', { name: 'Code' })).toBeInTheDocument();
+    expect(getByRole('columnheader', { name: 'SKU' })).toBeInTheDocument();
+    const rows = getAllByRole('row');
+    expect(rows[1].textContent).toMatch(/BB34P.*BB34P-48/);
+    expect(rows[3].textContent).not.toMatch(/LOT-5/);
+  });
+
+  it('the draft edit row carries the SKU into the save payload', async () => {
+    const onEditLineItem = vi.fn();
+    const { getAllByRole, getByRole, getByDisplayValue } = render(PurchaseOrderDetail, {
+      props: { po: po(), canManage: true, onEditLineItem },
+    });
+    // [0] is the action-bar Edit; [1] is the first line's Edit.
+    await fireEvent.click(getAllByRole('button', { name: 'Edit' })[1]);
+    await fireEvent.input(getByDisplayValue('BB34P-48'), { target: { value: 'NEW-1' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(onEditLineItem).toHaveBeenCalledWith(1, expect.objectContaining({ vendor_sku: 'NEW-1' }));
+  });
+
+  it('hides every write control when canManage is false', () => {
+    const { queryByRole } = render(PurchaseOrderDetail, { props: { po: po(), canManage: false } });
+    for (const name of ['Issue & Send', 'Mark as Issued', 'Delete', 'Edit']) {
+      expect(queryByRole('button', { name })).toBeNull();
+    }
   });
 });

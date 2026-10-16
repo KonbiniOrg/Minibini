@@ -14,7 +14,7 @@ class ContactServiceCreateTest(TestCase):
     def test_create_contact_minimal(self):
         contact = ContactService.create_contact(
             first_name='John', last_name='Doe',
-            email='john@example.com', work_number='555-1234',
+            email='john@example.com', phones=[{'number': '555-1234', 'label': 'work'}],
         )
         self.assertEqual(contact.first_name, 'John')
         self.assertEqual(contact.last_name, 'Doe')
@@ -25,7 +25,7 @@ class ContactServiceCreateTest(TestCase):
         # Need a contact for the business default_contact
         default = Contact.objects.create(
             first_name='Default', last_name='User',
-            email='default@example.com', work_number='555-0000',
+            email='default@example.com', phones=[{'number': '555-0000', 'label': 'work'}],
         )
         biz = Business.objects.create(
             business_name='Acme Corp', default_contact=default,
@@ -35,7 +35,7 @@ class ContactServiceCreateTest(TestCase):
 
         contact = ContactService.create_contact(
             first_name='Jane', last_name='Doe',
-            email='jane@example.com', mobile_number='555-5678',
+            email='jane@example.com', phones=[{'number': '555-5678', 'label': 'mobile'}],
             business_pk=biz.pk,
         )
         self.assertEqual(contact.business, biz)
@@ -44,16 +44,17 @@ class ContactServiceCreateTest(TestCase):
         with self.assertRaises(NotFoundError):
             ContactService.create_contact(
                 first_name='Jane', last_name='Doe',
-                email='jane@example.com', work_number='555-1234',
+                email='jane@example.com', phones=[{'number': '555-1234', 'label': 'work'}],
                 business_pk=99999,
             )
 
-    def test_create_contact_no_phone_raises(self):
-        with self.assertRaises(ValidationError):
-            ContactService.create_contact(
-                first_name='John', last_name='Doe',
-                email='john@example.com',
-            )
+    def test_create_contact_without_phone_ok(self):
+        contact = ContactService.create_contact(
+            first_name='John', last_name='Doe',
+            email='john@example.com',
+        )
+        self.assertEqual(contact.phones, [])
+        self.assertEqual(contact.phone(), '')
 
 
 class ContactServiceUpdateTest(TestCase):
@@ -62,7 +63,7 @@ class ContactServiceUpdateTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
             first_name='John', last_name='Doe',
-            email='john@example.com', work_number='555-1234',
+            email='john@example.com', phones=[{'number': '555-1234', 'label': 'work'}],
         )
 
     def test_update_contact_fields(self):
@@ -81,7 +82,7 @@ class ContactServiceUpdateTest(TestCase):
     def test_update_contact_change_business(self):
         default = Contact.objects.create(
             first_name='Default', last_name='User',
-            email='default@example.com', work_number='555-0000',
+            email='default@example.com', phones=[{'number': '555-0000', 'label': 'work'}],
         )
         biz = Business.objects.create(
             business_name='Acme', default_contact=default,
@@ -101,7 +102,7 @@ class ContactServiceDeleteTest(TestCase):
     def test_delete_unassociated_contact(self):
         contact = Contact.objects.create(
             first_name='John', last_name='Doe',
-            email='john@example.com', work_number='555-1234',
+            email='john@example.com', phones=[{'number': '555-1234', 'label': 'work'}],
         )
         ContactService.delete_contact(contact.pk)
         self.assertFalse(Contact.objects.filter(pk=contact.pk).exists())
@@ -113,11 +114,11 @@ class ContactServiceDeleteTest(TestCase):
     def test_delete_default_contact_auto_reassigns(self):
         c1 = Contact.objects.create(
             first_name='A', last_name='A',
-            email='a@example.com', work_number='555-1111',
+            email='a@example.com', phones=[{'number': '555-1111', 'label': 'work'}],
         )
         c2 = Contact.objects.create(
             first_name='B', last_name='B',
-            email='b@example.com', work_number='555-2222',
+            email='b@example.com', phones=[{'number': '555-2222', 'label': 'work'}],
         )
         biz = Business.objects.create(
             business_name='Acme', default_contact=c1,
@@ -135,15 +136,15 @@ class ContactServiceDeleteTest(TestCase):
     def test_delete_default_with_explicit_new_default(self):
         c1 = Contact.objects.create(
             first_name='A', last_name='A',
-            email='a@example.com', work_number='555-1111',
+            email='a@example.com', phones=[{'number': '555-1111', 'label': 'work'}],
         )
         c2 = Contact.objects.create(
             first_name='B', last_name='B',
-            email='b@example.com', work_number='555-2222',
+            email='b@example.com', phones=[{'number': '555-2222', 'label': 'work'}],
         )
         c3 = Contact.objects.create(
             first_name='C', last_name='C',
-            email='c@example.com', work_number='555-3333',
+            email='c@example.com', phones=[{'number': '555-3333', 'label': 'work'}],
         )
         biz = Business.objects.create(
             business_name='Acme', default_contact=c1,
@@ -159,7 +160,7 @@ class ContactServiceDeleteTest(TestCase):
     def test_delete_sole_contact_raises(self):
         c = Contact.objects.create(
             first_name='Solo', last_name='Contact',
-            email='solo@example.com', work_number='555-9999',
+            email='solo@example.com', phones=[{'number': '555-9999', 'label': 'work'}],
         )
         biz = Business.objects.create(
             business_name='Lonely Inc', default_contact=c,
@@ -174,7 +175,7 @@ class ContactServiceDeleteTest(TestCase):
         from apps.jobs.models import Job
         c = Contact.objects.create(
             first_name='Busy', last_name='Person',
-            email='busy@example.com', work_number='555-7777',
+            email='busy@example.com', phones=[{'number': '555-7777', 'label': 'work'}],
         )
         Job.objects.create(
             job_number='JOB-TEST-001', name='Test Job',
@@ -192,11 +193,11 @@ class BusinessServiceCreateTest(TestCase):
         contacts_data = [
             {
                 'first_name': 'John', 'last_name': 'Doe',
-                'email': 'john@example.com', 'work_number': '555-1234',
+                'email': 'john@example.com', 'phones': [{'number': '555-1234', 'label': 'work'}],
             },
             {
                 'first_name': 'Jane', 'last_name': 'Doe',
-                'email': 'jane@example.com', 'mobile_number': '555-5678',
+                'email': 'jane@example.com', 'phones': [{'number': '555-5678', 'label': 'mobile'}],
             },
         ]
         biz = ContactService.create_business(
@@ -217,7 +218,7 @@ class BusinessServiceCreateTest(TestCase):
         contacts_data = [
             {
                 'first_name': 'A', 'last_name': 'B',
-                'email': 'a@b.com', 'work_number': '555',
+                'email': 'a@b.com', 'phones': [{'number': '555', 'label': 'work'}],
             },
         ]
         biz = ContactService.create_business(
@@ -227,12 +228,12 @@ class BusinessServiceCreateTest(TestCase):
 
     def test_create_business_with_duplicate_name_raises(self):
         ContactService.create_business(
-            [{'first_name': 'A', 'last_name': 'B', 'email': 'a@b.com', 'work_number': '555'}],
+            [{'first_name': 'A', 'last_name': 'B', 'email': 'a@b.com', 'phones': [{'number': '555', 'label': 'work'}]}],
             business_name='Argon.AI',
         )
         with self.assertRaises(ValidationError) as cm:
             ContactService.create_business(
-                [{'first_name': 'C', 'last_name': 'D', 'email': 'c@d.com', 'work_number': '555'}],
+                [{'first_name': 'C', 'last_name': 'D', 'email': 'c@d.com', 'phones': [{'number': '555', 'label': 'work'}]}],
                 business_name='argon.ai',
             )
         self.assertEqual(cm.exception.code, 'duplicate_business_name')
@@ -244,7 +245,7 @@ class BusinessServiceCreateForContactTest(TestCase):
     def test_create_business_for_contact(self):
         contact = Contact.objects.create(
             first_name='John', last_name='Doe',
-            email='john@example.com', work_number='555-1234',
+            email='john@example.com', phones=[{'number': '555-1234', 'label': 'work'}],
         )
         biz = ContactService.create_business_for_contact(
             contact.pk, business_name='New Corp',
@@ -262,13 +263,13 @@ class BusinessServiceCreateForContactTest(TestCase):
     def test_create_business_for_contact_with_duplicate_name_raises(self):
         first = Contact.objects.create(
             first_name='John', last_name='Doe',
-            email='john2@example.com', work_number='555-1234',
+            email='john2@example.com', phones=[{'number': '555-1234', 'label': 'work'}],
         )
         ContactService.create_business_for_contact(first.pk, business_name='Argon.AI')
 
         second = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='jane2@example.com', work_number='555-5678',
+            email='jane2@example.com', phones=[{'number': '555-5678', 'label': 'work'}],
         )
         with self.assertRaises(ValidationError) as cm:
             ContactService.create_business_for_contact(second.pk, business_name='argon.ai')
@@ -281,7 +282,7 @@ class BusinessServiceUpdateTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
             first_name='A', last_name='B',
-            email='a@b.com', work_number='555',
+            email='a@b.com', phones=[{'number': '555', 'label': 'work'}],
         )
         self.biz = Business.objects.create(
             business_name='Old Name', default_contact=self.contact,
@@ -292,10 +293,10 @@ class BusinessServiceUpdateTest(TestCase):
     def test_update_business(self):
         updated = ContactService.update_business(
             self.biz.pk, business_name='New Name',
-            business_phone='555-9999',
+            phones=[{'number': '555-9999', 'label': ''}],
         )
         self.assertEqual(updated.business_name, 'New Name')
-        self.assertEqual(updated.business_phone, '555-9999')
+        self.assertEqual(updated.phone(), '555-9999')
 
     def test_update_business_not_found(self):
         with self.assertRaises(NotFoundError):
@@ -308,11 +309,11 @@ class SetDefaultContactTest(TestCase):
     def setUp(self):
         self.c1 = Contact.objects.create(
             first_name='A', last_name='A',
-            email='a@a.com', work_number='555',
+            email='a@a.com', phones=[{'number': '555', 'label': 'work'}],
         )
         self.c2 = Contact.objects.create(
             first_name='B', last_name='B',
-            email='b@b.com', work_number='555',
+            email='b@b.com', phones=[{'number': '555', 'label': 'work'}],
         )
         self.biz = Business.objects.create(
             business_name='Biz', default_contact=self.c1,
@@ -330,7 +331,7 @@ class SetDefaultContactTest(TestCase):
     def test_set_default_contact_wrong_business_raises(self):
         other = Contact.objects.create(
             first_name='X', last_name='X',
-            email='x@x.com', work_number='555',
+            email='x@x.com', phones=[{'number': '555', 'label': 'work'}],
         )
         with self.assertRaises(ValidationError):
             ContactService.set_default_contact(self.biz.pk, other.pk)
@@ -342,7 +343,7 @@ class DeleteBusinessTest(TestCase):
     def test_delete_unassociated_business(self):
         c = Contact.objects.create(
             first_name='A', last_name='B',
-            email='a@b.com', work_number='555',
+            email='a@b.com', phones=[{'number': '555', 'label': 'work'}],
         )
         biz = Business.objects.create(
             business_name='Empty', default_contact=c,
@@ -362,11 +363,11 @@ class DeleteBusinessTest(TestCase):
     def test_delete_business_reassign_contacts(self):
         c1 = Contact.objects.create(
             first_name='A', last_name='A',
-            email='a@a.com', work_number='555',
+            email='a@a.com', phones=[{'number': '555', 'label': 'work'}],
         )
         c2 = Contact.objects.create(
             first_name='B', last_name='B',
-            email='b@b.com', work_number='555',
+            email='b@b.com', phones=[{'number': '555', 'label': 'work'}],
         )
         biz1 = Business.objects.create(
             business_name='Source', default_contact=c1,
@@ -391,7 +392,7 @@ class DeleteBusinessTest(TestCase):
     def test_delete_business_delete_contacts(self):
         c = Contact.objects.create(
             first_name='A', last_name='B',
-            email='a@b.com', work_number='555',
+            email='a@b.com', phones=[{'number': '555', 'label': 'work'}],
         )
         biz = Business.objects.create(
             business_name='Gone', default_contact=c,
@@ -414,11 +415,11 @@ class DeleteBusinessTest(TestCase):
         from apps.purchasing.models import PurchaseOrder
         c1 = Contact.objects.create(
             first_name='A', last_name='A',
-            email='a@a.com', work_number='555',
+            email='a@a.com', phones=[{'number': '555', 'label': 'work'}],
         )
         c2 = Contact.objects.create(
             first_name='B', last_name='B',
-            email='b@b.com', work_number='555',
+            email='b@b.com', phones=[{'number': '555', 'label': 'work'}],
         )
         biz1 = Business.objects.create(
             business_name='Source', default_contact=c1,
@@ -448,11 +449,11 @@ class DeleteBusinessTest(TestCase):
         from apps.jobs.models import Job
         c1 = Contact.objects.create(
             first_name='A', last_name='A',
-            email='a@a.com', work_number='555',
+            email='a@a.com', phones=[{'number': '555', 'label': 'work'}],
         )
         c2 = Contact.objects.create(
             first_name='B', last_name='B',
-            email='b@b.com', work_number='555',
+            email='b@b.com', phones=[{'number': '555', 'label': 'work'}],
         )
         biz = Business.objects.create(
             business_name='Source', default_contact=c1,

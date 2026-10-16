@@ -178,7 +178,7 @@ class RecomputeAdjustmentsHelperTest(TestCase):
             code='LAB-RH', name='Labor-RH', taxable=False,
         )
         self.contact = Contact.objects.create(
-            first_name='RH', last_name='Test', email='rh@t.com', work_number='555-1111',
+            first_name='RH', last_name='Test', email='rh@t.com', phones=[{'number': '555-1111', 'label': 'work'}],
         )
         self.job = JobService.create_job(name='RH Job', contact=self.contact)
         self.est = Estimate.objects.create(
@@ -240,7 +240,7 @@ class EstimateAutoRecomputeTest(TestCase):
             code='LAB-EA', name='Labor-EA', taxable=False,
         )
         self.contact = Contact.objects.create(
-            first_name='EA', last_name='Test', email='ea@t.com', work_number='555-2222',
+            first_name='EA', last_name='Test', email='ea@t.com', phones=[{'number': '555-2222', 'label': 'work'}],
         )
         self.job = JobService.create_job(name='EA Job', contact=self.contact)
         self.est = Estimate.objects.create(
@@ -331,7 +331,7 @@ class InvoiceAutoRecomputeTest(TestCase):
             code='LAB-IA', name='Labor-IA', taxable=False,
         )
         self.contact = Contact.objects.create(
-            first_name='IA', last_name='Test', email='ia@t.com', work_number='555-3333',
+            first_name='IA', last_name='Test', email='ia@t.com', phones=[{'number': '555-3333', 'label': 'work'}],
         )
         self.job = JobService.create_job(name='IA Job', contact=self.contact)
         Job.objects.filter(pk=self.job.pk).update(status=Job.STATUS_APPROVED)
@@ -421,7 +421,7 @@ class EstimateWizardAutoRecomputeTest(TestCase):
             code='LAB-WZ', name='Labor-WZ', taxable=False,
         )
         self.contact = Contact.objects.create(
-            first_name='WZ', last_name='Test', email='wz@t.com', work_number='555-4444',
+            first_name='WZ', last_name='Test', email='wz@t.com', phones=[{'number': '555-4444', 'label': 'work'}],
         )
         self.job = JobService.create_job(name='WZ Job', contact=self.contact)
 
@@ -483,7 +483,7 @@ class SaveLineItemChokePointTest(TestCase):
             code='LAB-CK', name='Labor-CK', taxable=False,
         )
         contact = Contact.objects.create(
-            first_name='CK', last_name='Test', email='ck@t.com', work_number='555-9999',
+            first_name='CK', last_name='Test', email='ck@t.com', phones=[{'number': '555-9999', 'label': 'work'}],
         )
         from apps.jobs.services import JobService
         job = JobService.create_job(name='CK Job', contact=contact)
@@ -525,76 +525,3 @@ class SaveLineItemChokePointTest(TestCase):
         # Adjustment should now be 10% of (100 + 50) = 15
         self.adj.refresh_from_db()
         self.assertEqual(self.adj.price, Decimal('15.00'))
-
-
-# ---------------------------------------------------------------------------
-# adjustment_percent backfill migrations (0044/estimates, 0022/invoicing)
-# ---------------------------------------------------------------------------
-
-class AdjustmentPercentBackfillMigrationTest(TestCase):
-    """Direct tests of the migrations' forwards() backfill functions against
-    rows that predate adjustment_percent (adjustment_service set, percent
-    left null — simulates pre-migration data)."""
-
-    def setUp(self):
-        from apps.contacts.models import Contact
-        from apps.estimates.models import Estimate, EstimateLineItem
-        from apps.invoicing.models import Invoice, InvoiceLineItem
-        from apps.jobs.services import JobService
-
-        self.cat = AccountingCategory.objects.create(
-            code='LAB-BF', name='Labor-BF', taxable=False,
-        )
-        self.contact = Contact.objects.create(
-            first_name='BF', last_name='Test', email='bf@t.com', work_number='555-5555',
-        )
-        self.job = JobService.create_job(name='BF Job', contact=self.contact)
-
-        self.svc = RateScheme.objects.create(
-            name='Rush-BF', algorithm=RateScheme.PERCENTAGE,
-            rate=Decimal('12.50'), unit_label='%',
-            accounting_category=self.cat,
-        )
-
-        self.est = Estimate.objects.create(
-            job=self.job, estimate_number='EST-BF-001', status=Estimate.STATUS_DRAFT,
-        )
-        # Pre-migration-shaped row: adjustment_service set, adjustment_percent
-        # left at its default (null) — exactly what existing rows look like
-        # before the backfill runs.
-        self.est_adj = EstimateLineItem.objects.create(
-            estimate=self.est, line_number=1, qty=Decimal('1'),
-            units='%', description='Rush-BF', price=Decimal('0.00'),
-            adjustment_service=self.svc,
-        )
-
-        self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
-        self.inv_adj = InvoiceLineItem.objects.create(
-            invoice=self.invoice, line_number=1, qty=Decimal('1'),
-            units='%', description='Rush-BF', price=Decimal('0.00'),
-            adjustment_service=self.svc,
-        )
-
-    def test_estimate_migration_backfills_adjustment_percent(self):
-        import importlib
-        from django.apps import apps as real_apps
-
-        self.assertIsNone(self.est_adj.adjustment_percent)
-        mod = importlib.import_module(
-            'apps.estimates.migrations.0045_estimatelineitem_adjustment_percent'
-        )
-        mod.forwards(real_apps, None)
-        self.est_adj.refresh_from_db()
-        self.assertEqual(self.est_adj.adjustment_percent, Decimal('12.50'))
-
-    def test_invoice_migration_backfills_adjustment_percent(self):
-        import importlib
-        from django.apps import apps as real_apps
-
-        self.assertIsNone(self.inv_adj.adjustment_percent)
-        mod = importlib.import_module(
-            'apps.invoicing.migrations.0023_invoicelineitem_adjustment_percent'
-        )
-        mod.forwards(real_apps, None)
-        self.inv_adj.refresh_from_db()
-        self.assertEqual(self.inv_adj.adjustment_percent, Decimal('12.50'))

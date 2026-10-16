@@ -58,19 +58,20 @@ Per-tenant email account (2026-07-23, Settings → Email; Configuration-first
 with env-settings fallback via `apps/core/email_account.py`):
 `email_imap_server`, `email_address`, `email_password`, `email_smtp_host`,
 `email_smtp_port` — the two server hosts and port are **seeded gmail
-defaults** (migration 0027; tenant supplies address+password).
+defaults** (seeded by `core/0003_seed_setup_defaults`; tenant supplies address+password).
 `email_configured()` (imap+address+password) gates the
 Email area; `POST /api/settings/email-verify/` live-tests both directions.
 
 The live pattern rows, both AppState counters, and `units_list` are **seeded
-by data migration** (`core/0027_seed_setup_defaults`, idempotent, never
-overwrites) — a migrate-only fresh database can create Jobs/POs without
+by data migration** (`core/0003_seed_setup_defaults` — logic in
+`apps/core/setup_defaults.py` — idempotent, never overwrites) — a migrate-only fresh database can create Jobs/POs without
 fixtures (2026-07-23; previously fixture-only, a fresh-tenant trap).
 
 **`units_list` canon.** Units are **singular** (`'hour'`, `'sheet'`, `'lb'`,
 never `'hours'`/`'sheets'`/`'lbs'`) — `apps/core/units.py`'s
-`DEFAULT_UNITS` is the singular seed list and singularized data migration
-`core/0029_singular_units` rewrote the `units_list` Configuration value and
+`DEFAULT_UNITS` is the singular seed list; a 2026-07 one-time data migration
+(consolidated away 2026-10 — every surviving dataset already carries the
+result) rewrote the `units_list` Configuration value and
 every stored unit string in place: `RateScheme.unit_label`,
 `InventoryItem.units`, `Material.units`, `Deliverable.units`,
 `DeliverableSnapshot.units`, and the line-item `units` field on
@@ -86,11 +87,6 @@ every stored unit string in place: `RateScheme.unit_label`,
   `PATCH /api/settings/units/` returns 400 if it's missing from the
   submitted list, and `UnitsManager` refuses to let a user remove it.
   `elapsed_time` `RateScheme`s are pinned to this unit (§1.7).
-
-`core/0029_singular_units` also carries seven forward-only
-ordering-anchor migrations, `purchasing/0018` through `0024` (same idiom
-as `core/0024`) — no schema/data change, just Django migration-graph
-sequencing.
 
 Sequence values use Python format placeholders: `{year}`, `{month:02d}`,
 `{day:02d}`, `{counter:04d}`. Counter values are string-encoded integers.
@@ -446,6 +442,17 @@ with `default_contact` pointing to that Contact, then update the Contact's
 - **business_name**: required, max 255 chars, **unique** (case-insensitive
   pre-check + DB constraint — see the duplicate-detection section of
   `contacts-and-businesses.md`)
+- **phones**: JSON list of `{number, label}` objects, default `[]` (replaced
+  `business_phone`, 2026-10-11). First entry is the primary
+  (`Business.phone()`). Each entry needs a non-empty `number`; number and
+  label are each ≤ 50 chars; a violation is a `{'phones': [...]}` field
+  error. Not required.
+- **phones_digits**: hidden (`editable=False`), max 1000 — the space-joined
+  `strip_phone` of every number (whitespace, `-`, `.`, `(`, `)`, `+`
+  removed), recomputed by `clean()`/`save()`; the search key for phone
+  queries. Excluded from history; never serialized or fixture-authored.
+- **is_active**: boolean, default True. See "Active / inactive (Contact and
+  Business)" below.
 - **qbo_customer_id** / **qbo_vendor_id**: nullable, for QBO sync
 - **tax_multiplier**: nullable decimal; null/1.0 = full rate, 0 = exempt,
   0.5 = half rate
@@ -455,8 +462,14 @@ with `default_contact` pointing to that Contact, then update the Contact's
 - **email**: required, must be non-empty and valid, **unique** (case-insensitive
   pre-check + DB constraint — see the duplicate-detection section of
   `contacts-and-businesses.md`)
-- **At least one phone number**: one of `work_number`, `mobile_number`,
-  `home_number` must be non-empty
+- **phones**: JSON list of `{number, label}`, default `[]`; first entry is
+  the primary (`Contact.phone()`); same entry rules as `Business.phones`.
+  **No phone is required** — the former "at least one of `work_number` /
+  `mobile_number` / `home_number`" rule was dropped 2026-10-11 along with
+  those columns (historical names; migration `contacts/0002` folds them
+  into labeled `phones` entries).
+- **phones_digits**: hidden search key, as on Business.
+- **is_active**: boolean, default True — see below.
 - **first_name** / **last_name**: required (max 100 chars each)
 - **business** (optional FK → Business): if set, `qbo_customer_id` must be null
   (mutual exclusivity — contacts with a business use the business's QBO ID)
@@ -464,6 +477,34 @@ with `default_contact` pointing to that Contact, then update the Contact's
   business would lose its required `default_contact`), or if it has any
   associated Job or Bill (the Bill check guards legacy rows only — retired
   schema, §1.18)
+
+#### Active / inactive (Contact and Business)
+
+Narrative: `contacts-and-businesses.md` "Active / inactive status".
+
+- **`is_active` is written only by `ContactService.deactivate_*` /
+  `reactivate_*`**; the API treats it as read-only.
+- **OK to deactivate a Contact** only when *none* of these holds: it is the
+  `default_contact` of its (active) business; it is the `contact` of an open
+  Job (`draft`, `submitted`, `approved`, `in_progress`, `work_complete`); it
+  is the contact of an open Invoice (`draft`, `open`, `partly_paid`) via the
+  invoice's job; it is the `contact` of an open PurchaseOrder (`draft`,
+  `issued`, `partly_received`).
+- **OK to deactivate a Business**: none of its contacts has an open Job,
+  Invoice or PurchaseOrder (as above), and no open PurchaseOrder has the
+  business as vendor. Deactivating it deactivates all its contacts in the
+  same transaction.
+- **Reactivate**: a Contact cannot be reactivated while its business is
+  inactive; reactivating a Business reactivates all its contacts.
+- **Frozen-record invariant**: an inactive Contact or Business accepts no
+  edit — not `update_*`, tags, default-contact changes, nor notes — only
+  reactivate and delete. A Job whose contact is inactive, or a PurchaseOrder
+  whose business or contact is inactive, is **frozen**: user-driven
+  mutations are refused (§1.8, §1.17); the sole exception is swapping to an
+  active contact of the same active business.
+- **No new records on inactive parties**: `create_job` / `duplicate_job` and
+  `create_po` reject an inactive contact, a contact at an inactive business,
+  and (PO) an inactive business.
 
 ---
 
@@ -647,7 +688,21 @@ Non-CO holds resume manually.
   left draft (enforced regardless of what else changes in the same save; a
   no-op write of the same contact is always allowed). The SPA's Edit Job modal
   only renders the contact picker for draft jobs, showing the contact name
-  read-only otherwise.
+  read-only otherwise. **One exception (2026-10-11, contacts-refine
+  §5.1)**, encoded in `Job._is_inactive_contact_swap`: the change is allowed
+  when the *old* contact is inactive, the *new* contact is active, both have
+  the same non-null `business`, and that business is active — the escape
+  hatch for a frozen job (the SPA's "Change contact…" on the frozen banner,
+  a `{contact}`-only PATCH). The contact must also be active at creation
+  and on any reassignment (`JobService._assert_party_active`).
+- **Frozen job** (derived: `contact.is_active` is False): refuses every
+  user-driven mutation — job-level edits/hold/release/delete, tasks and
+  their lifecycle, bleps, materials, estimates, change orders, deliverables,
+  shipments, invoices, document sends, wizard edits, notes — via
+  `_assert_job_not_frozen`. System transitions
+  (`update_job(system_transition=True)`, the expiry commands'
+  `update_status(..., system_transition=True)`) bypass it. Details:
+  `jobs-and-tasks.md` §3.7.
 - **project_manager** (optional FK → `core.User`, SET_NULL, `related_name='managed_jobs'`): informational owner of the job; no business-logic side effects, no status interaction, no dedicated permission. Set/cleared via the job edit page by `can_manage_jobs`.
 - **status**: must be one of the choices above, default `draft`
 - **on_hold**: BooleanField, default False. Orthogonal pause flag — see above. Set/cleared only via `JobService.hold_job` / `release_job` (also cleared by CO acceptance and by cancellation); the API exposes it read-only (`POST /api/jobs/{id}/hold/` / `.../release/` are the write paths) and a status PATCH of `'on_hold'` is a 400.
@@ -699,8 +754,8 @@ Non-CO holds resume manually.
   and auto-release are independent triggers on the same `approved →
   in_progress` edge. **Pre-feature (`< 2026-08-15`) data**: existing
   `approved`/`in_progress`+ jobs were never migrated or backfilled
-  (`work_declined` migration `0048` is a bare `AddField`, default
-  `False`) — their old sourceless hand lines simply sit un-evaluated
+  (`work_declined` was added as a bare `AddField`, default
+  `False`, no backfill) — their old sourceless hand lines simply sit un-evaluated
   until some later mint/decline event touches that same estimate, at
   which point `unanswered_lines` inspects the estimate's lines
   wholesale and would surface those old lines too, not just the one
@@ -894,7 +949,8 @@ Valid transitions:
   target — replace moves the claim onto the CO line instead, see
   `estimates-and-prices.md` §14.11. Provenance only; the invoice pool
   reads it (`descoped_by_co_number`) for the "descoped by CO-N" chip.
-  Backfilled by `apps/estimates/migrations/0048_backfill_descoped_by.py`.
+  Backfilled for pre-2026-08-09 rows by a one-time data migration
+  (consolidated away 2026-10).
 
 #### Implied state from other models
 
@@ -1049,7 +1105,7 @@ Valid transitions:
   unique=True)`): opaque token minted at creation (`secrets.token_urlsafe(32)`,
   ~43 chars) in `Estimate.save()` when `not self.pk and not self.public_token`.
   Unique across all Estimate rows. Nullable so the column is additive (existing
-  rows backfilled by migration `0022`). Each revision row mints its own token.
+  rows were backfilled by a one-time data migration, since consolidated away). Each revision row mints its own token.
   Backs the customer-portal URL (`/portal/?token=<token>`) — see
   `estimates-and-prices.md` §15.1. Never regenerated after creation.
 
@@ -1125,7 +1181,7 @@ Enforced in `Estimate.clean()`.
   `validate_data.check_estimate_line_categories` cross-checks the
   hand-line rule at rest (Phase 3 Task 8); the CO parallel is
   `check_change_order_line_categories` (§1.13a below).
-- **work_declined** (bool, default False, migration `0048`): the
+- **work_declined** (bool, default False, added 2026-08-15): the
   acceptance-checklist "no work needed" answer (estimating-structure
   spec). **Set-able only while the parent estimate is `accepted`**
   (`EstimateService._set_work_declined` — draft and open both refuse;
@@ -1142,7 +1198,7 @@ Enforced in `Estimate.clean()`.
   other field key is rejected on any estimate status (the two update
   paths — draft-only field edits, accepted-only decline toggle — never
   blur together).
-- **per_unit** (bool, default False, migration `0049`): the
+- **per_unit** (bool, default False, added 2026-08): the
   per-unit-lines answer to "do this line's claimed atoms describe one
   unit of qty, or the whole job?" (`False` = whole job, today's original
   reading). **Never client-settable directly** — it is only ever set as
@@ -1167,12 +1223,12 @@ Polymorphic row joining a line item to a Job atom (Task or Material).
 - **estimate_line_item** (required FK → EstimateLineItem, CASCADE)
 - **source_type**: `task` or `material`
 - **source_pk**: integer pointing at the atom
-- **per_unit_qty** (nullable Decimal(10,2), migration `0049`): populated
+- **per_unit_qty** (nullable Decimal(10,2), added 2026-08): populated
   only when the owning line is `per_unit` — the raw per-unit value
   entered at claim time, snapshotted before the atom was stamped to
   `per_unit_qty × line.qty`. `None` on every claim whose line is not
   `per_unit`; never populated any other way.
-- **per_unit_worker_time** (nullable Duration, migration `0049`): the
+- **per_unit_worker_time** (nullable Duration, added 2026-08): the
   per-unit schedule-time snapshot, task claims only. On the **bundle**
   path (`_stamp_atom_per_unit`), the snapshot is **unconditional**: it's
   always the task's pre-stamp `est_worker_time` — whether that value was
@@ -1329,7 +1385,7 @@ Inherits `BaseLineItem`. `db_table = 'co_li'`.
 - `clean()` also rejects `service_item` / `is_material` on `remove` lines (display-only; never crystallize)
 - A `replace` line authored without an `accounting_category` inherits its target's at add time (2026-08-12 — an AC-less replacement would become a null-AC agreement line at acceptance and demand the fallback on every later invoice seed); an explicit AC wins
 - No `task` FK — `BaseLineItem.clean()`'s task/PLI mutual-exclusivity rule is skipped on subclasses lacking that field.
-- **per_unit** (bool, default False, migration `0049`): mirrors
+- **per_unit** (bool, default False, added 2026-08): mirrors
   `EstimateLineItem.per_unit` field-for-field (same ask-once rule, same
   no-catalog/no-adjustment scope) — see §1.13 above and
   `estimates-and-prices.md` §9b.
@@ -1340,7 +1396,7 @@ Inherits `BaseLineItem`. `db_table = 'co_li'`.
 
 - **change_order_line_item** (required FK → ChangeOrderLineItem, CASCADE, `related_name='sources'`)
 - **source_type**: `task` | `material`; **source_pk**: positive int
-- **per_unit_qty** / **per_unit_worker_time** (migration `0049`): mirror
+- **per_unit_qty** / **per_unit_worker_time** (added 2026-08): mirror
   `EstimateLineItemSource`'s own fields field-for-field — see §1.13
   above. A replace line's claims **carry their snapshot with them**:
   `_move_claims_to` (the acceptance-time move from the target
@@ -1377,13 +1433,11 @@ Inherits `BaseLineItem`. `db_table = 'co_li'`.
   `assert_all_bare_add_lines_have_ac` filters `sources__isnull=True`) since
   an authored-claimed atom already carries its own AC.
 
-**Migrations (CO amend-in-place, 2026-08-09):**
-`apps/estimates/migrations/0047_changeorderlineitem_adjustment_percent_and_more.py`
-(schema — the three adjustment fields), `apps/jobs/migrations/0063_task_descoped_by.py`
-and `apps/inventory/migrations/0035_material_descoped_by.py` (schema — the
-`descoped_by` FKs, both depending on `estimates.0046`), and
-`apps/estimates/migrations/0048_backfill_descoped_by.py` (data migration —
-walks every historical ACCEPTED `ChangeOrder` ordered `closed_date`,
+**Migrations (CO amend-in-place, 2026-08-09; all since folded into the
+2026-10 consolidated initial migrations):** schema additions for the three
+adjustment fields and the `descoped_by` FKs on Task and Material, plus a
+one-time data migration (now gone — surviving datasets already carry the
+stamps) that walks every historical ACCEPTED `ChangeOrder` ordered `closed_date`,
 `change_order_id` ascending and stamps `descoped_by` on each `remove`/
 `replace` line's target's then-current claimed atom; a later-accepted CO's
 stamp wins when two both target the same line; no-ops on a dangling/already-
@@ -1513,7 +1567,8 @@ Either a description or a `inventory_item` must be present.
   on a REPLACE target — replace moves the claim onto the CO line instead,
   see `estimates-and-prices.md` §14.11. Provenance only; the invoice pool
   reads it (`descoped_by_co_number`) for the "descoped by CO-N" chip.
-  Backfilled by `apps/estimates/migrations/0048_backfill_descoped_by.py`.
+  Backfilled for pre-2026-08-09 rows by a one-time data migration
+  (consolidated away 2026-10).
 
 #### Implied state from other models
 
@@ -1717,6 +1772,12 @@ is genuinely terminal.
   NumberGenerationService if not provided.
 - If contact is provided on creation and business is not explicitly set,
   business is auto-populated from contact's business.
+- **Frozen PO** (derived): a PO whose `business` is inactive, or whose
+  `contact` is inactive, refuses every user-driven mutation (header and
+  status edits, line items, receiving, reconcile, cancel, delete, send) via
+  `_assert_po_not_frozen`. The only edit accepted is a `{contact}`-only
+  `update_po` onto another active contact of the PO's own active business.
+  New POs cannot be created against an inactive business/contact.
 
 #### Date rules
 
@@ -1797,6 +1858,7 @@ neither.
     cannot have both task and inventory_item."* A task-outsourcing line
     is therefore always manual/freeform, never catalog/PLI-sourced.
 - **inventory_item** (optional FK → InventoryItem, PROTECT)
+- **vendor_sku** (`CharField(100)`, blank, default `''`; `purchasing.0002`): the vendor's part number for this line. Line-only (no copy on InventoryItem/Business). Editable on draft lines; read-only once issued; not a reconciliation field
 - **line_number**: auto-generated sequentially per PO if null
 - **price**: decimal, no current validation (negative values are legitimate for discount/credit lines; a sanity-check warning is tracked in `architecture-and-conventions.md` unfinished work)
 - **qty_received**: decimal, default 0 (populated by receive actions)
@@ -2448,6 +2510,12 @@ an Estimate from `draft` to `open`.
 that was previously `open`) Estimate must have a Job with at least one
 Deliverable. A `draft` Estimate may exist without Deliverables.
 
+**Change orders (2026-09-29):** the same constraint holds on a
+ChangeOrder's draft exit. `ChangeOrderService.assert_job_has_deliverables`
+runs in `ChangeOrder.clean()` (after the empty-CO content gate) and in
+`ChangeOrderEmailService._validate_send`; removing deliverables is a valid
+diff, but the Job must still hold ≥ 1 when the CO goes `open`.
+
 ---
 
 ### 2.13 Shipment pick-up → picked_up_date set
@@ -2493,6 +2561,44 @@ passes `allow_inactive_scheme=True` — otherwise `SchemeInactiveError` is
 raised (translated to HTTP 409 by the API). `RateScheme.is_active` has
 no other effect: retiring a preset never touches tasks already stamped
 from it.
+
+---
+
+### 2.15 Contact / Business deactivate and reactivate (cascade)
+
+**Trigger:** `ContactService.deactivate_business` / `reactivate_business`
+(and the contact variants).
+
+**Effects:**
+- `deactivate_business`: after the blocker check passes, in one transaction
+  the Business gets `is_active = False` and **every contact still active on
+  it** gets `is_active = False` (per-instance `save()`, so each flip is a
+  history entry).
+- `reactivate_business`: the Business **and every inactive contact on it**
+  become active again. There is no memory of which contacts were inactive
+  beforehand.
+- `deactivate_contact` / `reactivate_contact` touch only that contact;
+  reactivating is refused while its business is inactive.
+- Consequence for dependants (no rows written): Jobs of an inactive contact
+  and POs of an inactive business/contact become frozen (§1.8, §1.17);
+  reactivation thaws them. `push_to_qbo=True` (the default) pushes the flip to QBO before the local write (see "QBO and status" below and the QBO doc's "Active-flag push"); the import commit passes `push_to_qbo=False` because QBO already agrees.
+
+**Data constraint:** through the service, an inactive Business has only
+inactive Contacts (a contact cannot be reactivated under it). Fixtures and
+translations should respect the same implication. Attaching a contact to an
+already-inactive business is refused: `create_contact(business_pk=…)` and
+`update_contact(business_pk=…)` raise `ValidationError({'business_id': ['<name> is inactive.']})`.
+Likewise `update_business(default_contact=…)` refuses an inactive contact
+(`assert_active`) **when the default is changing**; an unchanged default is
+not re-checked, so editing other fields never locks up. The invariant
+"an active business's default contact is active" is also kept by the
+replacement paths: deleting or moving (re-homing/unlinking) the default
+requires another *active* contact at the business (service `ValidationError`
+/ model `PermissionDenied`), and both the explicit replacement and the
+self-heal (`validate_and_fix_default_contact`) skip inactive contacts.
+
+`Contact.phones` / `Business.phones` hold at most 20 entries
+(`clean_phones` → `{'phones': ['A record can hold at most 20 phone numbers.']}`).
 
 ---
 

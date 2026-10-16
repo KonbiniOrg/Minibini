@@ -33,6 +33,26 @@ class MergeServiceTest(TestCase):
         self.assertEqual(self.keep.qty_sold, Decimal('5.00'))      # 1 + 4
         self.assertFalse(InventoryItem.objects.filter(pk=self.discard.pk).exists())
 
+    def test_merge_repoints_change_order_line_item(self):
+        """T9 review finding: merge omitted ChangeOrderLineItem from its
+        repoint list — a discard referenced only by a CO line would have
+        that FK SET_NULL'd (orphaned, freeform_kind left NULL) instead of
+        repointed onto keep."""
+        from apps.estimates.models import ChangeOrder, ChangeOrderLineItem, Estimate
+
+        estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-MRG-1', version=1,
+        )
+        co = ChangeOrder.objects.create(job=self.job, estimate=estimate)
+        li = ChangeOrderLineItem.objects.create(
+            change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
+            inventory_item=self.discard, description='Discarded item line',
+            qty=Decimal('1'), price=Decimal('10.00'),
+        )
+        InventoryService.merge(self.keep.pk, self.discard.pk)
+        li.refresh_from_db()
+        self.assertEqual(li.inventory_item_id, self.keep.pk)
+
     def test_merge_repoints_materials(self):
         scheme = RateScheme.objects.create(
             name='S', algorithm=RateScheme.ENTERED_QTY, rate=1, unit_label='ea',
@@ -198,3 +218,40 @@ class MergeNoneUnitTest(TestCase):
                                overrides={'units': 'sheet'})
         keep.refresh_from_db()
         self.assertEqual(keep.units, 'sheet')
+
+
+class InventoryItemDeleteChangeOrderRefTest(TestCase):
+    """T9 review finding: assert_item_deletable (via has_document_line_refs)
+    omitted ChangeOrderLineItem — a plain delete of an item referenced only
+    by a CO line used to pass the deletability guard and silently orphan
+    that line (inventory_item SET_NULL, freeform_kind left NULL)."""
+
+    def setUp(self):
+        self.cat = AccountingCategory.objects.get_or_create(
+            code='SVC-DEL', defaults={'name': 'Service Del', 'taxable': False})[0]
+        self.contact = Contact.objects.create(first_name='Del', last_name='Test')
+        self.job = Job.objects.create(job_number='J-DELCO-1', contact=self.contact)
+        self.item = InventoryItem.objects.create(
+            code='DELCO', description='to be deleted', units='sheet',
+            accounting_category=self.cat,
+        )
+
+    def test_item_referenced_only_by_co_line_is_not_deletable(self):
+        from apps.estimates.models import ChangeOrder, ChangeOrderLineItem, Estimate
+
+        estimate = Estimate.objects.create(
+            job=self.job, estimate_number='EST-DELCO-1', version=1,
+        )
+        co = ChangeOrder.objects.create(job=self.job, estimate=estimate)
+        ChangeOrderLineItem.objects.create(
+            change_order=co, action=ChangeOrderLineItem.ACTION_ADD,
+            inventory_item=self.item, description='CO-referenced line',
+            qty=Decimal('1'), price=Decimal('10.00'),
+        )
+        self.assertFalse(self.item.can_be_deleted)
+        with self.assertRaises(ValidationError):
+            InventoryService.assert_item_deletable(self.item)
+
+    def test_item_with_no_refs_is_deletable(self):
+        self.assertTrue(self.item.can_be_deleted)
+        InventoryService.assert_item_deletable(self.item)  # does not raise

@@ -24,7 +24,7 @@ class InvoiceQBOFieldsTest(TestCase):
         AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
         self.contact = Contact.objects.create(
             first_name='John', last_name='Doe',
-            email='john@example.com', mobile_number='555-0000',
+            email='john@example.com', phones=[{'number': '555-0000', 'label': 'mobile'}],
         )
         self.business = Business.objects.create(
             business_name='Acme Corp', default_contact=self.contact,
@@ -71,7 +71,7 @@ class PerLineInvoiceBuilderTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
             first_name='John', last_name='Doe',
-            email='john@example.com', mobile_number='555-0000',
+            email='john@example.com', phones=[{'number': '555-0000', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(
             job_number='JOB-2026-0007', contact=self.contact,

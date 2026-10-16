@@ -43,17 +43,15 @@
 {/snippet}
 
 {#if content}
-  <table class="data-table">
-    <tbody>
-      <tr><th>From:</th><td>{@render addrCell(content.from)}</td></tr>
-      <tr><th>To:</th><td>{@render addrCell(content.to)}</td></tr>
-      {#if content.cc && content.cc.length}
-        <tr><th>CC:</th><td>{@render addrCell(content.cc)}</td></tr>
-      {/if}
-      <tr><th>Date:</th><td>{formatDate(content.date)}</td></tr>
-      <tr><th>Subject:</th><td><strong>{content.subject || ''}</strong></td></tr>
-    </tbody>
-  </table>
+  <dl>
+    <dt>From</dt><dd>{@render addrCell(content.from)}</dd>
+    <dt>To</dt><dd>{@render addrCell(content.to)}</dd>
+    {#if content.cc && content.cc.length}
+      <dt>CC</dt><dd>{@render addrCell(content.cc)}</dd>
+    {/if}
+    <dt>Date</dt><dd>{formatDate(content.date)}</dd>
+    <dt>Subject</dt><dd><strong>{content.subject || ''}</strong></dd>
+  </dl>
 
   <h3>Message Body</h3>
   {#if content.html}
@@ -79,17 +77,15 @@
   {/if}
 {:else if tempEmail}
   <p><strong>Email metadata available, but full content could not be retrieved from server.</strong></p>
-  <table class="data-table">
-    <tbody>
-      <tr><th>From:</th><td>{@render addrCell(tempEmail.from_email)}</td></tr>
-      <tr><th>To:</th><td>{@render addrCell(tempEmail.to_email)}</td></tr>
-      {#if tempEmail.cc_email}
-        <tr><th>CC:</th><td>{@render addrCell(tempEmail.cc_email)}</td></tr>
-      {/if}
-      <tr><th>Date:</th><td>{formatDate(tempEmail.date_sent)}</td></tr>
-      <tr><th>Subject:</th><td><strong>{tempEmail.subject || ''}</strong></td></tr>
-    </tbody>
-  </table>
+  <dl>
+    <dt>From</dt><dd>{@render addrCell(tempEmail.from_email)}</dd>
+    <dt>To</dt><dd>{@render addrCell(tempEmail.to_email)}</dd>
+    {#if tempEmail.cc_email}
+      <dt>CC</dt><dd>{@render addrCell(tempEmail.cc_email)}</dd>
+    {/if}
+    <dt>Date</dt><dd>{formatDate(tempEmail.date_sent)}</dd>
+    <dt>Subject</dt><dd><strong>{tempEmail.subject || ''}</strong></dd>
+  </dl>
 {:else}
   <p><strong>Email not found or could not be retrieved from server.</strong></p>
   <p>Message ID: {emailRecord?.message_id || ''}</p>

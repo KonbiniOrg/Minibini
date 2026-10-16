@@ -21,7 +21,7 @@ class CatalogLineItemAddTest(TestCase):
         self.category = AccountingCategory.objects.create(code='MAT', name='Materials', is_active=True)
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='jane@example.com', mobile_number='555-0000',
+            email='jane@example.com', phones=[{'number': '555-0000', 'label': 'mobile'}],
         )
         self.user = User.objects.create_superuser(username='boss', password='pw')
         self.client = APIClient()

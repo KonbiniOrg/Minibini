@@ -45,6 +45,7 @@ describe('PurchaseOrderForm', () => {
     // contacts fetched for the picked business; auto-selected default appears as an option
     await findByRole('option', { name: 'Bob X' });
     expect(api.get).toHaveBeenCalledWith('/api/contacts/?business=2&page_size=100');
+    expect(api.get.mock.calls.map((c) => c[0]).filter((u) => /\/api\/(contacts|businesses)\//.test(u)).every((u) => !u.includes('status='))).toBe(true);
 
     await fireEvent.click(getByRole('button', { name: 'Create' }));
     expect(onSubmit).toHaveBeenCalledWith({ business: 2, contact: 5, requested_date: null });

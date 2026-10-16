@@ -30,7 +30,7 @@ class CancelReleasesClaimsTest(TestCase):
         self.cat = AccountingCategory.objects.create(
             code='LAB', name='Labor', taxable=False)
         contact = Contact.objects.create(
-            first_name='J', last_name='D', email='j@d.com', mobile_number='555')
+            first_name='J', last_name='D', email='j@d.com', phones=[{'number': '555', 'label': 'mobile'}])
         self.job = Job.objects.create(
             contact=contact, job_number='JOB-2026-0001',
             status=Job.STATUS_APPROVED)
@@ -190,7 +190,7 @@ class CancelDepositDiscriminatorTest(TestCase):
         self.dep_cat = AccountingCategory.objects.create(
             code='DEP', name='Deposits', taxable=False, is_deposit=True)
         contact = Contact.objects.create(
-            first_name='J', last_name='D', email='j@d.com', mobile_number='555')
+            first_name='J', last_name='D', email='j@d.com', phones=[{'number': '555', 'label': 'mobile'}])
         self.job = Job.objects.create(
             contact=contact, job_number='JOB-2026-0001',
             status=Job.STATUS_APPROVED)

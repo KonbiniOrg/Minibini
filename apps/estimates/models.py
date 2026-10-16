@@ -337,6 +337,8 @@ class ChangeOrder(models.Model):
                     # before the customer can say yes — shared helper, also
                     # run pre-email by ChangeOrderEmailService._validate_send.
                     ChangeOrderService.assert_all_bare_add_lines_have_ac(self)
+                    # …and the job must still have something to deliver.
+                    ChangeOrderService.assert_job_has_deliverables(self)
 
         # Only one draft change order per job (mirrors Estimate.clean()'s
         # one-draft-estimate invariant, RM 2026-09-19/2026-09-20): the Tasks-

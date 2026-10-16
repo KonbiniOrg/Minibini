@@ -100,7 +100,7 @@ atom-gated).
 ## 4. Write-off
 
 - [ ] The **write off** button appears per row **only when on-hand > 0**.
-- [ ] Clicking it opens a **write-off panel** (it does not act immediately): a
+- [ ] Clicking it opens a **Write off modal** (it does not act immediately): a
   **quantity** field (pre-filled with the full on-hand) plus an optional
   **reason**, and a **Confirm write-off** button (the explicit, deliberate
   gesture for this irreversible action).
@@ -116,7 +116,7 @@ atom-gated).
 
 ## 5. Merge (manual consolidation)
 
-- [ ] **Merge items** opens the panel: pick a **Keep** (any item) and a
+- [ ] **Merge items** opens the **Merge items modal**: pick a **Keep** (any item) and a
   **Discard** (lots only — catalog items aren't offered as discards).
 - [ ] On merge: the discard's **on-hand and references fold into keep**, and the
   discard **disappears** from the list. Keep's on-hand rises by the discard's.

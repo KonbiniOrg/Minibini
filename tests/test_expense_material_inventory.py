@@ -22,7 +22,7 @@ class AdHocPurchaseTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
             first_name='Test', last_name='User',
-            email='test@example.com', work_number='555-0100',
+            email='test@example.com', phones=[{'number': '555-0100', 'label': 'work'}],
         )
         self.business = Business.objects.create(
             business_name='Test Business',
@@ -98,7 +98,7 @@ class ExpenseSubmitPathTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
             first_name='Test', last_name='User',
-            email='exptest@example.com', work_number='555-0200',
+            email='exptest@example.com', phones=[{'number': '555-0200', 'label': 'work'}],
         )
         self.business = Business.objects.create(
             business_name='Expense Test Business',
@@ -183,7 +183,7 @@ class ExpenseRejectStockReceiptTest(TestCase):
     def setUp(self):
         contact = Contact.objects.create(
             first_name='Reject', last_name='User',
-            email='rjtest@example.com', work_number='555-0300',
+            email='rjtest@example.com', phones=[{'number': '555-0300', 'label': 'work'}],
         )
         business = Business.objects.create(
             business_name='Reject Test Business', default_contact=contact,
@@ -253,7 +253,7 @@ class ExpenseRejectNonInventoriedTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
             first_name='NonInv', last_name='User',
-            email='noninv@example.com', work_number='555-0400',
+            email='noninv@example.com', phones=[{'number': '555-0400', 'label': 'work'}],
         )
         business = Business.objects.create(
             business_name='NonInv Business',

@@ -127,16 +127,17 @@ test('seeded invoice: agreement-backed lines, actuals vs estimate backing, remov
 
   await test.step('Send Invoice is reachable (every seeded line already carries a category)', async () => {
     await expect(page.getByText('Assign an accounting category to every line before sending.')).toHaveCount(0);
-    await page.getByRole('link', { name: 'Send Invoice' }).click();
-    await expect(page.getByRole('heading', { name: 'Send Invoice' })).toBeVisible();
-    await page.getByLabel('To *').fill('e2e-invoice-send@example.invalid');
-    page.once('dialog', (dialog) => dialog.accept());
     await page.getByRole('button', { name: 'Send Invoice' }).click();
+    const send = page.getByRole('dialog', { name: 'Send invoice' });
+    await expect(send.getByRole('heading', { name: 'Send Invoice' })).toBeVisible();
+    await send.getByLabel('To *').fill('e2e-invoice-send@example.invalid');
+    page.once('dialog', (dialog) => dialog.accept());
+    await send.getByRole('button', { name: 'Send Invoice' }).click();
     // No QBO connection in this env — the push fails server-side and the
     // invoice stays draft; this proves the gate is reachable, not that
     // delivery happened (see the file header note). FormMessage renders the
     // failure as role="alert".
-    await expect(page.getByRole('alert')).toBeVisible({ timeout: 15_000 });
+    await expect(send.getByRole('alert')).toBeVisible({ timeout: 15_000 });
   });
 
   const finalApi = await apiAs(personas.finjobs);

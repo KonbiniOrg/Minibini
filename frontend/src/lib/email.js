@@ -11,8 +11,7 @@ export const emailApi = {
     api.post(`/api/emails/${id}/create-job/`, { contact, name, description }),
   linkToPo: (id, poId) => api.post(`/api/emails/${id}/link-to-po/`, { po_id: poId }),
   unlinkFromPo: (id) => api.post(`/api/emails/${id}/unlink-from-po/`, {}),
-  createPo: (id, { vendor_business_id }) =>
-    api.post(`/api/emails/${id}/create-po/`, { vendor_business_id }),
+  createPo: (id, body) => api.post(`/api/emails/${id}/create-po/`, body),
   replyDefaults: (id) => api.get(`/api/emails/${id}/reply-defaults/`),
   reply: (id, formData) => api.postMultipart(`/api/emails/${id}/reply/`, formData),
 };
@@ -33,13 +32,7 @@ export async function resolveSenderToContact(state) {
 
   // mode === 'new'
   const contactPayload = { ...state.contactForm };
-  if (
-    !contactPayload.work_number &&
-    !contactPayload.mobile_number &&
-    !contactPayload.home_number
-  ) {
-    throw new Error('At least one phone number (work, mobile, or home) is required.');
-  }
+  contactPayload.phones = (contactPayload.phones || []).filter((p) => (p.number || '').trim());
 
   let businessId = null;
   let newBusinessName = null;
@@ -56,7 +49,7 @@ export async function resolveSenderToContact(state) {
     }
     // Check for a name conflict before creating the contact below —
     // otherwise a duplicate name fails only after the contact is already
-    // committed, leaving it orphaned (mirrors BusinessFormPage's create flow).
+    // committed, leaving it orphaned (mirrors BusinessFormModal's create flow).
     const nameCheck = await api.get(`/api/businesses/check-name/?name=${encodeURIComponent(newBusinessName)}`);
     if (nameCheck.exists) {
       const err = new Error('A business with this name already exists.');

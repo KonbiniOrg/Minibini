@@ -11,6 +11,7 @@ atom is never flagged. No hold/status lifecycle changes — see
 estimates-and-prices §14.11 decision record.
 """
 from decimal import Decimal
+from apps.deliverables.models import Deliverable
 
 from django.test import TestCase
 
@@ -185,6 +186,11 @@ class DraftCOTargetsDoNotCountTests(TestCase):
             estimate_line_item=self.line,
             source_type=EstimateLineItemSource.SOURCE_TASK,
             source_pk=self.task.pk)
+        # A CO can't leave draft while the job has no deliverables
+        # (ChangeOrderService.assert_job_has_deliverables).
+        Deliverable.objects.create(
+            job=self.job, description='Guard deliverable',
+            qty_ordered=Decimal('1'), units='ea', sort_order=10)
         self.co = ChangeOrderService.create(job_id=self.job.pk)
         ChangeOrderService.add_line_item(
             self.co.pk, action=ChangeOrderLineItem.ACTION_REMOVE,

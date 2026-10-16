@@ -20,7 +20,7 @@ class InvoiceLineItemSourceTest(TestCase):
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='jane@example.com', mobile_number='555-0000',
+            email='jane@example.com', phones=[{'number': '555-0000', 'label': 'mobile'}],
         )
         self.business = Business.objects.create(
             business_name='Acme', default_contact=self.contact,
@@ -134,7 +134,7 @@ class UniqueDraftInvoicePerJobTest(TestCase):
         AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='jane@example.com', mobile_number='555-0000',
+            email='jane@example.com', phones=[{'number': '555-0000', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
 

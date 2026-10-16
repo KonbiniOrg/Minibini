@@ -1,7 +1,8 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { link } from 'svelte-spa-router';
   import UserReimbursementPanel from '../../components/expenses/UserReimbursementPanel.svelte';
+  import LoadState from '../../components/LoadState.svelte';
 
   let { params = {} } = $props();
   let user = $state(null);
@@ -16,7 +17,7 @@
         loadError = 'User not found.';
       }
     } catch (err) {
-      loadError = err.message || 'Could not load user.';
+      loadError = errorMessage(err, 'Could not load user.');
     }
   }
 
@@ -24,14 +25,12 @@
 </script>
 
 <div class="page-body">
-{#if loadError}
-  <p><em>{loadError}</em></p>
-  <p><a href="/expenses" use:link>← Back to expenses</a></p>
-{:else if user}
+<LoadState loading={!user && !loadError} error={loadError}>
+{#if user}
   <h2>Reimbursements — {user.first_name || ''} {user.last_name || ''} ({user.username})</h2>
   <p><a href="/expenses" use:link>← Back to expenses</a></p>
   <UserReimbursementPanel {user} />
-{:else}
-  <p><em>Loading...</em></p>
 {/if}
+</LoadState>
+{#if loadError}<p><a href="/expenses" use:link>← Back to expenses</a></p>{/if}
 </div>

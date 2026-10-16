@@ -83,9 +83,25 @@
       ? 'restock' : 'release';
   }
 
-  function matQtyAvail(mat) {
-    if (!mat.inventory_item || mat.qty_available === null || mat.qty_available === undefined) return null;
-    return Number(mat.qty_available);
+  // Catalog code shown before the description so a material linked to the
+  // wrong item is visible on the row (RM 2026-10-14: 33 converted materials
+  // pointed at the wrong-thickness sheet and nothing showed it). Minted lots
+  // (LOT-*) are a one-off implementation detail, not a code anyone keys on.
+  function itemCode(mat) {
+    const code = mat.item_code;
+    if (!code || String(code).startsWith('LOT-')) return null;
+    return code;
+  }
+
+  // Stock badge: the item's raw on-hand quantity, ignoring earmarks (RM
+  // 2026-10-15 — "(0 avail)" beside an "On Hand" chip read as a
+  // contradiction). Colour follows the chip's own rule (qty_on_hand vs
+  // quantity) so the two can never disagree. Hidden for freeform rows (no
+  // item) and consumed rows (stock already drawn down, nothing to report).
+  function matQtyInStock(mat) {
+    if (!mat.inventory_item || mat.consumption_state === 'consumed') return null;
+    if (mat.qty_on_hand === null || mat.qty_on_hand === undefined) return null;
+    return Number(mat.qty_on_hand);
   }
 
   const actionable = $derived(
@@ -111,9 +127,9 @@
   }
 </script>
 
-{#snippet availBadge(mat)}
-  {#if matQtyAvail(mat) !== null}
-    <span class={matQtyAvail(mat) >= 0 ? 'avail-ok' : 'avail-short'}>({mat.qty_available} avail)</span>
+{#snippet stockBadge(mat)}
+  {#if matQtyInStock(mat) !== null}
+    <span class={matQtyInStock(mat) >= Number(mat.quantity) ? 'avail-ok' : 'avail-short'}>({mat.qty_on_hand} in stock)</span>
   {/if}
 {/snippet}
 
@@ -136,7 +152,7 @@
     {#if onEditMaterial && !jobOnHold}<button type="button" onclick={() => onEditMaterial(mat, ownerTask)}>Set pricing</button>{/if}
     {#if onAttachExpense}<button type="button" onclick={() => onAttachExpense(mat)}>Attach expense</button>{/if}
   {:else if s.key === 'needed'}
-    {#if onOrderMaterial && $canManageFinancials && mat.po_line_item_id == null}<button type="button" onclick={() => onOrderMaterial(mat)}>Order</button>{/if}
+    {#if onOrderMaterial && ($canManageFinancials || mat.can_manage) && mat.po_line_item_id == null}<button type="button" onclick={() => onOrderMaterial(mat)}>Order</button>{/if}
     {#if onAttachExpense}<button type="button" onclick={() => onAttachExpense(mat)}>Attach expense</button>{/if}
     {#if onMarkOnHand}<button type="button" onclick={() => onMarkOnHand(mat)}>Mark on-hand</button>{/if}
   {:else if s.key === 'awaiting-customer'}
@@ -162,7 +178,7 @@
     <td class="move-cell">{#if onMoveMaterial && isMaterialPending(material) && !isMaterialFinalized(material) && selectedTaskId != null}<button type="button" class="small-btn" onclick={() => onMoveMaterial(material, selectedTaskId)}>Move</button>{/if}</td>
   {/if}
   <td class={indentClass}>
-    <span class="material-marker">&#9679;</span> {material.description || '(no description)'} {@render availBadge(material)}
+    <span class="material-marker">&#9679;</span> {#if itemCode(material)}<code class="mat-code">{itemCode(material)}</code> {/if}{material.description || '(no description)'} {@render stockBadge(material)}
     {#if !showStatus}{@render matStatusChip(material)}{/if}
   </td>
   {#if taskAligned && showAssignee}<td></td>{/if}
@@ -231,6 +247,7 @@
   /* Cost-unconfirmed warning beside the unit-cost cell (estimate placeholder). */
   .cost-warn { margin-left: 3px; color: #d97706; cursor: help; }
 
+  .mat-code { font-size: 11px; color: #374151; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 3px; padding: 0 4px; margin-right: 2px; }
   .avail-ok { font-size: 11px; color: #166534; margin-left: 4px; }
   .avail-short { font-size: 11px; color: #991b1b; margin-left: 4px; }
 

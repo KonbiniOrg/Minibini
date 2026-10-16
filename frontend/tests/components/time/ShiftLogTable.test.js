@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from '@testing-library/svelte';
 import ShiftLogTable from '@/components/time/ShiftLogTable.svelte';
 import ShiftLogTableHarness from './_ShiftLogTableHarness.svelte';
+import { viewMode } from '@/stores/viewMode.js';
 
 const closed = {
   shift_id: 1, start_time: '2026-03-16T08:00:00', end_time: '2026-03-16T16:00:00',
@@ -48,5 +49,20 @@ describe('ShiftLogTable', () => {
   it('renders a per-row actions snippet', () => {
     const { getByRole } = render(ShiftLogTableHarness, { props: { shifts: [closed] } });
     expect(getByRole('button', { name: /Edit/ })).toBeInTheDocument();
+  });
+});
+
+describe('ShiftLogTable — DataTable', () => {
+  const headersOf = (t) => Array.from(t.querySelectorAll('thead th')).map((th) => th.textContent.trim());
+  it('renders Clock In / Clock Out / Duration in both densities, with optional Worker and actions columns', () => {
+    viewMode.set('lite');
+    const { container } = render(ShiftLogTable, { props: { shifts: [closed] } });
+    expect(headersOf(container.querySelector('table.data-table'))).toEqual(['Clock In', 'Clock Out', 'Duration']);
+    const { container: c2 } = render(ShiftLogTable, { props: { shifts: [{ ...closed, user_name: 'Wanda' }], showWorker: true } });
+    expect(headersOf(c2.querySelector('table.data-table'))).toEqual(['Worker', 'Clock In', 'Clock Out', 'Duration']);
+    viewMode.set('full');
+    const { container: c3 } = render(ShiftLogTableHarness, { props: { shifts: [closed] } });
+    expect(headersOf(c3.querySelector('table.data-table'))).toEqual(['Clock In', 'Clock Out', 'Duration', '']);
+    expect(c3.querySelector('td[data-col="actions"] button').textContent).toBe('Edit 1');
   });
 });

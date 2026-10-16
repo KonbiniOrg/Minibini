@@ -1,6 +1,6 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { user as userStore } from '../../stores/auth.js';
   import { canManageJobs as canManageJobsStore, canManageTime as canManageTimeStore } from '../../stores/permissions.js';
   import { currentBlep } from '../../stores/currentBlep.js';
@@ -8,6 +8,7 @@
   import TaskActivityIndicator from '../tasks/TaskActivityIndicator.svelte';
   import StartWorkConflictModal from '../tasks/StartWorkConflictModal.svelte';
   import AssignModal from '../AssignModal.svelte';
+  import LoadState from '../LoadState.svelte';
 
   let {
     bar,                 // schedule bar: task_id, name, status, accent_color, est_minutes, elapsed_minutes, is_running, job_id, job_number, job_name
@@ -57,7 +58,7 @@
     try {
       task = await api.get(`/api/tasks/${bar.task_id}/`);
     } catch (e) {
-      error = e.message || 'Could not load task.';
+      error = errorMessage(e, 'Could not load task.');
     } finally {
       loading = false;
     }
@@ -156,13 +157,8 @@
         </div>
       {/if}
 
-      {#if error}
-        <p class="error">{error}</p>
-      {/if}
-
-      {#if loading}
-        <p class="loading">Loading…</p>
-      {:else if task}
+      <LoadState {loading} {error}>
+      {#if task}
         <div class="section-label">Actions</div>
         <TaskActions
           {task}
@@ -194,6 +190,7 @@
           {#if onBehalfError}<p class="error">{onBehalfError}</p>{/if}
         {/if}
       {/if}
+      </LoadState>
 
       <div class="footer">
         <a href="#/jobs/{bar.job_id}/tasks/{bar.task_id}">Open full task page →</a>
@@ -266,5 +263,4 @@
   .footer { border-top: 1px solid #eee; margin-top: 14px; padding-top: 10px; }
   .footer a { font-size: 12px; color: #2563eb; text-decoration: none; font-weight: 600; }
   .error { color: #b91c1c; font-size: 12px; margin-top: 8px; }
-  .loading { color: #6b7280; font-size: 12px; margin-top: 10px; }
 </style>

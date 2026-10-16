@@ -363,6 +363,12 @@ _PLI_MATERIAL_KEYWORDS = (
 # inches both reduce to the same key so '3/4"' matches a PLI coded '.75'.
 _FRACTION_RE = re.compile(r'(?<!\d)(\d{1,2})\s*/\s*(\d{1,2})\s*(?:"|in\b|inch)?')
 _DECIMAL_IN_RE = re.compile(r'(?<![\d/])(\d?\.\d{1,3}|\d{1,2})\s*"')
+# Dates ('*price as of 7/31/25*', '10/13/2023', '5/20-24') are removed before
+# the fraction scan: 7/31 and 31/25 are not thicknesses. FreeAgent descriptions
+# carry the same date suffix on catalog items and estimate lines, so left in,
+# the date became a shared "thickness" for every same-family item and the
+# shortest-code tie-break linked 3/4" MDF to MDF.5 (found 2026-10-14).
+_DATE_RE = re.compile(r'(?<![\d/])\d{1,2}\s*/\s*\d{1,2}\s*[/-]\s*\d{2,4}(?!\d)')
 
 
 def _normalise_thickness_token(num):
@@ -381,6 +387,7 @@ def extract_thicknesses(text):
     so a sanity cap of < 3 inches keeps only plausible material thicknesses).
     """
     found = set()
+    text = _DATE_RE.sub(' ', text or '')
     for m in _FRACTION_RE.finditer(text):
         num, den = int(m.group(1)), int(m.group(2))
         if den == 0:
@@ -438,3 +445,20 @@ def match_pli(description, pli_index):
     # Most keyword overlap wins; ties → shortest code, then lexically smallest.
     candidates.sort(key=lambda c: (-c[0], len(c[1]), c[1]))
     return candidates[0][1]
+
+
+def is_pickup_marker(text):
+    """True when a checklist line is the 'Picked up/Delivered' marker.
+
+    Matches with or without a trailing recipient name; ordinary
+    'pick up ...' notes fail the 'picked up/delivered' prefix test.
+    """
+    return text.strip().lower().replace(' ', '').startswith('pickedup/delivered')
+
+
+def has_pickup_done(card):
+    """True when the card's checklist has a checked 'Picked up/Delivered' item
+    — the converter's one signal that every Deliverable was collected
+    (build_shipments' marker path; reconcile's completion-promotion pass)."""
+    return any(it['completed'] and is_pickup_marker(it['text'])
+               for it in parse_checklist(card.get('Checklist')))

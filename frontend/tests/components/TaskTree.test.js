@@ -50,6 +50,49 @@ describe('TaskTree', () => {
     expect(queryByText('kg', { exact: true })).toBeNull(); // no standalone cell
   });
 
+  it('prints the catalog item code before the description, but not a minted lot code', () => {
+    // RM 2026-10-14: 33 converted materials were linked to the wrong-thickness
+    // item and nothing on the row showed it — the code makes a mislink visible.
+    const t = task({
+      materials: [
+        { material_id: 11, description: 'Birch ply', quantity: '3', sell_price: '5',
+          units: 'sheet', consumption_state: 'pending', inventory_item: 7, item_code: 'BBPLY.75' },
+        { material_id: 12, description: 'Brass sheet', quantity: '1', sell_price: '5',
+          units: 'ea', consumption_state: 'pending', inventory_item: 8, item_code: 'LOT-12' },
+      ],
+    });
+    const { getByText, queryByText } = render(TaskTree, { props: { tasks: [t], canManage: true } });
+    const code = getByText('BBPLY.75');
+    expect(code.tagName).toBe('CODE');
+    // Code precedes the description in the same cell.
+    expect(code.closest('td').textContent.indexOf('BBPLY.75'))
+      .toBeLessThan(code.closest('td').textContent.indexOf('Birch ply'));
+    expect(queryByText('LOT-12')).toBeNull();
+  });
+
+  it('shows the raw stock on hand as "(x in stock)", ignoring earmarks', () => {
+    // RM 2026-10-15: "(0 avail)" beside an "On Hand" chip read as a
+    // contradiction — the badge now reports item QOH regardless of earmarks.
+    const t = task({
+      materials: [
+        { material_id: 31, description: 'Ply', quantity: '3', sell_price: '5', units: 'sheet',
+          consumption_state: 'pending', inventory_item: 7, qty_on_hand: '7.00', qty_available: '0.00' },
+        { material_id: 32, description: 'Oak', quantity: '3', sell_price: '5', units: 'sheet',
+          consumption_state: 'pending', inventory_item: 8, qty_on_hand: '1.00', qty_available: '1.00' },
+        { material_id: 33, description: 'Finish', quantity: '1', sell_price: '5', units: 'ea',
+          consumption_state: 'pending', inventory_item: null, qty_on_hand: '0' },
+        { material_id: 34, description: 'Glue', quantity: '1', sell_price: '5', units: 'ea',
+          consumption_state: 'consumed', inventory_item: 9, qty_on_hand: '0', qty_available: null },
+      ],
+    });
+    const { getByText, queryByText } = render(TaskTree, { props: { tasks: [t], canManage: true } });
+    expect(getByText('(7.00 in stock)')).toHaveClass('avail-ok');
+    expect(getByText('(1.00 in stock)')).toHaveClass('avail-short');
+    expect(queryByText(/avail\)/)).toBeNull();
+    // Freeform and consumed rows carry no stock badge.
+    expect(queryByText('(0 in stock)')).toBeNull();
+  });
+
   it('badges an in-progress task waiting on understocked material', () => {
     const t = task({
       status: 'in_progress',
@@ -307,7 +350,7 @@ describe('TaskTree — material status vocabulary + fulfillment actions', () => 
     expect(onEditMaterial).toHaveBeenCalledWith(expect.objectContaining({ material_id: 2 }), expect.anything());
   });
 
-  it('needed material gates the Order button behind can_manage_financials', () => {
+  it('needed material gates the Order button behind can_manage_financials or the material\'s can_manage', () => {
     const mat = {
       material_id: 3, description: 'Ply', quantity: '4', sell_price: '5', units: 'sheet',
       consumption_state: 'pending', inventory_item: 7, cost_source: 'entered', qty_on_hand: '0',
@@ -327,6 +370,11 @@ describe('TaskTree — material status vocabulary + fulfillment actions', () => 
     user.set({ id: 1, permissions: ['can_manage_financials'] });
     const fin = render(TaskTree, { props: { tasks: [matTask(mat)], canManage: true, ...wired } });
     expect(fin.getByRole('button', { name: 'Order' })).toBeInTheDocument();
+    fin.unmount();
+    // a PM of the material's job (no atom) sees it too — the row's own can_manage flag
+    user.set({ id: 1, permissions: [] });
+    const pm = render(TaskTree, { props: { tasks: [matTask({ ...mat, can_manage: true })], canManage: true, ...wired } });
+    expect(pm.getByRole('button', { name: 'Order' })).toBeInTheDocument();
   });
 
   it('renders NO fulfillment or material-op buttons when callbacks are not wired (passive surface)', () => {

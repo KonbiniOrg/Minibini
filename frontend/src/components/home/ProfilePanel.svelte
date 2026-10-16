@@ -3,6 +3,8 @@
   import { fieldErrors } from '../../lib/formErrors.js';
   import { user } from '../../stores/auth.js';
   import { viewMode, toggleViewMode } from '../../stores/viewMode.js';
+  import LoadState from '../LoadState.svelte';
+  import ChangePasswordModal from '../users/ChangePasswordModal.svelte';
 
   let profileForm = $state({
     email: '',
@@ -14,14 +16,8 @@
   let profileSaving = $state(false);
   let initialized = $state(false);
 
-  let pwForm = $state({
-    current_password: '',
-    new_password: '',
-    new_password_confirm: '',
-  });
-  let pwErrors = $state({});
-  let pwMessage = $state('');
-  let pwSaving = $state(false);
+  // Password change lives in ChangePasswordModal (2026-10-10).
+  let pwOpen = $state(false);
 
   // Initialize form from the store once, after the user is loaded.
   $effect(() => {
@@ -57,35 +53,11 @@
     }
   }
 
-  async function changePassword(e) {
-    e.preventDefault();
-    pwErrors = {};
-    pwMessage = '';
-    pwSaving = true;
-    try {
-      await api.post('/api/auth/me/password/', pwForm);
-      pwForm.current_password = '';
-      pwForm.new_password = '';
-      pwForm.new_password_confirm = '';
-      pwMessage = 'Password changed.';
-    } catch (err) {
-      if (err.data && typeof err.data === 'object') {
-        pwErrors = err.data;
-      } else {
-        pwErrors = { non_field_errors: ['Could not change password. Please try again.'] };
-      }
-    } finally {
-      pwSaving = false;
-    }
-  }
-
 </script>
 
 <h3>Account info</h3>
 
-{#if !$user}
-  <p>Loading...</p>
-{:else}
+<LoadState loading={!$user}>
   <form onsubmit={saveProfile}>
     <p>
       <strong>Username:</strong> {$user.username}
@@ -140,62 +112,11 @@
       <p>{profileMessage}</p>
     {/if}
   </form>
-{/if}
+</LoadState>
 
-<h3>Change password</h3>
-<form onsubmit={changePassword}>
-  <p>
-    <label for="pw-current"><strong>Current password</strong></label><br>
-    <input
-      type="password"
-      id="pw-current"
-      autocomplete="current-password"
-      bind:value={pwForm.current_password}
-    >
-  </p>
-  {#each fieldErrors(pwErrors, 'current_password') as msg}
-    <p>{msg}</p>
-  {/each}
-
-  <p>
-    <label for="pw-new"><strong>New password</strong></label><br>
-    <input
-      type="password"
-      id="pw-new"
-      autocomplete="new-password"
-      bind:value={pwForm.new_password}
-    >
-  </p>
-  {#each fieldErrors(pwErrors, 'new_password') as msg}
-    <p>{msg}</p>
-  {/each}
-
-  <p>
-    <label for="pw-new-confirm"><strong>Confirm new password</strong></label><br>
-    <input
-      type="password"
-      id="pw-new-confirm"
-      autocomplete="new-password"
-      bind:value={pwForm.new_password_confirm}
-    >
-  </p>
-  {#each fieldErrors(pwErrors, 'new_password_confirm') as msg}
-    <p>{msg}</p>
-  {/each}
-
-  {#each fieldErrors(pwErrors, 'non_field_errors') as msg}
-    <p>{msg}</p>
-  {/each}
-
-  <p>
-    <button type="submit" disabled={pwSaving}>
-      {pwSaving ? 'Changing...' : 'Change password'}
-    </button>
-  </p>
-  {#if pwMessage}
-    <p>{pwMessage}</p>
-  {/if}
-</form>
+<h3>Password</h3>
+<p><button type="button" onclick={() => { pwOpen = true; }}>Change password…</button></p>
+<ChangePasswordModal open={pwOpen} username={$user?.username ?? ''} onClose={() => { pwOpen = false; }} />
 
 <h3>Preferences</h3>
 <p>

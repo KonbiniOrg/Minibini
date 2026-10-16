@@ -73,6 +73,30 @@ describe('ContactsImportPanel', () => {
     expect(payload.vendors[0].action).toBe('create');
   });
 
+  it('qbo_inactive defaults unchecked as deactivate; qbo_active checked as reactivate', async () => {
+    api.get.mockResolvedValue({
+      dismissed: false, fetched_at: 'x', missing_term_refs: false,
+      rows: [
+        { kind: 'customer', qbo_id: '71', display_name: 'Dormant Co',
+          company_name: 'Dormant Co', email: 'd@x.com', state: 'qbo_inactive' },
+        { kind: 'vendor', qbo_id: '81', display_name: 'Back Again',
+          company_name: 'Back Again', email: '', state: 'qbo_active' },
+      ],
+    });
+    const { findByText, container } = render(ContactsImportPanel);
+    expect(await findByText('deactivate')).toBeInTheDocument();
+    expect(await findByText('reactivate')).toBeInTheDocument();
+    const boxes = container.querySelectorAll('tbody input[type=checkbox]');
+    expect(boxes[0].checked).toBe(false);
+    expect(boxes[1].checked).toBe(true);
+    await fireEvent.click(boxes[0]);
+    await fireEvent.click(await findByText('Apply selected'));
+    const payload = api.post.mock.calls.find(
+      (c) => c[0] === '/api/qbo/import/commit/contacts/')[1];
+    expect(payload.customers[0].action).toBe('deactivate');
+    expect(payload.vendors[0].action).toBe('reactivate');
+  });
+
   it('reports skipped rows after a partial commit', async () => {
     api.get.mockResolvedValue({
       dismissed: false, fetched_at: 'x', missing_term_refs: false,
@@ -91,7 +115,7 @@ describe('ContactsImportPanel', () => {
     });
     const { findByText } = render(ContactsImportPanel);
     await fireEvent.click(await findByText('Apply selected'));
-    expect(await findByText("1 contact couldn't be imported:"))
+    expect(await findByText("1 contact couldn't be applied:"))
       .toBeInTheDocument();
     expect(await findByText('Bulb Company: duplicate email with Blah Company'))
       .toBeInTheDocument();

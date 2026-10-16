@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn() }, errorMessage: (e, fallback) => e?.message || fallback }));
 vi.mock('svelte-spa-router', () => ({ link: () => ({}) }));
 vi.mock('@/stores/blepActivity.js', async () => {
   const { writable } = await import('svelte/store');
@@ -52,18 +52,18 @@ describe('WorkSessionsList', () => {
 
   it('pages recent-first through the pager', async () => {
     api.get.mockResolvedValue({ count: 60, results: [row(1)] });
-    const { findByText, getByRole, queryByRole } = render(WorkSessionsList, {
+    const { findByText, getByRole } = render(WorkSessionsList, {
       props: { showWorker: true },
     });
     await findByText('Cut');
     expect(api.get.mock.calls[0][0]).toContain('page=1');
-    // Page 1: no Previous.
-    expect(queryByRole('button', { name: 'Previous' })).toBeNull();
+    // Page 1: Previous is rendered but disabled (shared Pager — buttons never move).
+    expect(getByRole('button', { name: 'Previous' })).toBeDisabled();
     await fireEvent.click(getByRole('button', { name: 'Next' }));
     await waitFor(() => {
       expect(api.get.mock.calls.some(([u]) => u.includes('page=2'))).toBe(true);
     });
-    expect(getByRole('button', { name: 'Previous' })).toBeInTheDocument();
+    expect(getByRole('button', { name: 'Previous' })).toBeEnabled();
   });
 
   it('hides the pager when paginate is off (home surface)', async () => {

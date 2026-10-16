@@ -14,7 +14,7 @@ class JobMaterialSerializerPOFieldsTest(TestCase):
         Configuration.objects.get_or_create(key='po_number_sequence', defaults={'value': 'PO-{counter:04d}'})
         AppState.objects.get_or_create(key='po_counter', defaults={'value': '0'})
         self.user = User.objects.create_user(username='u', password='p')
-        c = Contact.objects.create(first_name='V', last_name='V', work_number='5')
+        c = Contact.objects.create(first_name='V', last_name='V', phones=[{'number': '5', 'label': 'work'}])
         self.business = Business.objects.create(business_name='B', default_contact=c)
         c.business = self.business; c.save()
         self.job = Job.objects.create(job_number='J-1', contact=c, description='j')
@@ -52,7 +52,7 @@ class MaterialQtyOnHandTest(TestCase):
         from apps.inventory.models import Material
         cat = AccountingCategory.objects.get_or_create(
             code='MAT2', defaults={'name': 'Material'})[0]
-        contact = Contact.objects.create(first_name='C', last_name='C', work_number='9')
+        contact = Contact.objects.create(first_name='C', last_name='C', phones=[{'number': '9', 'label': 'work'}])
         self.job = Job.objects.create(job_number='J-QOH', contact=contact, description='j')
         self.pli = InventoryItem.objects.create(
             code='INV', description='inv', accounting_category=cat,

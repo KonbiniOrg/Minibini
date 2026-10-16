@@ -26,7 +26,7 @@ from apps.jobs.services import JobService
 class DirectApprovalGuardTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
-            first_name='J', last_name='D', email='j@d.com', mobile_number='555',
+            first_name='J', last_name='D', email='j@d.com', phones=[{'number': '555', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(contact=self.contact, job_number='JOB-2026-0100')
         JobService.update_job(self.job.pk, status=Job.STATUS_SUBMITTED)
@@ -80,7 +80,7 @@ class DirectApprovalGuardTest(TestCase):
 class DirectApprovalApiTest(TestCase):
     def setUp(self):
         self.contact = Contact.objects.create(
-            first_name='A', last_name='B', email='a@b.com', mobile_number='555',
+            first_name='A', last_name='B', email='a@b.com', phones=[{'number': '555', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(contact=self.contact, job_number='JOB-2026-0101')
         JobService.update_job(self.job.pk, status=Job.STATUS_SUBMITTED)

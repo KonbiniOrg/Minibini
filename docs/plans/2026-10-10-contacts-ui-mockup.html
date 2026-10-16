@@ -1,0 +1,474 @@
+<title>Contact and Business Pages</title>
+<style>
+  /* Layout: a 44px dark rail stands in for the app sidebar; each mockup is a
+     full-bleed banner over a two-column body (identity column + activity
+     column), the same banner-page vocabulary the job pages use.
+     FULL density only (RM 2026-10-10: lite trimming is a later pass).
+     Single light theme on purpose: this mirrors app.css, which is light-only. */
+  :root {
+    --bg: #ffffff;                 /* the FULL-mode yellow tint is being retired (RM 2026-10-10) */
+    --fg: #1f2937;
+    --muted: #64748b;
+    --faint: #94a3b8;
+    --heading: #1a2a6c;
+    --link: #2563eb;
+    --rail: #1a3344;
+    --banner: #450a0a;             /* CustomerHeader red-950 */
+    --border-control: #d1d5db;
+    --border-subtle: #e5e7eb;
+    --doc-accent: #115e59;         /* house teal: non-job tables */
+    --doc-soft: #f0fdfa;
+    --doc-border: #99f6e4;
+    --doc-faint: #f8f9fa;
+    --font-ui: Verdana, Geneva, sans-serif;
+    color-scheme: light;
+  }
+  body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); font-size: 14px; margin: 0; }
+  a { color: var(--link); }
+  h3 { color: var(--heading); margin: 0; font-size: 15px; }
+
+  /* ---- frame ---- */
+  .rail { position: fixed; top: 0; left: 0; bottom: 0; width: 44px; background: var(--rail); z-index: 5; }
+  .rail span { display: block; width: 22px; height: 2px; background: #fff; margin: 16px auto 0; border-radius: 1px; }
+  .rail span + span { margin-top: 5px; }
+  .frame { margin-left: 44px; min-width: 0; }
+
+  /* mockup controls, not part of the design */
+  .mock-bar {
+    position: sticky; top: env(safe-area-inset-top, 0px); z-index: 4;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px;
+    padding: 8px 16px; background: #0f172a; color: #e2e8f0; font-size: 12px;
+  }
+  .mock-bar strong { color: #fff; letter-spacing: 0.4px; text-transform: uppercase; font-size: 11px; }
+  .mock-bar a { color: #93c5fd; text-decoration: none; }
+  .mock-bar a:hover { text-decoration: underline; }
+  .mock-divider {
+    margin: 48px 0 0; padding: 10px 24px; background: #e2e8f0; color: #334155;
+    font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 700;
+    border-top: 3px dashed #94a3b8;
+  }
+  .mock-divider small { text-transform: none; letter-spacing: 0; font-weight: 400; margin-left: 12px; color: #475569; }
+  .pin {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 17px; height: 17px; border-radius: 50%; background: #f59e0b; color: #1f1300;
+    font-size: 10px; font-weight: 700; vertical-align: middle; margin-left: 6px; flex: 0 0 auto;
+    font-family: var(--font-ui);
+  }
+  .notes { padding: 18px 24px 8px; max-width: 760px; font-size: 13px; color: #334155; line-height: 1.5; }
+  .notes ol { margin: 6px 0 0; padding-left: 0; list-style: none; display: grid; gap: 6px; }
+  .notes li { display: flex; gap: 8px; align-items: flex-start; }
+  .notes li .pin { margin: 2px 0 0; }
+
+  /* ---- banner ---- */
+  .banner {
+    background: var(--banner); color: #fff;
+    padding: 14px 24px; display: grid; grid-template-columns: minmax(0, 1fr) auto;
+    gap: 24px; align-items: center;
+  }
+  .titleblock { padding-left: 52px; min-width: 0; }
+  .titleblock h2 { font-size: 22px; font-weight: 700; margin: 0; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .subtitle { font-size: 13px; opacity: 0.85; margin: 2px 0 0; }
+  .subtitle a { color: #fff; text-decoration: underline; }
+  .status-row { margin-top: 10px; display: flex; gap: 14px; align-items: center; font-size: 12px; flex-wrap: wrap; }
+  .edit-link { opacity: 0.75; color: #fff; background: none; border: 0; padding: 0; font: inherit; font-size: 14px; cursor: pointer; text-decoration: none; }
+  .edit-link:hover { opacity: 1; text-decoration: underline; }
+  .edit-link.danger { color: #fecaca; }
+  /* The one real button in the banner: New Job. */
+  .banner-btn {
+    font-family: var(--font-ui); font-size: 13px; font-weight: 600;
+    padding: 6px 16px; border-radius: 5px; cursor: pointer;
+    background: #fff; color: var(--banner); border: 1px solid #fff;
+  }
+  .banner-btn:hover { background: #fee2e2; }
+  .chip {
+    display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px;
+    white-space: nowrap; background: #e3eeee; color: #2e6e73;
+  }
+  .chip.default-contact { background: #fde68a; color: #78350f; }
+  .factblock { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .facts-line { font-size: 13px; opacity: 0.9; white-space: nowrap; }
+  .ch-numbers {
+    display: flex; gap: 22px; background: rgba(255,255,255,0.06);
+    padding: 8px 18px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);
+  }
+  .ch-item { text-align: right; }
+  .ch-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: rgba(255,255,255,0.65); }
+  .ch-value { font-size: 18px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .ch-value.money-in { color: #86efac; }
+  .ch-value.owed { color: #fcd34d; }
+
+  /* ---- body ---- */
+  .page-body { padding: 16px 20px 24px; display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 18px; align-items: start; }
+  .identity { display: grid; gap: 12px; }
+  .panel { background: #fff; border: 1px solid var(--border-subtle); border-radius: 6px; padding: 12px 14px; }
+  .panel-head { font-size: 10px; text-transform: uppercase; color: #888; letter-spacing: 0.5px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
+  .facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 0; font-size: 13px; }
+  .facts dt { text-align: right; color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; padding-top: 2px; }
+  .facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+  .facts dd.pre { white-space: pre-line; }
+  .copy { font-size: 10px; border: 1px solid var(--border-control); background: #fff; border-radius: 3px; padding: 0 5px; margin-left: 6px; cursor: pointer; color: var(--muted); font-family: var(--font-ui); }
+  .copy:hover { background: #f3f4f6; }
+  .business-card { display: grid; gap: 4px; font-size: 13px; }
+  .business-card .name { font-weight: 700; font-size: 14px; }
+  .business-card .line { color: var(--muted); }
+  .siblings { list-style: none; margin: 6px 0 0; padding: 8px 0 0; border-top: 1px dashed var(--border-subtle); display: grid; gap: 4px; }
+  .siblings li { display: flex; justify-content: space-between; gap: 8px; }
+  .siblings small { color: var(--faint); }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .tag { background: #eef2ff; color: #3730a3; border-radius: 999px; padding: 2px 9px; font-size: 12px; }
+  .tag.add { background: #fff; border: 1px dashed var(--border-control); color: var(--muted); cursor: pointer; }
+  .muted { color: var(--muted); }
+  .faint { color: var(--faint); }
+
+  .activity { display: grid; gap: 18px; min-width: 0; }
+  .section-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+  .section-head .hint { color: var(--faint); font-size: 12px; margin-left: auto; display: flex; gap: 12px; align-items: center; }
+  .link-btn { background: none; border: 0; padding: 0; color: var(--link); cursor: pointer; font: inherit; font-size: 12px; text-decoration: underline; }
+  .action-link {
+    display: inline-block; padding: 3px 10px; border: 1px solid var(--border-control); border-radius: 3px;
+    background: #fff; color: var(--link); text-decoration: none; font-size: 12px; cursor: pointer; font-family: var(--font-ui);
+  }
+  .action-link:hover { background: #f3f4f6; }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; border: 1px solid #ccc; width: 100%; font-size: 14px; background: #fff; }
+  th, td { border: 1px solid #ccc; }
+  .data-table th { text-align: left; font-weight: 600; padding: 8px 14px; background: var(--doc-soft); color: var(--doc-accent); border-bottom: 2px solid var(--doc-border); white-space: nowrap; }
+  .data-table td { padding: 8px 14px; }
+  .data-table tbody tr:nth-child(even) { background: var(--doc-faint); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.date { white-space: nowrap; color: var(--muted); }
+  .row-actions { white-space: nowrap; }
+  .row-actions button { font-size: 11px; padding: 2px 6px; cursor: pointer; border: 1px solid #ccc; background: #fff; border-radius: 3px; font-family: var(--font-ui); }
+  .row-actions button:hover { background: #f0f0f0; }
+  .row-actions button:disabled { opacity: 0.4; cursor: default; }
+  .status-badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; text-transform: capitalize; white-space: nowrap; }
+  .status-sent { background: #dbeafe; color: #1e40af; }
+  .status-paid { background: #dcfce7; color: #166534; }
+  .status-in_progress, .status-cancelled { background: #fef3c7; color: #92400e; }
+  .status-work_complete { background: #e0e7ff; color: #3730a3; }
+  .status-completed { background: #dbeafe; color: #1e40af; }
+  tr.closed { display: none; }
+  section.expanded tr.closed { display: table-row; }
+  .collapsed-section { border: 1.5px dashed #e2e8f0; border-radius: 8px; padding: 10px 16px; color: #94a3b8; display: flex; gap: 16px; align-items: baseline; font-size: 14px; background: rgba(255,255,255,0.5); }
+  .collapsed-section .label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #64748b; min-width: 140px; }
+  .collapsed-section .action-link { margin-left: auto; }
+
+  /* history */
+  .note-box { display: flex; gap: 8px; margin-bottom: 8px; }
+  .note-box textarea { flex: 1; font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--border-control); border-radius: 4px; resize: vertical; min-height: 38px; }
+  .note-box button { font-family: var(--font-ui); font-size: 12px; padding: 6px 12px; border: 1px solid var(--border-control); background: #fff; border-radius: 4px; cursor: pointer; align-self: flex-start; }
+  .history-entry { padding: 7px 0; border-bottom: 1px solid #f0f0f0; font-size: 13px; line-height: 1.4; }
+  .history-entry .who { font-weight: 700; }
+  .history-entry .when { color: var(--faint); font-size: 12px; }
+  .history-entry.system { color: var(--muted); font-size: 12px; }
+
+  button:focus-visible, a:focus-visible { outline: 2px solid #1d4ed8; outline-offset: 2px; }
+
+  @media (max-width: 860px) {
+    .banner { grid-template-columns: 1fr; }
+    .factblock { align-items: flex-start; }
+    .facts-line { white-space: normal; }
+    .page-body { grid-template-columns: 1fr; }
+    .titleblock { padding-left: 0; }
+    .titleblock h2 { white-space: normal; }
+  }
+  @media (max-width: 480px) {
+    .frame { margin-left: 0; }
+    .rail { display: none; }
+    .ch-numbers { flex-wrap: wrap; gap: 12px; }
+  }
+</style>
+
+<div class="rail" aria-hidden="true"><span></span><span></span><span></span></div>
+
+<div class="frame">
+  <div class="mock-bar">
+    <strong>Mockup · v2</strong>
+    <a href="#business">Business page</a>
+    <a href="#contact">Contact page</a>
+    <span class="faint">Fake data, FULL density, white background (the yellow FULL tint is going away). Orange pins mark the proposals; notes under each page.</span>
+  </div>
+
+  <!-- ====================================================== BUSINESS ==== -->
+  <div class="mock-divider" id="business">Business page <small>Harbor Light Brewing Co.</small></div>
+
+  <div class="banner">
+    <div class="titleblock">
+      <h2>Harbor Light Brewing Co.</h2>
+      <p class="subtitle">default contact: <a href="#contact">Dana Whitfield</a> · 3 contacts</p>
+      <div class="status-row">
+        <button type="button" class="banner-btn">New Job</button>
+        <button type="button" class="edit-link">Edit</button>
+        <button type="button" class="edit-link danger">Deactivate</button>
+        <span class="pin">1</span>
+      </div>
+    </div>
+    <div class="factblock">
+      <div class="facts-line">Customer since Mar 2024 · Last job started Sep 26 · Net 30 <span class="pin">2</span></div>
+      <div class="ch-numbers">
+        <div class="ch-item"><div class="ch-label">Open jobs</div><div class="ch-value">2</div></div>
+        <div class="ch-item"><div class="ch-label">Outstanding</div><div class="ch-value owed">$4,320.00</div></div>
+        <div class="ch-item"><div class="ch-label">Invoiced</div><div class="ch-value money-in">$48,910.00</div></div>
+        <div class="ch-item"><div class="ch-label">Profit</div><div class="ch-value money-in">$17,205.40</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-body">
+    <aside class="identity">
+      <div class="panel">
+        <div class="panel-head">Contact <span class="pin">3</span></div>
+        <dl class="facts">
+          <dt>Phone</dt><dd>(510) 555-0147</dd>
+          <dt>Web</dt><dd><a href="#business">harborlightbrewing.com</a></dd>
+          <dt>Address</dt><dd class="pre">2210 Shoreline Dr
+Alameda, CA 94501</dd>
+        </dl>
+      </div>
+      <div class="panel">
+        <div class="panel-head">Billing</div>
+        <dl class="facts">
+          <dt>Ref</dt><dd>HARBOR</dd>
+          <dt>Terms</dt><dd>Net 30</dd>
+          <dt>Tax</dt><dd>Exempt · CA-2241-887</dd>
+          <dt>Multiplier</dt><dd class="muted">full rate</dd>
+        </dl>
+      </div>
+      <div class="panel">
+        <div class="panel-head">Tags</div>
+        <div class="tags">
+          <span class="tag">brewery</span><span class="tag">repeat</span><span class="tag">east bay</span>
+          <span class="tag add">+ add</span>
+        </div>
+      </div>
+    </aside>
+
+    <main class="activity">
+      <section>
+        <div class="section-head">
+          <h3>Contacts</h3><span class="pin">4</span>
+          <span class="hint"><a class="action-link" href="#business">New contact</a></span>
+        </div>
+        <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th></th></tr></thead>
+          <tbody>
+            <tr><td><a href="#contact">Dana Whitfield</a> <span class="chip default-contact">default</span></td><td><a href="#contact">dana@harborlightbrewing.com</a></td><td>(510) 555-0162</td><td class="row-actions"><button type="button">New job</button> <button type="button" disabled title="Already the default">Set as default</button></td></tr>
+            <tr><td><a href="#contact">Marcus Lee</a></td><td><a href="#contact">marcus@harborlightbrewing.com</a></td><td>(510) 555-0171</td><td class="row-actions"><button type="button">New job</button> <button type="button">Set as default</button></td></tr>
+            <tr><td><a href="#contact">Priya Natarajan</a></td><td><a href="#contact">priya.n@harborlightbrewing.com</a></td><td class="faint">—</td><td class="row-actions"><button type="button">New job</button> <button type="button">Set as default</button></td></tr>
+          </tbody>
+        </table>
+        </div>
+      </section>
+
+      <section id="biz-jobs">
+        <div class="section-head">
+          <h3>Recent Jobs</h3><span class="pin">5</span>
+          <span class="hint"><button type="button" class="link-btn show-closed" data-label="completed">show 3 completed</button></span>
+        </div>
+        <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Job #</th><th>Name</th><th>Contact</th><th>Status</th><th>Started</th><th class="num">Estimate</th></tr></thead>
+          <tbody>
+            <tr><td><a href="#business">2026-0142</a></td><td>Tap handle set, 24 pcs</td><td>Dana Whitfield</td><td><span class="status-badge status-in_progress">In progress</span></td><td class="date">Sep 26, 2026</td><td class="num">$6,480.00</td></tr>
+            <tr><td><a href="#business">2026-0118</a></td><td>Patio wayfinding signage</td><td>Marcus Lee</td><td><span class="status-badge status-work_complete">Work complete</span></td><td class="date">Aug 11, 2026</td><td class="num">$3,920.00</td></tr>
+            <tr class="closed"><td><a href="#business">2025-0391</a></td><td>Bar top walnut inlay</td><td>Dana Whitfield</td><td><span class="status-badge status-completed">Completed</span></td><td class="date">Nov 3, 2025</td><td class="num">$12,750.00</td></tr>
+            <tr class="closed"><td><a href="#business">2025-0356</a></td><td>Taproom menu boards</td><td>Dana Whitfield</td><td><span class="status-badge status-completed">Completed</span></td><td class="date">Sep 18, 2025</td><td class="num">$2,140.00</td></tr>
+            <tr class="closed"><td><a href="#business">2024-0210</a></td><td>Keg rack prototype</td><td>Dana Whitfield</td><td><span class="status-badge status-cancelled">Cancelled</span></td><td class="date">Mar 2, 2024</td><td class="num faint">—</td></tr>
+          </tbody>
+        </table>
+        </div>
+      </section>
+
+      <section id="biz-invoices">
+        <div class="section-head">
+          <h3>Open Invoices</h3>
+          <span class="hint"><button type="button" class="link-btn show-closed" data-label="paid">show 2 paid</button></span>
+        </div>
+        <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Invoice #</th><th>Job</th><th>Status</th><th>Sent</th><th class="num">Total</th><th class="num">Paid</th><th class="num">Balance</th></tr></thead>
+          <tbody>
+            <tr><td><a href="#business">INV-2026-0088</a></td><td><a href="#business">2026-0118</a></td><td><span class="status-badge status-sent">Sent</span></td><td class="date">Sep 30, 2026</td><td class="num">$3,920.00</td><td class="num">$0.00</td><td class="num">$3,920.00</td></tr>
+            <tr><td><a href="#business">INV-2026-0071</a></td><td><a href="#business">2026-0142</a></td><td><span class="status-badge status-sent">Sent</span></td><td class="date">Sep 12, 2026</td><td class="num">$3,240.00</td><td class="num">$2,840.00</td><td class="num">$400.00</td></tr>
+            <tr class="closed"><td><a href="#business">INV-2025-0213</a></td><td><a href="#business">2025-0391</a></td><td><span class="status-badge status-paid">Paid</span></td><td class="date">Dec 15, 2025</td><td class="num">$12,750.00</td><td class="num">$12,750.00</td><td class="num">$0.00</td></tr>
+            <tr class="closed"><td><a href="#business">INV-2025-0190</a></td><td><a href="#business">2025-0356</a></td><td><span class="status-badge status-paid">Paid</span></td><td class="date">Oct 9, 2025</td><td class="num">$2,140.00</td><td class="num">$2,140.00</td><td class="num">$0.00</td></tr>
+          </tbody>
+        </table>
+        </div>
+      </section>
+
+      <div class="collapsed-section">
+        <span class="label">Purchase orders</span><span>none</span><span class="pin">6</span>
+        <a class="action-link" href="#business">New purchase order</a>
+      </div>
+
+      <section class="panel">
+        <div class="panel-head">History &amp; notes <span class="pin">7</span></div>
+        <div class="note-box"><textarea id="note-biz" placeholder="Add a note…"></textarea><button type="button">Add note</button></div>
+        <div class="history-entry"><span class="who">rachel</span> <span class="when">Oct 3, 2026 2:14 PM</span><br>Dana asked for the tap handles to ship before the Oct 24 release party. Told her we'd confirm by the 10th.</div>
+        <div class="history-entry"><span class="who">neal</span> <span class="when">Aug 14, 2026 9:02 AM</span><br>Marcus is the one to call about anything patio-related; Dana handles billing.</div>
+        <div class="history-entry system"><span class="who">rachel</span> <span class="when">Mar 4, 2024</span> · terms: — → Net 30</div>
+        <div class="history-entry system"><span class="who">System</span> <span class="when">Mar 2, 2024</span> · created</div>
+      </section>
+    </main>
+  </div>
+
+  <div class="notes">
+    <strong>Proposals on this page</strong>
+    <ol>
+      <li><span class="pin">1</span><span>Banner actions: New Job as a real button, Edit as the quiet link, and Deactivate in Delete's place. Delete appears instead only when the business has no jobs, no POs and at most one contact. Deactivate is a placeholder for now: the word appears in the banner but does nothing. The real feature (an active flag on Business and Contact, pickers and lists skipping inactive records, a Reactivate path) is tracked in the external issue tracker and ships separately.</span></li>
+      <li><span class="pin">2</span><span>Facts line and numbers are about now: customer since, last job started, terms, then open jobs, outstanding balance, lifetime invoiced and profit.</span></li>
+      <li><span class="pin">3</span><span>Identity column splits into Contact facts, Billing facts and Tags. The old Name and Reference Code rows that repeated the banner are gone. No QuickBooks anything.</span></li>
+      <li><span class="pin">4</span><span>Contacts always visible and first. Per row: New job (pre-filled with that contact) and Set as default (reversible, no confirm, disabled on the current default). New contact sits at the section head.</span></li>
+      <li><span class="pin">5</span><span>Recent Jobs shows open jobs; "show 3 completed" extends the table in place and pushes the page down. Columns gain Contact, Started and Estimate, with status pills. Needs four fields on the job summary serializer. Pagination, if ever needed, becomes a separate Job History tab.</span></li>
+      <li><span class="pin">6</span><span>An empty activity section collapses to one dashed line with its action instead of a heading over an empty table.</span></li>
+      <li><span class="pin">7</span><span>History becomes a panel at the end of the activity column, notes and system entries together.</span></li>
+    </ol>
+  </div>
+
+  <!-- ======================================================= CONTACT ==== -->
+  <div class="mock-divider" id="contact">Contact page <small>Dana Whitfield</small></div>
+
+  <div class="banner">
+    <div class="titleblock">
+      <h2>Dana Whitfield</h2>
+      <p class="subtitle">at <a href="#business">Harbor Light Brewing Co.</a> <span class="chip default-contact">default contact</span> <span class="pin">8</span></p>
+      <div class="status-row">
+        <button type="button" class="banner-btn">New Job</button>
+        <button type="button" class="edit-link">Edit</button>
+        <button type="button" class="edit-link danger">Deactivate</button>
+        <span class="pin">9</span>
+      </div>
+    </div>
+    <div class="factblock">
+      <div class="facts-line">Contact since Mar 2024 · Last job started Sep 26</div>
+      <div class="ch-numbers">
+        <div class="ch-item"><div class="ch-label">Open jobs</div><div class="ch-value">1</div></div>
+        <div class="ch-item"><div class="ch-label">Outstanding</div><div class="ch-value owed">$400.00</div></div>
+        <div class="ch-item"><div class="ch-label">Invoiced</div><div class="ch-value money-in">$18,130.00</div></div>
+        <div class="ch-item"><div class="ch-label">Profit</div><div class="ch-value money-in">$6,410.80</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-body">
+    <aside class="identity">
+      <div class="panel">
+        <div class="panel-head">Contact <span class="pin">10</span></div>
+        <dl class="facts">
+          <dt>Email</dt><dd><a href="#contact">dana@harborlightbrewing.com</a><button type="button" class="copy" data-copy="dana@harborlightbrewing.com">copy</button></dd>
+          <dt>Mobile</dt><dd><a href="#contact">(510) 555-0162</a></dd>
+          <dt>Work</dt><dd><a href="#contact">(510) 555-0147</a> <span class="faint">x204</span></dd>
+          <dt>Address</dt><dd class="pre">2210 Shoreline Dr
+Alameda, CA 94501</dd>
+        </dl>
+      </div>
+      <div class="panel">
+        <div class="panel-head">Business <span class="pin">11</span></div>
+        <div class="business-card">
+          <a class="name" href="#business">Harbor Light Brewing Co.</a>
+          <span class="line">(510) 555-0147 · Net 30 · tax exempt</span>
+          <ul class="siblings">
+            <li><a href="#contact">Marcus Lee</a><small>1 job</small></li>
+            <li><a href="#contact">Priya Natarajan</a><small>no jobs</small></li>
+          </ul>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">Tags</div>
+        <div class="tags">
+          <span class="tag">billing</span><span class="tag">decision maker</span>
+          <span class="tag add">+ add</span>
+        </div>
+      </div>
+    </aside>
+
+    <main class="activity">
+      <section id="contact-jobs">
+        <div class="section-head">
+          <h3>Recent Jobs</h3><span class="pin">12</span>
+          <span class="hint"><button type="button" class="link-btn show-closed" data-label="completed">show 3 completed</button></span>
+        </div>
+        <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Job #</th><th>Name</th><th>Status</th><th>Started</th><th class="num">Estimate</th></tr></thead>
+          <tbody>
+            <tr><td><a href="#contact">2026-0142</a></td><td>Tap handle set, 24 pcs</td><td><span class="status-badge status-in_progress">In progress</span></td><td class="date">Sep 26, 2026</td><td class="num">$6,480.00</td></tr>
+            <tr class="closed"><td><a href="#contact">2025-0391</a></td><td>Bar top walnut inlay</td><td><span class="status-badge status-completed">Completed</span></td><td class="date">Nov 3, 2025</td><td class="num">$12,750.00</td></tr>
+            <tr class="closed"><td><a href="#contact">2025-0356</a></td><td>Taproom menu boards</td><td><span class="status-badge status-completed">Completed</span></td><td class="date">Sep 18, 2025</td><td class="num">$2,140.00</td></tr>
+            <tr class="closed"><td><a href="#contact">2024-0210</a></td><td>Keg rack prototype</td><td><span class="status-badge status-cancelled">Cancelled</span></td><td class="date">Mar 2, 2024</td><td class="num faint">—</td></tr>
+          </tbody>
+        </table>
+        </div>
+      </section>
+
+      <section id="contact-invoices">
+        <div class="section-head">
+          <h3>Open Invoices</h3>
+          <span class="hint"><button type="button" class="link-btn show-closed" data-label="paid">show 2 paid</button></span>
+        </div>
+        <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Invoice #</th><th>Job</th><th>Status</th><th>Sent</th><th class="num">Total</th><th class="num">Paid</th><th class="num">Balance</th></tr></thead>
+          <tbody>
+            <tr><td><a href="#contact">INV-2026-0071</a></td><td><a href="#contact">2026-0142</a></td><td><span class="status-badge status-sent">Sent</span></td><td class="date">Sep 12, 2026</td><td class="num">$3,240.00</td><td class="num">$2,840.00</td><td class="num">$400.00</td></tr>
+            <tr class="closed"><td><a href="#contact">INV-2025-0213</a></td><td><a href="#contact">2025-0391</a></td><td><span class="status-badge status-paid">Paid</span></td><td class="date">Dec 15, 2025</td><td class="num">$12,750.00</td><td class="num">$12,750.00</td><td class="num">$0.00</td></tr>
+            <tr class="closed"><td><a href="#contact">INV-2025-0190</a></td><td><a href="#contact">2025-0356</a></td><td><span class="status-badge status-paid">Paid</span></td><td class="date">Oct 9, 2025</td><td class="num">$2,140.00</td><td class="num">$2,140.00</td><td class="num">$0.00</td></tr>
+          </tbody>
+        </table>
+        </div>
+      </section>
+
+      <div class="collapsed-section">
+        <span class="label">Purchase orders</span><span>none</span>
+        <a class="action-link" href="#contact">New purchase order</a>
+      </div>
+
+      <section class="panel">
+        <div class="panel-head">History &amp; notes</div>
+        <div class="note-box"><textarea id="note-contact" placeholder="Add a note…"></textarea><button type="button">Add note</button></div>
+        <div class="history-entry"><span class="who">rachel</span> <span class="when">Oct 3, 2026 2:14 PM</span><br>Wants the tap handles before the Oct 24 release party. Prefers text over email for quick questions.</div>
+        <div class="history-entry system"><span class="who">neal</span> <span class="when">Jun 20, 2025</span> · mobile_number: — → (510) 555-0162</div>
+        <div class="history-entry system"><span class="who">System</span> <span class="when">Mar 2, 2024</span> · created</div>
+      </section>
+    </main>
+  </div>
+
+  <div class="notes">
+    <strong>Proposals on this page</strong>
+    <ol>
+      <li><span class="pin">8</span><span>The subtitle keeps the business link and adds a "default contact" badge when this person is the one. Making someone the default happens from the business page's contact rows.</span></li>
+      <li><span class="pin">9</span><span>Same banner actions as the business page: New Job button (contact pre-filled, still changeable in the modal), Edit, and Deactivate. Delete shows instead only when the contact has no jobs and isn't the business's only contact, which is today's delete rule. Contacts get Deactivate too; same placeholder-for-now status as the business page.</span></li>
+      <li><span class="pin">10</span><span>One Contact panel, same name as on the business page: email with a copy button, phones labelled and dialable, address as a block. The Name row is gone, the banner already says it.</span></li>
+      <li><span class="pin">11</span><span>The business block shrinks to a card: name, the three facts you'd want mid-call, and the other people at that business with their job counts. Replaces the old "Business Details" dump.</span></li>
+      <li><span class="pin">12</span><span>Recent Jobs and Open Invoices behave exactly as on the business page, minus the Contact column. POs collapse when empty, history closes the column.</span></li>
+    </ol>
+    <p class="muted">Left out on purpose: emails by contact (needs a backend sender match), a job-style nav rail with section pages, and any LITE trimming (later pass).</p>
+  </div>
+</div>
+
+<script>
+  (function () {
+    // "show N completed / paid" extends the table in place.
+    document.querySelectorAll('.show-closed').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var section = btn.closest('section');
+        var n = section.querySelectorAll('tr.closed').length;
+        var label = btn.getAttribute('data-label');
+        var open = section.classList.toggle('expanded');
+        btn.textContent = open ? ('hide ' + n + ' ' + label) : ('show ' + n + ' ' + label);
+      });
+    });
+
+    document.querySelectorAll('.copy').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var text = btn.getAttribute('data-copy');
+        var done = function () { btn.textContent = 'copied'; setTimeout(function () { btn.textContent = 'copy'; }, 1200); };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done, done);
+        } else { done(); }
+      });
+    });
+  })();
+</script>

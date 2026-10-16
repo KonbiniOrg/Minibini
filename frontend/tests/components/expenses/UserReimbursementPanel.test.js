@@ -71,3 +71,36 @@ describe('UserReimbursementPanel', () => {
     expect(queryByText(/Reimburse selected/)).toBeNull();
   });
 });
+
+describe('UserReimbursementPanel — batch form is a modal (2026-10-10)', () => {
+  it('Reimburse selected opens the batch modal with the count and total, and submits', async () => {
+    const { within, waitFor } = await import('@testing-library/svelte');
+    api.post.mockResolvedValue({ id: 10 });
+    const { findAllByRole, findByRole, findByText } = render(UserReimbursementPanel, { props: { user: { id: 7 } } });
+    const checkboxes = await findAllByRole('checkbox');
+    await fireEvent.click(checkboxes[1]);
+    await fireEvent.click(await findByText(/Reimburse selected/));
+    const dialog = await findByRole('dialog', { name: 'Create reimbursement' });
+    expect(dialog).toHaveTextContent(/Reimburse 1 expense/);
+    expect(dialog).toHaveTextContent('$12.50');
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm reimbursement' }));
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/api/reimbursements/', expect.objectContaining({ purchased_by: 7, expense_ids: [1] })));
+  });
+});
+
+describe('UserReimbursementPanel — batch modal reopens clean (review fix)', () => {
+  it('a submit error does not survive Cancel → reopen', async () => {
+    const { within, waitFor } = await import('@testing-library/svelte');
+    api.post.mockRejectedValue({ status: 400, data: { detail: 'Batch failed.' }, message: 'Batch failed.' });
+    const { findAllByRole, findByRole, findByText, queryByText } = render(UserReimbursementPanel, { props: { user: { id: 7 } } });
+    await fireEvent.click((await findAllByRole('checkbox'))[1]);
+    await fireEvent.click(await findByText(/Reimburse selected/));
+    const dialog = await findByRole('dialog', { name: 'Create reimbursement' });
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm reimbursement' }));
+    await waitFor(() => expect(within(dialog).getByText('Batch failed.')).toBeInTheDocument());
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await fireEvent.click(await findByText(/Reimburse selected/));
+    await findByRole('dialog', { name: 'Create reimbursement' });
+    expect(queryByText('Batch failed.')).toBeNull();
+  });
+});

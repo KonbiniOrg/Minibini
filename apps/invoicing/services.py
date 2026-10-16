@@ -132,6 +132,8 @@ class InvoiceService:
             invoice = Invoice.objects.get(pk=invoice_pk)
         except Invoice.DoesNotExist:
             raise NotFoundError(f'Invoice {invoice_pk} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(invoice.job, 'edit this invoice')
         InvoiceService._validate_draft(invoice)
         if deposit:
             kwargs['accounting_category'] = (
@@ -159,6 +161,8 @@ class InvoiceService:
             invoice = Invoice.objects.get(pk=invoice_pk)
         except Invoice.DoesNotExist:
             raise NotFoundError(f'Invoice {invoice_pk} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(invoice.job, 'edit this invoice')
         InvoiceService._validate_draft(invoice)
         try:
             pli = InventoryItem.objects.get(pk=pli_pk)
@@ -192,6 +196,8 @@ class InvoiceService:
             invoice = Invoice.objects.get(pk=invoice_pk)
         except Invoice.DoesNotExist:
             raise NotFoundError(f'Invoice {invoice_pk} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(invoice.job, 'edit this invoice')
         InvoiceService._validate_draft(invoice)
         try:
             service_item = ServiceItem.objects.select_related(
@@ -221,6 +227,8 @@ class InvoiceService:
             li = InvoiceLineItem.objects.get(pk=line_item_id)
         except InvoiceLineItem.DoesNotExist:
             raise NotFoundError(f'InvoiceLineItem {line_item_id} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(li.invoice.job, 'edit this invoice')
         InvoiceService._validate_draft(li.invoice)
         if li.is_deposit_deduction:
             locked = {'qty', 'price', 'accounting_category',
@@ -245,6 +253,8 @@ class InvoiceService:
             invoice = Invoice.objects.get(pk=invoice_pk)
         except Invoice.DoesNotExist:
             raise NotFoundError(f'Invoice {invoice_pk} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(invoice.job, 'edit this invoice')
         InvoiceService._validate_draft(invoice)
         from django.db import transaction as db_transaction
         with db_transaction.atomic():
@@ -261,6 +271,8 @@ class InvoiceService:
             line_item = InvoiceLineItem.objects.get(pk=line_item_id)
         except InvoiceLineItem.DoesNotExist:
             raise NotFoundError(f'InvoiceLineItem {line_item_id} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(line_item.invoice.job, 'edit this invoice')
         if line_item.invoice.status != Invoice.STATUS_DRAFT:
             raise ValidationError(
                 'Cannot modify line items on a non-draft invoice.'
@@ -284,6 +296,8 @@ class InvoiceService:
             invoice = Invoice.objects.get(pk=invoice_pk)
         except Invoice.DoesNotExist:
             raise NotFoundError(f'Invoice {invoice_pk} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(invoice.job, 'edit this invoice')
         # Going through save() also releases the invoice's atom claims —
         # cancelled is one of DEAD_INVOICE_STATUSES (apps/invoicing/claims.py).
         invoice.status = Invoice.STATUS_CANCELLED
@@ -308,6 +322,8 @@ class InvoiceService:
     @staticmethod
     def discard_draft(invoice):
         """Hard-delete a draft invoice; cascades to line items and sources."""
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(invoice.job, 'edit this invoice')
         InvoiceService._validate_draft(invoice)
         invoice.delete()
 
@@ -321,6 +337,8 @@ class InvoiceService:
             line_item = InvoiceLineItem.objects.get(pk=line_item_id)
         except InvoiceLineItem.DoesNotExist:
             raise NotFoundError(f'InvoiceLineItem {line_item_id} not found')
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(line_item.invoice.job, 'edit this invoice')
         return InvoiceService.remove_line(line_item.invoice, line_item)
 
     @staticmethod
@@ -344,6 +362,8 @@ class InvoiceService:
         from django.db import transaction
         from apps.estimates.agreement import compose_agreement
 
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(invoice.job, 'edit this invoice')
         if invoice.status != Invoice.STATUS_DRAFT:
             raise ValidationError(
                 'Copy from estimate is only available on a draft invoice.'
@@ -404,6 +424,8 @@ class InvoiceService:
         Raises ValidationError if the invoice is not draft or the service is
         not a PERCENTAGE algorithm.
         """
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(invoice.job, 'edit this invoice')
         from django.db import transaction
         from django.db.models import Max
         from apps.jobs.models import RateScheme
@@ -723,6 +745,8 @@ class InvoiceService:
         from django.db.models import Max
         from apps.core.adjustments import recompute_adjustments
 
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(invoice.job, 'edit this invoice')
         InvoiceService._validate_draft(invoice)
 
         with transaction.atomic():
@@ -808,6 +832,8 @@ class InvoiceService:
             raise ValidationError(
                 'Exactly one of estimate_line_id or co_line_id is required.')
 
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(invoice.job, 'edit this invoice')
         InvoiceService._validate_draft(invoice)
 
         with transaction.atomic():
@@ -871,6 +897,8 @@ class InvoiceService:
         reference along with it) and cascades its InvoiceLineItemSource rows
         (claims) — the agreement line becomes "remaining" again.
         """
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(invoice.job, 'edit this invoice')
         InvoiceService._validate_draft(invoice)
         if line_item.invoice_id != invoice.pk:
             raise ValidationError('Line item does not belong to this invoice.')
@@ -978,6 +1006,25 @@ class InvoiceEmailService:
             )
 
     @staticmethod
+    def _assert_total_non_negative(invoice):
+        """Raise if the invoice's grand total is negative (I3 review
+        finding). QuickBooks Online rejects a negative-total invoice
+        outright, so this must be caught here — before the QBO push, PDF
+        generation, or email send — with a clear, contract-shaped error
+        instead of letting the push fail opaquely against the QBO API.
+        Same total computation InvoiceSerializer.get_total uses."""
+        total = sum(
+            (li.qty * li.price for li in invoice.invoicelineitem_set.all()),
+            Decimal('0.00'),
+        )
+        if total < 0:
+            raise ValidationError(
+                'QuickBooks cannot accept a negative-total invoice. '
+                'Adjust the line items so the total is zero or positive '
+                'before sending.'
+            )
+
+    @staticmethod
     def send_invoice(invoice, *, to, subject, body, cc=None, bcc=None,
                      extra_attachments=None):
         """Send an Invoice. Pushes to QBO if needed, attaches the QBO
@@ -990,7 +1037,10 @@ class InvoiceEmailService:
             QBOService, QBOInvoiceSyncService, QBOCustomerSyncService,
         )
 
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(invoice.job, 'send this invoice')
         InvoiceEmailService._assert_all_lines_categorized(invoice)
+        InvoiceEmailService._assert_total_non_negative(invoice)
 
         if not to:
             raise ValidationError('Recipient email address is required.')
@@ -1142,6 +1192,8 @@ class InvoiceWizardService(BaseWizardService):
         deposit-invoice path opts out since it wants an empty, deposit-only
         draft. An existing draft is returned as-is and never re-seeded.
         """
+        from apps.jobs.services import JobService
+        JobService.assert_mutable(job, 'start an invoice for this job')
         if job.status not in InvoiceWizardService.BILLABLE_JOB_STATUSES:
             raise ValidationError(
                 f'Cannot start an invoice for a job in status "{job.status}". '

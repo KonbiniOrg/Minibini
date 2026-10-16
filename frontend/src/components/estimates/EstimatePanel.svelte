@@ -1,8 +1,12 @@
 <script>
   import { link } from 'svelte-spa-router';
+  import { untrack } from 'svelte';
   import { api, errorMessage } from '../../lib/api.js';
+  import { deliverablesVersion, notifyDeliverablesChanged } from '../../stores/deliverables.js';
   import { showError } from '../../stores/messages.js';
   import DocSubnav from '../jobs/DocSubnav.svelte';
+  import DeliverablesEditModal from '../jobs/DeliverablesEditModal.svelte';
+  import DocumentSendModal from '../email/DocumentSendModal.svelte';
   import { buildEstimateDocItems } from '../../lib/estimateDocs.js';
   import DocModeBar from '../docsurface/DocModeBar.svelte';
   import DocCustomerView from '../docsurface/DocCustomerView.svelte';
@@ -10,6 +14,7 @@
   import EstimateEditView from './EstimateEditView.svelte';
   import { getJobWs, rememberMode } from '../../stores/jobWorkspace.js';
   import { user } from '../../stores/auth.js';
+  import LoadState from '../LoadState.svelte';
 
   let { job, estimateId, onJobChange = () => {} } = $props();
 
@@ -192,7 +197,7 @@
       if (silent) {
         showError(errorMessage(e, 'Could not refresh the estimate.'));
       } else {
-        error = e.message || 'Could not load estimate.';
+        error = errorMessage(e, 'Could not load estimate.');
       }
     } finally {
       if (!silent) docLoading = false;
@@ -214,12 +219,79 @@
     try {
       await api.post(`/api/estimates/${estimate.estimate_id}/line-items/${li.line_item_id}/make-deliverable/`);
       await loadEstimate({ silent: true });
-      // Refresh the host job so the context band's Deliverables panel shows
-      // the new row (its load effect keys on the job object identity).
-      onJobChange();
+      handleDeliverablesChanged();
     } catch (e) {
       showError(errorMessage(e, 'Could not make a deliverable from this line.'));
     }
+  }
+
+  // Any gesture here that changes the JOB's deliverables (Make Deliverable,
+  // removing a line together with its deliverable, the line edit dialog
+  // updating a linked row): bump the shared store so every copy of the list
+  // refetches (this panel's send gate included), and refresh the host job.
+  function handleDeliverablesChanged() {
+    notifyDeliverablesChanged();
+    onJobChange();
+  }
+
+  // Send Email gate. The server refuses to open an estimate on a job with
+  // no deliverables (EstimateService.mark_open, jobs-and-tasks.md §12.3),
+  // so rather than let the user fill in the email form and then hit that
+  // error, a draft's Send Email becomes a button that opens the
+  // deliverables editor with a notice. null = not loaded yet (treated as
+  // "has some": the link renders and the server still guards).
+  let deliverables = $state(null);
+  let deliverablesModalOpen = $state(false);
+  const needsDeliverables = $derived(deliverables !== null && deliverables.length === 0);
+
+  async function loadDeliverables() {
+    try {
+      deliverables = await api.get(`/api/jobs/${jobId}/deliverables/`);
+    } catch (_) {
+      deliverables = null;
+    }
+  }
+
+  // Refetch when any other view mutates the list (e.g. the context band's
+  // modal deleting the last row), so the gate never lags the server.
+  let lastDeliverablesVersion = $state(0);
+  $effect(() => {
+    const v = $deliverablesVersion;
+    if (v !== lastDeliverablesVersion) {
+      lastDeliverablesVersion = v;
+      if (jobId) untrack(() => loadDeliverables());
+    }
+  });
+
+  // Send affordances are buttons in every state (RM 2026-09-29); the email
+  // step is DocumentSendModal over this panel (2026-10-10).
+  let sendOpen = $state(false);
+  function goToSend() {
+    sendOpen = true;
+  }
+
+  async function handleSent() {
+    sendOpen = false;
+    await loadEstimate({ silent: true });
+    onJobChange();
+  }
+
+  function handleSendEmail() {
+    if (needsDeliverables) {
+      deliverablesModalOpen = true;
+    } else {
+      goToSend();
+    }
+  }
+
+  async function handleDeliverablesModalClose(changed) {
+    deliverablesModalOpen = false;
+    if (!changed) return;
+    await loadDeliverables();
+    onJobChange();
+    // The user was on their way to send; carry on once the job has a
+    // deliverable. Cancel (or an empty save) stays here.
+    if (!needsDeliverables) goToSend();
   }
 
   // Value-keyed: the glue (JobEstimatePage) assigns a new `job` object on
@@ -271,6 +343,7 @@
     if (jobId) {
       loadVersions();
       loadChangeOrders();
+      loadDeliverables();
     }
   });
 
@@ -333,11 +406,8 @@
 {/if}
 
 {#if estimateId}
-  {#if docLoading}
-    <p>Loading...</p>
-  {:else if error}
-    <p class="error">{error}</p>
-  {:else if estimate}
+  <LoadState loading={docLoading} {error}>
+  {#if estimate}
   <div class="page-body">
   <div class="toolbar">
     <span class="page-title" class:superseded={isSuperseded}>Estimate: {estimate.estimate_number}-{estimate.version}</span>
@@ -361,10 +431,10 @@
       <span class="status-badge status-{estimate.status}">{estimate.is_amended ? 'amended' : estimate.status}</span>
     {/if}
     {#if canManageJobs && estimate.status === 'draft'}
-      <a class="action-link" href="#/estimates/{estimate.estimate_id}/send">Send Email</a>
+      <button type="button" class="action-link" onclick={handleSendEmail}>Send Email</button>
     {/if}
     {#if canManageJobs && estimate.status === 'open'}
-      <a class="action-link" href="#/estimates/{estimate.estimate_id}/send">Resend Email</a>
+      <button type="button" class="action-link" onclick={goToSend}>Resend Email</button>
     {/if}
     {#if canManageJobs && estimate.status === 'open'}
       <button type="button" onclick={handleRevise} disabled={revising}>
@@ -425,7 +495,7 @@
       {lineItems}
       {categories}
       onMakeDeliverable={canEdit ? handleMakeDeliverable : null}
-      onDeliverablesChanged={onJobChange}
+      onDeliverablesChanged={handleDeliverablesChanged}
       {canMint}
       onWorkDecisionChanged={onJobChange}
       jobStatus={job?.status}
@@ -446,9 +516,9 @@
   {/if}
   </div>
   {/if}
-{:else if !listLoaded}
-  <p>Loading...</p>
+  </LoadState>
 {:else}
+<LoadState loading={!listLoaded}>
   <div class="page-body">
     <!-- Estimates belong to the quoting phase (draft/submitted): on a job
          past that (hand-approved estimate-less, or later) the backend
@@ -463,6 +533,24 @@
       <p>No estimates yet.</p>
     {/if}
   </div>
+</LoadState>
+{/if}
+
+{#if deliverablesModalOpen && estimate}
+  <DeliverablesEditModal
+    jobId={estimate.job}
+    notice="Deliverables are required before this estimate can be sent."
+    onClose={handleDeliverablesModalClose}
+  />
+{/if}
+
+{#if estimate}
+  <DocumentSendModal open={sendOpen} label="Send estimate" title="Send Estimate"
+    defaultsUrl={`/api/estimates/${estimate.estimate_id}/send-defaults/`}
+    sendUrl={`/api/estimates/${estimate.estimate_id}/send/`}
+    submitLabel="Send Email"
+    onSent={handleSent}
+    onClose={() => { sendOpen = false; }} />
 {/if}
 
 <style>

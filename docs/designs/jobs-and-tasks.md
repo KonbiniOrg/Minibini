@@ -497,6 +497,87 @@ projects the new Job's atoms (`estimates-and-prices.md` §7).
 Estimates, invoices, purchase orders, shipments, change orders,
 history entries, and bleps are never carried over to the new Job.
 
+### 3.7 Frozen jobs (inactive contact)
+
+(2026-10-11, contacts-refine; spec `docs/plans/2026-10-11-contacts-refine-design.md`
+§5.1. Companion: the PO equivalent in `materials-inventory-and-purchasing.md`;
+the party-side rules in `contacts-and-businesses.md` "Active / inactive
+status".)
+
+A job whose `contact` is inactive (the contact was deactivated, or its
+business was and the cascade took the contact with it) is **frozen**: it
+accepts no *user-driven* mutation until the contact is reactivated or the
+job is moved to an active contact. There is no stored flag — frozen is
+derived (`not job.contact.is_active`).
+
+**Guard.** `_assert_job_not_frozen(job, action)` in `apps/jobs/services.py`
+raises a plain `ValidationError` (a 400 `{detail}`):
+
+> Cannot {action}: this job's contact, {name}, is inactive. Reactivate the
+> contact, or move the job to an active contact at {business}, before making
+> changes.
+
+(the "or move the job…" clause appears only when the contact's business
+exists and is active; otherwise the sentence is `…is inactive. Reactivate
+the contact, before making changes.`). It is the sibling of
+`_assert_job_not_on_hold`, and `JobService.assert_mutable(job, action)` is
+its public wrapper for other apps.
+
+**Call sites** (each mirrors where `_assert_job_not_on_hold` sits, plus the
+job-level methods the hold guard never needed):
+
+- *Jobs services:* `JobService.update_job` (non-system calls), `hold_job`,
+  `release_job`, `assert_job_deletable` (the delete guard), release-materials; `TaskService` add /
+  generate / edit / delete / reorder / change-assignment;
+  `TaskLifecycleService` quantity entry, complete, block, unblock, cancel,
+  stop-work, cancel-work; `BlepService` create (via
+  `_assert_job_allows_blep`, which is also what starting work goes through),
+  edit and delete.
+- *Other domains:* material add / edit / restock
+  (`apps/inventory/services.py`); every estimate and change-order mutator,
+  status change and send (`apps/estimates/services.py`,
+  `change_order_service.py`); deliverables and shipments
+  (`apps/deliverables/services.py`); invoice create/edit/line/send paths
+  (`apps/invoicing/services.py`); the jobs API `notes` action (a frozen job
+  takes no notes).
+- *Wizard funnel:* `BaseWizardService._assert_job_mutable(container, action)`
+  (`apps/core/wizard.py`) is the one check every public wizard mutator
+  calls, so the estimate and change-order atom wizards share it.
+
+**Bypass — system transitions never call the guard.** Estimate-acceptance
+cascades and other status walks run `update_job(..., system_transition=True)`,
+which skips it. `EstimateService.update_status` and
+`ChangeOrderService.update_status` gained a keyword-only
+`system_transition=False` for the same reason: the two expiry commands
+(`mark_estimates_expired`, `mark_change_orders_expired`) pass `True`, since
+expiring a stale document on a frozen job is bookkeeping, not an edit.
+Every user/portal path leaves it `False` and is refused.
+
+**Carve-out — the swap.** `update_job` lets exactly one user edit through a
+frozen job: a PATCH whose kwargs are *exactly* `{'contact'}`, where the new
+contact is active, belongs to the **same non-null business** as the current
+contact, and that business is active. Any other kwarg alongside `contact`
+(or a business-less / cross-business swap) is refused as frozen. Whatever
+the job's state, `update_job` also rejects moving the job *onto* an
+inactive party (`_assert_party_active(new_contact)`: `{contact: ['… is
+inactive.']}`, or `['{business} is inactive.']` when the contact's business
+is). The same `_assert_party_active` guards `create_job` (hence also
+`duplicate_job`).
+
+**`Job.clean` exception.** The model rule "contact immutable once the job
+leaves draft" (data-constraints §1.8) has one exception, encoded in
+`Job._is_inactive_contact_swap(old, new)`: the old contact is inactive, the
+new contact is active, both belong to the same non-null business, and that
+business is active. Without it the swap above would pass the service and be
+rejected by `full_clean()`. (Controller ruling: the exception lives in the
+model so the invariant stays true at the model level.)
+
+**Serializer flags.** `JobSerializer` exposes read-only
+`contact_is_active`, `contact_business_id`, `contact_business_name` and
+`contact_business_is_active` (the last two are `null` for a business-less
+contact) — what the SPA needs to render the banner and scope the swap
+picker, with no extra fetch.
+
 ## 4. Task
 
 `Task` is defined at `apps/jobs/models.py`. Tasks belong to a Job
@@ -790,10 +871,8 @@ open Blep refuses (internal-caller semantics unchanged).
 **Fee retired 2026-08-09** — the `jobs.Fee` model (`db_table='fees'`,
 the Job's former fixed-charge atom: `quantity × unit_rate`, no lifecycle,
 always billable) was deleted, along with `FeeService` and the
-`POST/PATCH/DELETE /api/jobs/{id}/fees/` endpoints (migrations
-`apps/estimates/migrations/0046_alter_changeorderlineitem_is_material_and_more.py`,
-`apps/invoicing/migrations/0025_alter_invoicelineitemsource_source_type.py`,
-`apps/jobs/migrations/0062_delete_fee.py`).
+`POST/PATCH/DELETE /api/jobs/{id}/fees/` endpoints (the fee-purge migrations were consolidated away 2026-10; no
+surviving dataset carries `fee` source rows).
 
 There is no replacement atom. A plain hand-authored line (an
 `EstimateLineItem`/`ChangeOrderLineItem` with no `service_item`, no
@@ -1138,21 +1217,22 @@ kanban-style overview of all current and recently-closed jobs. All data
 comes from `BoardService` (`apps/jobs/services.py`).
 
 The board is the sidebar's "Jobs" destination, so it also carries the
-**New Job** entry point — `components/board/NewJobButton.svelte`, a link
-(gated on `can_manage_jobs`) to `#/jobs/new`, the from-scratch create
-form (`JobFormPage` → `components/jobs/JobForm.svelte` →
-`POST /api/jobs/`). It sits top-right *inside each pillar's header*,
+**New Job** entry point — `components/board/NewJobButton.svelte`, a
+button (gated on `can_manage_jobs`) that opens `JobCreateModal`
+(`components/jobs/`, wrapping `JobForm.svelte` → `POST /api/jobs/`) over
+the board; a create lands on the new job. It sits top-right *inside each pillar's header*,
 absolutely positioned so it doesn't shift the header's centered title;
 the four headers just add `position: relative`. A page-level bar above
 the board was the first cut and was dropped — it cost a full-width strip
 of board height for one button. Since exactly one pillar is expanded at
 a time, exactly one button is on screen.
-Added 2026-07-31: before it, `/jobs/new` was reachable only from a
-contact/business detail page's "New Job" link, from the email→job flow,
-or by typing the URL — the `#/jobs` list page that carries the other
-link is not linked from anywhere. RM has flagged that the create form
-itself should become a Modal (the standard for data entry) in a later
-pass; only the entry point is wired now.
+Added 2026-07-31; the form became `JobCreateModal` on 2026-10-10
+(replacing `JobFormPage`). The same modal opens from the `#/jobs` list's
+New Job button and from a contact/business detail page's **New Job**
+button, which pre-selects the customer via `defaultContactId` (the old
+`?contact=` query string). `/jobs/new` is a `RedirectTo` stub bouncing to
+the board; the email→job flow is `EmailCreateJobModal` (architecture doc
+§7.11).
 
 ### 8.1 Columns
 
@@ -1205,8 +1285,89 @@ stored. Examples (full list in `apps/jobs/services.py`):
 - `work-ready` — all tasks pending
 - `in-progress` — at least one task in progress
 - `blocked` — at least one task blocked (takes priority)
-- `needs-invoice` / `invoice-prepped` / `invoice-sent` — for
-  `work_complete` jobs based on Invoice state
+- `needs-invoice` / `invoice-prepped` / `invoice-sent` / `needs-pickup`
+  — for `work_complete` jobs based on Invoice + pickup state, checked in
+  this priority order over the job's live (non-cancelled, non-superseded)
+  invoices: any invoice in `Invoice.UNPAID_STATUSES` (open / partly-paid
+  / defaulted — sent and still owed) → `invoice-sent`; else any draft →
+  `invoice-prepped`; else a **paid non-deposit invoice** exists and
+  `DeliverableService.all_deliverables_shipped` is false →
+  `needs-pickup` (the real bill is settled, the customer hasn't
+  collected — live, the paid-*and*-collected variant never reaches the
+  board because the completion gate closes the job); else
+  `needs-invoice`, which deliberately includes the job whose only paid
+  invoice is a deposit — the final invoice hasn't been started, whatever
+  the pickup state (RM 2026-10-13/14). "Deposit invoice" is the system's
+  own definition: it carries a deposit line (`InvoiceLineItem.is_deposit_line`).
+
+**Grouped columns carry a server-computed `section` (2026-10-14).**
+Pipeline and Unpaid are the two columns that group their cards. The
+server decides where every card lives — `BoardService.pipeline_section`
+/ `unpaid_section`, emitted as `section` on each Pipeline and Unpaid
+payload row — and the browser only maps keys to labels and colors, the
+same division of labour In Progress already has (its worker columns are
+shaped server-side). `section` is deliberately distinct from
+`sub_status`: the sub-status answers "what should the pill say" and the
+hold flag wins there (`on-hold`), while the section answers "where does
+the card sit" and ignores the hold, applying the underlying estimate or
+invoice rule. No browser re-derivation of either rule remains (RM: the
+earlier client-side fallback duplicated a backend rule and was exercised
+only on held cards, so it could drift unnoticed).
+
+**Pipeline column sections (2026-10-11, server-sectioned 2026-10-14).**
+`PipelineColumn.svelte` groups its cards by `section` into four ordered
+sections, each under a small uppercase header tinted with the same hex
+as the cards' tab (`JobCard.BORDER_COLORS`), so the header reads as the
+tab of the cards beneath it. Top to bottom: **Inquiries**
+(`needs-scoping`, grey), **Estimating** (`estimating`, blue), **Awaiting
+Approval** (`awaiting-response`, brown), **Awaiting Prep**
+(`awaiting-prep` — every `approved` job, gold — the pre-existing
+section, which keeps its drop-shadow treatment). `pipeline_section`
+returns `awaiting-prep` for `approved` and otherwise
+`_pipeline_sub_status` (hold ignored); a held-from-`approved` job
+therefore sits in Awaiting Prep with an `on-hold` pill. An empty
+section renders no header. The seed-independent e2e spec
+`e2e/specs/job-board/pipeline-sections.spec.js` reads the expected
+layout off the payload's `section` values.
+
+**Unpaid column sections (2026-10-13, Needs Pickup + server-sectioned
+2026-10-14).** `UnpaidColumn.svelte` groups its cards by `section` into
+four ordered sections: **Needs Invoice** (`needs-invoice`, grey
+`#64748b`), **Invoice Drafted** (`invoice-prepped`, amber `#f59e0b`),
+**Awaiting Payment** (`invoice-sent`, blue `#3b82f6`), **Needs Pickup**
+(`needs-pickup`, purple `#7c3aed` — the board's "completed" tint, since
+the job is finished in every sense but collection). The labels/colors
+table is `frontend/src/lib/unpaidSections.js`, shared by the column
+headers and `UnpaidCard.svelte`'s tab color (and its Needs-Invoice
+block / "Awaiting pickup" footer), so tab and header can never disagree.
+`unpaid_section` is `_work_complete_sub_status` applied to *any* lane
+job — the rule reads only invoices and deliverable fulfillment, never
+status or hold — which is why it has to be server-side: the fulfillment
+and per-invoice deposit-ness it needs aren't on the card payload. The
+lane's membership is unchanged — every `work_complete` job **plus**
+any-status jobs with an invoice in draft/open/partly-paid/defaulted —
+so cards whose `sub_status` is not an invoice state do appear and get a
+section like any other: a held job (`on-hold` pill), a cancelled job
+carrying a receivable (`null`), an `in_progress` job with a
+deposit/progress invoice (`work-ready` etc.). An `in_progress` job with
+a live invoice therefore shows in **both** In Progress and Unpaid (RM
+2026-10-13 — the floor's view and the office's receivables view; same
+reasoning as pre-approval jobs appearing in both Pipeline and In
+Progress), drafts included; the Unpaid card wears a small **status
+badge** (title-cased job status, e.g. "In Progress", "Cancelled")
+whenever the job is not `work_complete`, so the reader sees why it sits
+in the money column. A Needs Pickup card lists its (paid) invoice rows
+and its footer reads **"Awaiting pickup"** instead of an amount due. An
+empty section renders no header. E2E:
+`e2e/specs/job-board/unpaid-sections.spec.js`, reads the layout off
+the payload's `section` values like the Pipeline one.
+
+Converted (nealsdata) datasets can show jobs under Needs Pickup or
+Needs Invoice that the live app would have auto-completed: the
+converter writes final invoice/shipment states without replaying the
+completion gate (`JobService.maybe_complete_if_resolved`). A converter
+reconcile pass to promote such jobs is planned separately (RM
+2026-10-14).
 
 ### 8.3 Configuration
 
@@ -1227,7 +1388,10 @@ list). Tasks within a column are sorted by `worker_queue`. Drag-and-drop assigns
   supplied) returns `{needs_worker_time: true}` instead of assigning, so
   the UI can prompt: the board drag-and-drop pops an interrupting duration
   modal (`WorkerTimePromptModal`), and the Assign modal shows a required
-  duration field. Unassigning never requires a duration. A task whose
+  duration field. The board modal shows the task's name and estimated
+  quantity (`est_qty` + `unit_label`, via `formatQtyUnits`) above the
+  duration input for reference; the board task dict carries both fields
+  for this (`BoardService._serialize_task`). Unassigning never requires a duration. A task whose
   rate scheme is an hour-unit scheme already carries `est_worker_time` by
   the time it reaches assign — crystallized from `est_qty` via
   `ServiceItem.generate_task` (estimate/CO acceptance, add-from-template)
@@ -1252,11 +1416,11 @@ Every board payload row (Pipeline, In Progress, Unpaid, Closed) carries a
 derived `deposit_state` (`'requested'` | `'paid'` | absent — computed by
 `BoardService._deposit_states`, one query pair per board call; see
 `invoicing-and-expenses.md` §Deposits for the underlying rule and the
-requested-wins-over-paid tie-break with multiple deposits). Today only
-`JobCard.svelte` renders it — a **"DEP REQUESTED"**/**"DEP PAID"** banner
-— so it's visible on Pipeline column cards and the In Progress
-chip-hover card (`JobChipStrip.svelte`), not on `UnpaidCard.svelte` or
-`ClosedCard.svelte`.
+requested-wins-over-paid tie-break with multiple deposits).
+`JobCard.svelte` and `UnpaidCard.svelte` render it — a **"DEP
+REQUESTED"**/**"DEP PAID"** banner — so it's visible on Pipeline column
+cards, the In Progress chip-hover card (`JobChipStrip.svelte`), and
+Unpaid cards; `ClosedCard.svelte` does not.
 
 ## 9. UI: Job Detail page
 
@@ -1477,11 +1641,30 @@ is the only place the `.summary-block`/`.stat-spread` markup lives.
 
 | Component | Role |
 |---|---|
+| `FrozenPartyBanner.svelte` + `ChangeContactModal.svelte` | The frozen-job treatment (2026-10-11, §3.7): see "Frozen job banner" below |
 | `JobDetail.svelte` | Composes the page (~110 lines): mounts `JobShell`, shapes the fetched payloads into lists/numbers (it derives no rules — Coverage moved into the lib 2026-07-28), renders the change-request banner + six blocks |
 | `JobHeader.svelte` | Header + status dropdown |
 | `lib/jobOverview.js` | Pure view-model — block rules, temperatures, clocks, copy (§9.1a) |
 | `components/jobs/overview/SummaryBlock.svelte` | The one dumb renderer for all six blocks (active/frozen/dormant markup) |
 | `components/jobs/overview/{Scope,Work,Materials,Spend,Invoicing,Delivery}Block.svelte` | Thin wrappers: call their `lib/jobOverview.js` function, pass the result to `SummaryBlock` |
+
+**Frozen job banner.** When `job.contact_is_active === false`,
+`JobHeader` shows an "inactive" `status-badge` beside the contact name and a
+`FrozenPartyBanner kind="job"` under the subtitle: "**Frozen:** {contact}
+is inactive." (the name links to the contact page) followed by either
+"Reactivate them, or move this job to another contact at {business}." and a
+**Change contact…** button — when the contact's business is active and the
+viewer has `can_manage_jobs` (a job's project manager counts, via the
+store flag the header already uses) — or "Reactivate them before making
+changes to this job." otherwise. The button opens
+`ChangeContactModal` (`components/ChangeContactModal.svelte`; props
+`open`, `patchUrl`, `businessId`, `onSaved`, `onClose`): a `Modal` with a
+`ContactPicker` scoped by `businessId` (= `job.contact_business_id`),
+active contacts only, whose Save PATCHes `/api/jobs/{id}/` with **`{contact}`
+and nothing else** (the only payload the §3.7 carve-out accepts) and then
+reloads the job. The rest of the page stays visible; every mutating action
+the user tries is refused server-side with the §3.7 sentence, rendered
+through the normal error triage.
 
 ### 9.3 Header financial rollups
 
@@ -1619,7 +1802,8 @@ keeps only the expense rows, section headers, and the footer.
 status chip — **Needs pricing / Needed / Ordered — PO-NNNN / Awaiting
 customer / On Hand / Consumed / Released** (`materialStatus`,
 `frontend/src/lib/materialStatus.js`), with a cost-unconfirmed ⚠ when
-`cost_source === 'estimated'`. Rows render through the shared
+`cost_source === 'estimated'`, and a catalog-backed row prints its item
+code (`item_code`) before the description (`LOT-*` suppressed). Rows render through the shared
 `MaterialRow.svelte` fragment, and the **full per-material action set is
 available on every surface that lists materials** (this page, the task
 detail page) — the old
@@ -2259,6 +2443,26 @@ and the per-document snapshot model in `data-constraints.md`).
 `EstimateService.mark_open` rejects with `ValidationError` if the Job has
 zero Deliverables. The customer cannot receive an estimate that doesn't
 say what they're buying.
+
+**Change orders too** (2026-09-29): `ChangeOrderService.
+assert_job_has_deliverables` runs in `ChangeOrder.clean()`'s draft-exit
+guard (after `has_sendable_changes`) and in `ChangeOrderEmailService.
+_validate_send`. Removing deliverables is a legitimate CO diff, but a CO
+cannot leave the Job with none — "Cannot send change order: job has no
+deliverables." See `data-constraints.md` §2.12.
+
+**SPA pre-empt** (2026-09-28/29): `EstimatePanel` and `ChangeOrderPanel`
+each fetch the job's deliverables up front, so "Send Email" / "Send to
+customer" on a job with none opens `DeliverablesEditModal` (its optional
+`notice` prop: "Deliverables are required before this estimate / change
+order can be sent.") instead of the send form; a save that leaves ≥1 row
+continues to the send page, Cancel stays put. The gate stays current
+through `stores/deliverables.js` (architecture-and-conventions.md §5.3):
+deleting the last row anywhere — the band's modal, the CO section, a
+line removal — re-arms it without a reload. Send affordances are
+`<button>`s in every state (RM 2026-09-29: the email step becomes a
+modal later). The server guard stays the invariant — the modal is a
+courtesy, not the enforcement. See `estimates-and-prices.md` §11.2.
 
 This is the single cross-app modification this feature made; see also
 `data-constraints.md` §2.12.

@@ -39,7 +39,7 @@ class SeededDefaultsTest(TestCase):
             DEFAULT_UNITS)
 
     def test_seed_is_idempotent_and_preserves_existing(self):
-        from apps.core.migrations import _seed_setup_defaults as seeder
+        from apps.core import setup_defaults as seeder
         AppState.objects.filter(key='job_counter').delete()
         AppState.objects.update_or_create(key='job_counter', defaults={'value': '42'})
         Configuration.objects.filter(key='units_list').update(value='["none","furlongs"]')
@@ -59,6 +59,6 @@ class SeededDefaultsTest(TestCase):
         from apps.jobs.services import JobService
         contact = Contact.objects.create(
             first_name='Fresh', last_name='Tenant',
-            email='fresh@example.com', mobile_number='555-0000')
+            email='fresh@example.com', phones=[{'number': '555-0000', 'label': 'mobile'}])
         job = JobService.create_job(contact=contact)
         self.assertTrue(job.job_number.startswith('JOB-'))

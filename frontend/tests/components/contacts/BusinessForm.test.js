@@ -5,14 +5,16 @@ import BusinessForm from '@/components/contacts/BusinessForm.svelte';
 describe('BusinessForm', () => {
   it('creates: includes the nested contact and coerces empty fields to null', async () => {
     const onSubmit = vi.fn();
-    const { getByLabelText, getByRole } = render(BusinessForm, { props: { onSubmit, onCancel: vi.fn() } });
+    const { getByLabelText, getByRole, getAllByRole } = render(BusinessForm, { props: { onSubmit, onCancel: vi.fn() } });
 
     await fireEvent.input(getByLabelText(/Business Name/), { target: { value: 'Acme' } });
     // Create mode requires the nested default-contact fields.
     await fireEvent.input(getByLabelText(/First Name/), { target: { value: 'Boss' } });
     await fireEvent.input(getByLabelText(/Last Name/), { target: { value: 'Hogg' } });
     await fireEvent.input(getByLabelText(/Email/), { target: { value: 'boss@x.com' } });
-    await fireEvent.input(getByLabelText(/Mobile/), { target: { value: '555' } });
+    // Business has its own editor (first Add phone); the default contact's is the second.
+    await fireEvent.click(getAllByRole('button', { name: 'Add phone' })[1]);
+    await fireEvent.input(getByLabelText('Phone 1 number'), { target: { value: '555' } });
     await fireEvent.click(getByRole('button', { name: 'Create' }));
 
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
@@ -20,7 +22,8 @@ describe('BusinessForm', () => {
       terms: null,
       default_contact_id: null,
       tax_multiplier: null,
-      _contact: expect.objectContaining({ first_name: 'Boss' }),
+      _contact: expect.objectContaining({ first_name: 'Boss', phones: [{ number: '555', label: '' }] }),
+      phones: [],
     }));
   });
 
@@ -37,6 +40,26 @@ describe('BusinessForm', () => {
     const arg = onSubmit.mock.calls[0][0];
     expect(arg._contact).toBeUndefined();
     expect(arg.business_name).toBe('Acme');
+  });
+
+  it('edit: default-contact select omits inactive contacts but keeps the current default', () => {
+    const { container } = render(BusinessForm, {
+      props: {
+        business: {
+          business_name: 'Acme', terms: '', tax_multiplier: 0.5, default_contact: { contact_id: 3 },
+          contacts: [
+            { contact_id: 1, name: 'Active One', is_active: true },
+            { contact_id: 2, name: 'Inactive Two', is_active: false },
+            { contact_id: 3, name: 'Inactive Default', is_active: false },
+          ],
+        },
+        onSubmit: vi.fn(), onCancel: vi.fn(),
+      },
+    });
+    const names = Array.from(container.querySelectorAll('#default_contact_id option')).map((o) => o.textContent.trim());
+    expect(names).toContain('Active One');
+    expect(names).toContain('Inactive Default');
+    expect(names).not.toContain('Inactive Two');
   });
 
   it('cancels via onCancel', async () => {

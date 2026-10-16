@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, within, waitFor } from '@testing-library/svelte';
+import { get } from 'svelte/store';
 
 vi.mock('@/lib/api.js', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
@@ -13,6 +14,7 @@ vi.mock('svelte-spa-router', () => ({
 import { api } from '@/lib/api.js';
 import { user } from '@/stores/auth.js';
 import { getJobWs, rememberMode } from '@/stores/jobWorkspace.js';
+import { deliverablesVersion, notifyDeliverablesChanged } from '@/stores/deliverables.js';
 import EstimatePanel from '@/components/estimates/EstimatePanel.svelte';
 
 const JOB = { job_id: 9, job_number: 'JOB-9', name: 'Job', contact: null, can_manage: true };
@@ -39,13 +41,18 @@ function makeEstimate(overrides = {}) {
   };
 }
 
-function mockApi(estimate, { versions = null, changeOrders = [] } = {}) {
+// `deliverables` is a live ref ({ list }) so a test can mutate it mid-flow
+// (the panel re-fetches after the deliverables modal saves).
+function mockApi(estimate, { versions = null, changeOrders = [], deliverables = { list: [{ id: 1 }] } } = {}) {
   const versionList = versions ?? (estimate ? [estimate] : []);
   api.get.mockReset();
   api.get.mockImplementation((url) => {
     if (estimate && url === `/api/estimates/${estimate.estimate_id}/`) {
       return Promise.resolve({ ...estimate });
     }
+    if (url.endsWith('/deliverables/')) return Promise.resolve([...deliverables.list]);
+    if (url.endsWith('/send-defaults/')) return Promise.resolve({ to: 'c@x.y', attachments_preview: [] });
+    if (url === '/api/settings/units/') return Promise.resolve([]);
     if (url.startsWith('/api/estimates/?job=')) {
       return Promise.resolve({ results: versionList });
     }
@@ -298,6 +305,112 @@ describe('EstimatePanel empty state', () => {
     const btn = await findByRole('button', { name: /start estimate/i });
     await fireEvent.click(btn);
     expect(api.post).toHaveBeenCalledWith('/api/estimates/', { job: 9 });
+  });
+});
+
+describe('EstimatePanel Send Email deliverables gate', () => {
+  beforeEach(() => {
+    window.location.hash = '';
+    user.set({ permissions: [] });
+  });
+
+  // Send affordances are BUTTONS in every state; the email step is
+  // DocumentSendModal over the panel (2026-10-10).
+  it('Send Email is a button that opens the send modal when the job has deliverables', async () => {
+    const est = makeEstimate({ status: 'draft' });
+    mockApi(est, { deliverables: { list: [{ id: 1 }] } });
+    const { findByRole, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    const btn = await findByRole('button', { name: 'Send Email' });
+    expect(queryByRole('link', { name: 'Send Email' })).toBeNull();
+    await fireEvent.click(btn);
+    expect(await findByRole('dialog', { name: 'Send estimate' })).toBeInTheDocument();
+    expect(window.location.hash).toBe('');
+  });
+
+  it('Send Email opens the deliverables modal with the required notice when the job has none', async () => {
+    const est = makeEstimate({ status: 'draft' });
+    mockApi(est, { deliverables: { list: [] } });
+    const { findByRole, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    const btn = await findByRole('button', { name: 'Send Email' });
+    expect(queryByRole('link', { name: 'Send Email' })).toBeNull();
+    await fireEvent.click(btn);
+    const dialog = within(await findByRole('dialog'));
+    expect(dialog.getByRole('heading', { name: 'Edit deliverables' })).toBeInTheDocument();
+    expect(dialog.getByText('Deliverables are required before this estimate can be sent.')).toBeInTheDocument();
+    expect(queryByRole('dialog', { name: 'Send estimate' })).toBeNull();
+  });
+
+  it('opens the send modal once the deliverables modal saves at least one row', async () => {
+    const est = makeEstimate({ status: 'draft' });
+    const deliverables = { list: [] };
+    mockApi(est, { deliverables });
+    api.post.mockResolvedValue({ id: 2 });
+    const onJobChange = vi.fn();
+    const { findByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7, onJobChange } });
+    await fireEvent.click(await findByRole('button', { name: 'Send Email' }));
+    const dialog = within(await findByRole('dialog'));
+    await dialog.findByRole('button', { name: '+ Add row' });
+    await fireEvent.click(dialog.getByRole('button', { name: '+ Add row' }));
+    deliverables.list = [{ id: 2 }]; // what the server holds after the save
+    await fireEvent.click(dialog.getByRole('button', { name: 'Save' }));
+    expect(await findByRole('dialog', { name: 'Send estimate' })).toBeInTheDocument();
+    expect(onJobChange).toHaveBeenCalled();
+  });
+
+  it('stays on the estimate when the modal is cancelled', async () => {
+    const est = makeEstimate({ status: 'draft' });
+    mockApi(est, { deliverables: { list: [] } });
+    const { findByRole, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    await fireEvent.click(await findByRole('button', { name: 'Send Email' }));
+    const dialog = within(await findByRole('dialog'));
+    await fireEvent.click(await dialog.findByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(queryByRole('dialog')).toBeNull());
+    expect(await findByRole('button', { name: 'Send Email' })).toBeInTheDocument();
+  });
+
+  it('Resend Email on an open estimate opens the send modal regardless of deliverables', async () => {
+    const est = makeEstimate({ status: 'open' });
+    mockApi(est, { deliverables: { list: [] } });
+    const { findByRole, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    await fireEvent.click(await findByRole('button', { name: 'Resend Email' }));
+    expect(await findByRole('dialog', { name: 'Send estimate' })).toBeInTheDocument();
+    expect(queryByRole('dialog', { name: 'Edit deliverables' })).toBeNull();
+  });
+
+  it('the gate re-fetches when the deliverables store is bumped (last deliverable deleted elsewhere)', async () => {
+    const est = makeEstimate({ status: 'draft' });
+    const deliverables = { list: [{ id: 1 }] };
+    mockApi(est, { deliverables });
+    const { findByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    await findByRole('button', { name: 'Send Email' });
+    deliverables.list = []; // the band's modal deleted the last row
+    notifyDeliverablesChanged();
+    // With none left, Send Email now opens the deliverables editor instead
+    // of the send modal. Until the refetch lands, a click still opens the
+    // send modal; once it has, the click opens the editor.
+    const { queryByRole } = { queryByRole: (...a) => within(document.body).queryByRole(...a) };
+    await waitFor(async () => {
+      await fireEvent.click(await findByRole('button', { name: 'Send Email' }));
+      expect(queryByRole('dialog', { name: 'Edit deliverables' })).not.toBeNull();
+    });
+  });
+
+  it('Make Deliverable bumps the deliverables store', async () => {
+    const est = makeEstimate({
+      status: 'draft',
+      line_items: [{
+        line_item_id: 2, line_number: 1, description: 'Hand entry', qty: '1', units: 'ea',
+        price: '10.00', accounting_category: 3, is_material: false, inventory_item: null,
+        service_item: null, service_item_detail: null, adjustment_service: null,
+        adjustment_service_detail: null, linked_deliverables: [],
+      }],
+    });
+    mockApi(est, { deliverables: { list: [] } });
+    api.post.mockResolvedValue({});
+    const before = get(deliverablesVersion);
+    const { findByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    await fireEvent.click(await findByRole('button', { name: 'Make Deliverable' }));
+    await waitFor(() => expect(get(deliverablesVersion)).toBe(before + 1));
   });
 });
 

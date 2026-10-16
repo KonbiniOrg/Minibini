@@ -38,7 +38,7 @@ def _setup_common():
             'accounting_category': cat,
         },
     )[0]
-    c = Contact.objects.create(first_name='A', last_name='B', work_number='0')
+    c = Contact.objects.create(first_name='A', last_name='B', phones=[{'number': '0', 'label': 'work'}])
     item = InventoryItem.objects.create(
         code='AVAIL-ITEM', description='widget',
         accounting_category=cat,
@@ -89,6 +89,12 @@ class TaskMaterialQtyAvailableTest(TestCase):
         self.assertIn('qty_available', data[0])
         self.assertEqual(data[0]['qty_available'], '-3.00')
 
+    def test_item_code_exposed_for_catalog_material(self):
+        # The material row prints the item code before the description so a
+        # material linked to the wrong catalog item is visible at a glance.
+        r = self.client.get(f'/api/tasks/{self.task.pk}/materials/')
+        self.assertEqual(r.json()[0]['item_code'], 'AVAIL-ITEM')
+
     def test_qty_available_is_null_for_freeform_material(self):
         cat = AccountingCategory.objects.get(code='MAT_AVAIL')
         scheme = RateScheme.objects.get(name='Avail Test Scheme')
@@ -107,6 +113,7 @@ class TaskMaterialQtyAvailableTest(TestCase):
         data = r.json()
         self.assertEqual(len(data), 1)
         self.assertIsNone(data[0]['qty_available'])
+        self.assertIsNone(data[0]['item_code'])
 
 
 class JobMaterialQtyAvailableTest(TestCase):
@@ -145,6 +152,7 @@ class JobMaterialQtyAvailableTest(TestCase):
         self.assertEqual(len(mats), 1)
         self.assertIn('qty_available', mats[0])
         self.assertEqual(mats[0]['qty_available'], '-2.00')
+        self.assertEqual(mats[0]['item_code'], 'AVAIL-ITEM')
 
     def test_draft_job_materials_do_not_earmark(self):
         """The other half of the design: a PRE-APPROVAL job's materials

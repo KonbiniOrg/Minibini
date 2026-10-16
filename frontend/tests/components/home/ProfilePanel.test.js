@@ -44,24 +44,22 @@ describe('ProfilePanel', () => {
     expect(await findByText('Enter a valid email address.')).toBeInTheDocument();
   });
 
-  it('changes the password and clears the form', async () => {
-    // Snapshot the body at call time — the component clears the same
-    // reactive object after a successful post.
+  it('Change password… opens the modal; a successful change posts and closes it', async () => {
+    const { within, waitFor } = await import('@testing-library/svelte');
     let sent = null;
-    api.post.mockImplementation((url, body) => {
-      sent = { url, body: { ...body } };
-      return Promise.resolve({});
-    });
-    const { getByLabelText, getByRole, findByText } = render(ProfilePanel);
-    await fireEvent.input(getByLabelText('Current password'), { target: { value: 'old' } });
-    await fireEvent.input(getByLabelText('New password'), { target: { value: 'newpass1' } });
-    await fireEvent.input(getByLabelText('Confirm new password'), { target: { value: 'newpass1' } });
-    await fireEvent.click(getByRole('button', { name: 'Change password' }));
-    await findByText('Password changed.');
-    expect(sent).toEqual({
+    api.post.mockImplementation((url, body) => { sent = { url, body: { ...body } }; return Promise.resolve({}); });
+    const { getByRole, findByRole, queryByRole, getByLabelText } = render(ProfilePanel);
+    await fireEvent.click(getByRole('button', { name: 'Change password…' }));
+    const dialog = await findByRole('dialog', { name: 'Change password' });
+    await fireEvent.input(within(dialog).getByLabelText('Current password'), { target: { value: 'old' } });
+    await fireEvent.input(within(dialog).getByLabelText('New password'), { target: { value: 'newpass1' } });
+    await fireEvent.input(within(dialog).getByLabelText('Confirm new password'), { target: { value: 'newpass1' } });
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Change password' }));
+    await waitFor(() => expect(sent).toEqual({
       url: '/api/auth/me/password/',
       body: { current_password: 'old', new_password: 'newpass1', new_password_confirm: 'newpass1' },
-    });
-    expect(getByLabelText('Current password').value).toBe('');
+    }));
+    await waitFor(() => expect(queryByRole('dialog')).toBeNull());
+    void getByLabelText;
   });
 });

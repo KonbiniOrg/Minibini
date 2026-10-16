@@ -58,7 +58,7 @@ class FallbackACTestBase(TestCase):
             code='FAC-FALL', name='Fallback', is_active=True)
         self.contact = Contact.objects.create(
             first_name='Fal', last_name='Back',
-            email='fallback@example.com', mobile_number='555-0001',
+            email='fallback@example.com', phones=[{'number': '555-0001', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(
             contact=self.contact, status=Job.STATUS_APPROVED,

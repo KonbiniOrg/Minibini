@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, within } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() }, errorMessage: (e, fallback) => e?.message || fallback }));
 
 import { api } from '@/lib/api.js';
 import AccountingCategories from '@/components/settings/AccountingCategories.svelte';
@@ -145,5 +145,34 @@ describe('AccountingCategories', () => {
       expect(window.confirm).toHaveBeenCalled();
       expect(api.delete).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('AccountingCategories load failure', () => {
+  it('shows the load error as an alert instead of the empty "Add one" prompt', async () => {
+    api.get.mockImplementation(() => Promise.reject(new Error('boom')));
+    const { findByRole, queryByText } = render(AccountingCategories);
+    expect(await findByRole('alert')).toHaveTextContent('boom');
+    expect(queryByText(/No accounting categories found/)).toBeNull();
+  });
+});
+
+describe('AccountingCategories — form is a modal (2026-10-10)', () => {
+  it('Add category opens a dialog named New category; Escape closes it', async () => {
+    const { findByRole, queryByRole } = render(AccountingCategories);
+    await fireEvent.click(await findByRole('button', { name: 'Add category' }));
+    expect(await findByRole('dialog', { name: 'New category' })).toBeInTheDocument();
+    await fireEvent.keyDown(window, { key: 'Escape' });
+    expect(queryByRole('dialog')).toBeNull();
+  });
+
+  it('Edit opens a dialog named Edit category, and a save failure shows inside it', async () => {
+    api.patch.mockRejectedValue({ status: 400, data: { code: ['Code already in use.'] }, message: 'Code already in use.' });
+    const { findByRole, getByRole, findByText } = render(AccountingCategories);
+    await fireEvent.click(await findByRole('button', { name: 'Edit' }));
+    const dialog = await findByRole('dialog', { name: 'Edit category' });
+    await fireEvent.click(getByRole('button', { name: 'Save Changes' }));
+    expect(await findByText('Code already in use.')).toBeInTheDocument();
+    expect(dialog).toBeInTheDocument();
   });
 });

@@ -28,7 +28,7 @@ class GetSourcePoolTest(TestCase):
         AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
         self.cat = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
-            first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
+            first_name='J', last_name='D', email='j@d.com', phones=[{'number': '555-0', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
         self.scheme = RateScheme.objects.create(
@@ -206,7 +206,7 @@ class AddAtomsToNewLineItemTest(TestCase):
         self.cat = AccountingCategory.objects.create(name='Labor', code='LAB', is_active=True)
         self.cat2 = AccountingCategory.objects.create(name='Materials', code='MAT', is_active=True)
         self.contact = Contact.objects.create(
-            first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
+            first_name='J', last_name='D', email='j@d.com', phones=[{'number': '555-0', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
         self.scheme = RateScheme.objects.create(
@@ -344,7 +344,7 @@ class AddAtomsToNewLineItemOverridesTest(TestCase):
         self.cat = AccountingCategory.objects.create(name='Labor', code='LAB', is_active=True)
         self.cat2 = AccountingCategory.objects.create(name='Materials', code='MAT', is_active=True)
         self.contact = Contact.objects.create(
-            first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
+            first_name='J', last_name='D', email='j@d.com', phones=[{'number': '555-0', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
         self.scheme = RateScheme.objects.create(
@@ -469,7 +469,7 @@ class AddAtomsToExistingLineItemTest(TestCase):
         AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
         self.cat = AccountingCategory.objects.create(name='Labor', is_active=True, code='LAB')
         self.contact = Contact.objects.create(
-            first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
+            first_name='J', last_name='D', email='j@d.com', phones=[{'number': '555-0', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
         self.scheme = RateScheme.objects.create(
@@ -538,7 +538,7 @@ class RemoveAtomsFromLineItemTest(TestCase):
         AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
         self.cat = AccountingCategory.objects.create(name='Labor', is_active=True, code='LAB')
         self.contact = Contact.objects.create(
-            first_name='J', last_name='D', email='j@d.com', mobile_number='555-0',
+            first_name='J', last_name='D', email='j@d.com', phones=[{'number': '555-0', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')
         self.scheme = RateScheme.objects.create(
@@ -694,7 +694,7 @@ class AddAtomsToNewLineItemDescriptionTest(TestCase):
 
         contact = Contact.objects.create(
             first_name='F', last_name='L', email='f-d@l.test',
-            mobile_number='555-1',
+            phones=[{'number': '555-1', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(job_number='J-desc', contact=contact)
         self.cat = AccountingCategory.objects.create(code='D', name='D')

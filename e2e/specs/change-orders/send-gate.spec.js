@@ -42,15 +42,18 @@ test('§5 Send gate — truly empty refused; deliverables-only sendable', async 
   await api.post(`/api/jobs/${job.job_id}/hold/`, { reason: 'e2e: send-gate CO' });
   const co = await api.post('/api/change-orders/', { job: job.job_id });
 
-  await test.step('Send page: a CO with no changes at all is refused', async () => {
-    await page.goto(`/#/change-orders/${co.change_order_id}/send`);
+  await test.step('Send modal: a CO with no changes at all is refused', async () => {
+    await page.goto(`/#/jobs/${job.job_id}/change-order/${co.change_order_id}`);
+    await page.getByRole('button', { name: 'Send to customer' }).click();
+    const send = page.getByRole('dialog', { name: 'Send change order' });
     // Never let a test send race toward a real address: overwrite the
     // prefilled recipient. (The refusal fires server-side before any email.)
-    await page.getByLabel('To *').fill('e2e-refusal@example.invalid');
+    await send.getByLabel('To *').fill('e2e-refusal@example.invalid');
     // The send form confirms before submitting (irreversible action).
     page.once('dialog', (dialog) => dialog.accept());
-    await page.getByRole('button', { name: 'Send Email' }).click();
-    await expect(page.getByText(/Cannot send an empty change order/)).toBeVisible();
+    await send.getByRole('button', { name: 'Send Email' }).click();
+    await expect(send.getByText(/Cannot send an empty change order/)).toBeVisible();
+    await send.getByRole('button', { name: 'Cancel' }).click();
     expect((await api.get(`/api/change-orders/${co.change_order_id}/`)).status).toBe('draft');
   });
 
@@ -69,9 +72,12 @@ test('§5 Send gate — truly empty refused; deliverables-only sendable', async 
     expect(opened.status).toBe('open');
     expect(opened.sent_date).toBeTruthy();
     // And the CO page reflects it: the open-CO toolbar replaces the draft one.
+    // (We're already on this URL since the send step is a modal, so a hash
+    // goto would be a same-document no-op — reload to refetch.)
     await page.goto(`/#/jobs/${job.job_id}/change-order/${co.change_order_id}`);
+    await page.reload();
     await expect(page.getByRole('button', { name: 'Record Accepted' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Resend to customer' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Resend to customer' })).toBeVisible();
   });
 
   await api.dispose();

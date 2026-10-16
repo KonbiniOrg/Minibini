@@ -5,6 +5,7 @@
   import { isPriorSessionConflict, settlePriorSession } from '../../lib/priorSession.js';
   import TaskActivityIndicator from '../tasks/TaskActivityIndicator.svelte';
   import ActualQtyModal from '../tasks/ActualQtyModal.svelte';
+  import DataTable from '../DataTable.svelte';
 
   // The home Work tab's "Current Tasks": tasks assigned to me plus any task I
   // have an open/recent blep on. Backend orders mine first (worker-queue
@@ -102,57 +103,18 @@
 
 <section>
   <h3>Current Tasks</h3>
-  {#if items.length === 0}
-    <p>No current tasks.</p>
-  {:else}
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>Task</th>
-          <th>Job</th>
-          <th>Status</th>
-          <th>Start</th>
-          <th>Reorder</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each items as task, i (task.id)}
-          <tr>
-            <td>
-              {#if task.job}
-                <a href={`/jobs/${task.job.id}/tasks/${task.id}`} use:link>
-                  {task.name}
-                </a>
-              {:else}
-                {task.name}
-              {/if}
-            </td>
-            <td>
-              {#if task.job}
-                <a href={`/jobs/${task.job.id}`} use:link>
-                  {task.job.job_number} {task.job.name}
-                </a>
-              {/if}
-            </td>
-            <td><TaskActivityIndicator {task} /></td>
-            <td>
-              <button type="button" onclick={() => startWork(task)} disabled={busy}>
-                Start Work
-              </button>
-            </td>
-            <td>
-              {#if task.assigned_to_me}
-                <button type="button" onclick={() => moveUp(i)}
-                        disabled={busy || i === 0}>Up</button>
-                <button type="button" onclick={() => moveDown(i)}
-                        disabled={busy || i === mineCount - 1}>Down</button>
-              {/if}
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  {/if}
+  <DataTable
+    rows={items}
+    key={(task) => task.id}
+    emptyText="No current tasks."
+    columns={[
+      { id: 'task',    label: 'Task',    cell: taskCell },
+      { id: 'job',     label: 'Job',     cell: jobCell },
+      { id: 'status',  label: 'Status',  cell: statusCell },
+      { id: 'start',   label: 'Start',   cell: startCell },
+      { id: 'reorder', label: 'Reorder', cell: reorderCell },
+    ]}
+  />
   {#if errorMessage}
     <p class="error">{errorMessage}</p>
   {/if}
@@ -170,6 +132,31 @@
     onClose={() => { priorModal = null; modalError = ''; }}
   />
 {/if}
+
+
+{#snippet taskCell(task)}
+  {#if task.job}
+    <a href={`/jobs/${task.job.id}/tasks/${task.id}`} use:link>{task.name}</a>
+  {:else}
+    {task.name}
+  {/if}
+{/snippet}
+{#snippet jobCell(task)}
+  {#if task.job}
+    <a href={`/jobs/${task.job.id}`} use:link>{task.job.job_number} {task.job.name}</a>
+  {/if}
+{/snippet}
+{#snippet statusCell(task)}<TaskActivityIndicator {task} />{/snippet}
+{#snippet startCell(task)}
+  <button type="button" onclick={() => startWork(task)} disabled={busy}>Start Work</button>
+{/snippet}
+{#snippet reorderCell(task)}
+  {@const i = items.indexOf(task)}
+  {#if task.assigned_to_me}
+    <button type="button" onclick={() => moveUp(i)} disabled={busy || i === 0}>Up</button>
+    <button type="button" onclick={() => moveDown(i)} disabled={busy || i === mineCount - 1}>Down</button>
+  {/if}
+{/snippet}
 
 <style>
   .error { color: #a8071a; }

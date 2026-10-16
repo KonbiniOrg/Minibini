@@ -196,6 +196,19 @@ describe('COLineItemModal — adjustment variant (percent only, readback before 
     expect(api.post).not.toHaveBeenCalled();
     expect(await findByText((_, node) => node.textContent === 'This line now computes to $5.00.')).toBeInTheDocument();
   });
+
+  it('adjustment readback renders a negative amount with the sign before the dollar sign', async () => {
+    api.patch.mockResolvedValue({ price: '-15.00' });
+    const { getByLabelText, getByRole, findByText } = render(COLineItemModal, {
+      props: {
+        open: true, variant: 'adjustment', coId: 3, lineItemId: 12,
+        initialDescription: 'Discount', initialPercent: '-10',
+      },
+    });
+    await fireEvent.input(getByLabelText(/Percent/), { target: { value: '-5' } });
+    await fireEvent.click(getByRole('button', { name: 'Save' }));
+    expect(await findByText((_, node) => node.textContent === 'This line now computes to -$15.00.')).toBeInTheDocument();
+  });
 });
 
 describe('COLineItemModal error display', () => {

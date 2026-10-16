@@ -25,6 +25,7 @@
   import Modal from '../Modal.svelte';
   import FieldError from '../FieldError.svelte';
   import FormMessage from '../FormMessage.svelte';
+  import { formatMoney } from '../../lib/format.js';
 
   let {
     open = false,
@@ -150,7 +151,7 @@
 <Modal {open} onCancel={onClose} maxWidth="620px">
 {#if variant === 'adjustment' && savedAmount !== null}
   <h3>{title}</h3>
-  <p>This line now computes to <strong>${Number(savedAmount).toFixed(2)}</strong>.</p>
+  <p>This line now computes to <strong>{formatMoney(Number(savedAmount))}</strong>.</p>
   <div class="buttons">
     <button type="button" onclick={finishAdjustment}>Done</button>
   </div>

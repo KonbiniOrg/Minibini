@@ -1,4 +1,5 @@
 <script>
+  import DataTable from '../DataTable.svelte';
   const { purchaseOrders = [], onSelect = null } = $props();
 
   function formatDate(d) {
@@ -12,51 +13,39 @@
   }
 </script>
 
-{#if purchaseOrders.length === 0}
-  <p>No purchase orders found.</p>
-{:else}
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>PO #</th>
-        <th>Vendor</th>
-        <th>Status</th>
-        <th>Created</th>
-        <th>Requested</th>
-        <th class="text-right">Total</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each purchaseOrders as po}
-        <tr>
-          <td>
-            {#if onSelect}
-              <button onclick={() => onSelect(po)}>
-                {po.po_number}
-              </button>
-            {:else}
-              {po.po_number}
-            {/if}
-          </td>
-          <td>{po.business_name || '—'}</td>
-          <td>{po.status}</td>
-          <td>{formatDate(po.created_date)}</td>
-          <td>{formatDate(po.requested_date)}</td>
-          <td class="text-right">${totalAmount(po.line_items).toFixed(2)}</td>
-          <td>
-            {#if po.awaiting_reconciliation}
-              <span class="awaiting-badge">Awaiting Reconciliation</span>
-            {/if}
-          </td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
-{/if}
+<DataTable
+  rows={purchaseOrders}
+  key={(po) => po.po_id}
+  emptyText="No purchase orders found."
+  columns={[
+    { id: 'number',    label: 'PO #',      cell: numberCell },
+    { id: 'vendor',    label: 'Vendor',    cell: vendorCell },
+    { id: 'status',    label: 'Status',    field: 'status' },
+    { id: 'created',   label: 'Created',   cell: createdCell },
+    { id: 'requested', label: 'Requested', cell: requestedCell },
+    { id: 'total',     label: 'Total',     cell: totalCell, align: 'right' },
+    { id: 'flags',     label: '',          cell: flagsCell },
+  ]}
+/>
+
+{#snippet numberCell(po)}
+  {#if onSelect}
+    <button onclick={() => onSelect(po)}>{po.po_number}</button>
+  {:else}
+    {po.po_number}
+  {/if}
+{/snippet}
+{#snippet vendorCell(po)}{po.business_name || '—'}{/snippet}
+{#snippet createdCell(po)}{formatDate(po.created_date)}{/snippet}
+{#snippet requestedCell(po)}{formatDate(po.requested_date)}{/snippet}
+{#snippet totalCell(po)}${totalAmount(po.line_items).toFixed(2)}{/snippet}
+{#snippet flagsCell(po)}
+  {#if po.awaiting_reconciliation}
+    <span class="awaiting-badge">Awaiting Reconciliation</span>
+  {/if}
+{/snippet}
 
 <style>
-  .text-right { text-align: right; }
   .awaiting-badge {
     font-size: 11px; font-weight: 600; padding: 2px 8px;
     border-radius: 8px; white-space: nowrap;

@@ -7,6 +7,7 @@ vi.mock('@/lib/api.js', () => ({
 }));
 import { api } from '@/lib/api.js';
 import RatePromptDialog from '@/components/purchaseorders/RatePromptDialog.svelte';
+import { viewMode } from '@/stores/viewMode.js';
 
 function prompts(overrides = {}) {
   return [
@@ -151,5 +152,21 @@ describe('RatePromptDialog — wire-format decimals (compute_rate_prompts values
     const [, body] = api.patch.mock.calls[0];
     expect(body.rate).toBe('99.90');
     expect(typeof body.rate).toBe('string');
+  });
+});
+
+describe('RatePromptDialog — DataTable', () => {
+  const headersOf = (t) => Array.from(t.querySelectorAll('thead th')).map((th) => th.textContent.trim());
+  const ALL = ['Task', 'Current Rate', 'Suggested Rate', 'Decision'];
+  it('renders the four columns in both densities with right-aligned rates and data-col', () => {
+    viewMode.set('lite');
+    const { container } = render(RatePromptDialog, { props: { prompts: prompts(), onClose: vi.fn() } });
+    const table = container.querySelector('table.data-table');
+    expect(headersOf(table)).toEqual(ALL);
+    expect(table.querySelector('td[data-col="current"]').getAttribute('style')).toMatch(/text-align:\s*right/);
+    expect(table.querySelectorAll('td[data-col="decision"] button')).toHaveLength(2);
+    viewMode.set('full');
+    const { container: c2 } = render(RatePromptDialog, { props: { prompts: prompts(), onClose: vi.fn() } });
+    expect(headersOf(c2.querySelector('table.data-table'))).toEqual(ALL);
   });
 });

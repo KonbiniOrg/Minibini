@@ -11,12 +11,9 @@ from apps.core.wizard import BaseWizardService
 # PaymentTerms grows a configurable net-days field or a Configuration key is added.
 DEFAULT_INVOICE_NET_DAYS = 30
 
-# Invoice statuses where outstanding balance is owed.
-UNPAID_STATUSES = {
-    Invoice.STATUS_OPEN,
-    Invoice.STATUS_PARTLY_PAID,
-    Invoice.STATUS_DEFAULTED,
-}
+# Invoice statuses where outstanding balance is owed (lives on the model so
+# the contact/business financials rollup shares the same set).
+UNPAID_STATUSES = Invoice.UNPAID_STATUSES
 
 
 def _agreement_ref_payload(line):

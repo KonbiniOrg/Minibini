@@ -11,7 +11,7 @@ class InvoiceClosedDateTest(TestCase):
         Configuration.objects.create(key='invoice_number_sequence', value='INV-{year}-{counter:04d}')
         AppState.objects.create(key='invoice_counter', value='0')
         self.contact = Contact.objects.create(
-            first_name='J', last_name='D', email='j@d.com', mobile_number='555',
+            first_name='J', last_name='D', email='j@d.com', phones=[{'number': '555', 'label': 'mobile'}],
         )
         self.business = Business.objects.create(business_name='Acme', default_contact=self.contact)
         self.contact.business = self.business

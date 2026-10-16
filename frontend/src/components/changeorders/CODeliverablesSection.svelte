@@ -1,18 +1,17 @@
 <script>
   // Deliverables diff editor for the change-order panel: renders the merged
-  // rows (lib/changeOrderDiff.buildDeliverableRows) and owns the inline
-  // edit/new drafting forms. Extracted from the old ChangeOrderDetailPage
-  // route (2026-07-19).
-  //
-  // Inline-edit surface — deliberately NOT the record-form kit (see LATER:
-  // "No shared form-layout vocabulary"): this drafting grid keeps its own
-  // compact flex-row idiom.
+  // rows (lib/changeOrderDiff.buildDeliverableRows) and owns one drafting
+  // modal for edit/new (2026-10-10; the inline editing rows are gone,
+  // matching the estimate side, whose DeliverablesEditModal is a modal).
+  // Extracted from the old ChangeOrderDetailPage route (2026-07-19).
   import { api, errorMessage } from '../../lib/api.js';
   import { triageError } from '../../lib/errorTriage.js';
   import { showError } from '../../stores/messages.js';
   import FieldError from '../FieldError.svelte';
   import FormMessage from '../FormMessage.svelte';
   import UnitsSelect from '../UnitsSelect.svelte';
+  import Modal from '../Modal.svelte';
+  import { notifyDeliverablesChanged } from '../../stores/deliverables.js';
 
   let {
     jobId,            // deliverables are job-nested: /api/jobs/{jobId}/deliverables/
@@ -21,22 +20,11 @@
     onReload = () => {},
   } = $props();
 
-  // Inline edit form state: deliverable id currently being edited, or null
-  let editId = $state(null);
-  let editDescription = $state('');
-  let editQty = $state('');
-  let editUnits = $state('ea');
-  // New deliverable form
-  let newOpen = $state(false);
-  let newDescription = $state('');
-  let newQty = $state('1');
-  let newUnits = $state('ea');
+  // One drafting modal for both edit and new. draft.id null → new.
+  let draft = $state(null);   // { id, description, qty, units } | null
+  let draftError = $state('');
+  let draftFields = $state({});
   let saving = $state(false);
-  // Inline-form error state (triaged: field bag + footer message per form)
-  let editError = $state('');
-  let editFields = $state({});
-  let newError = $state('');
-  let newFields = $state({});
 
   function fmtQty(v) {
     if (v === null || v === undefined || v === '') return '—';
@@ -45,36 +33,49 @@
   }
 
   function openEdit(liveRow) {
-    editId = liveRow.id;
-    editDescription = liveRow.description;
-    editQty = String(Number(liveRow.qty_ordered));
-    editUnits = liveRow.units;
-    editError = '';
-    editFields = {};
+    draft = {
+      id: liveRow.id,
+      description: liveRow.description,
+      qty: String(Number(liveRow.qty_ordered)),
+      units: liveRow.units,
+    };
+    draftError = '';
+    draftFields = {};
   }
 
-  function cancelEdit() {
-    editId = null;
-    editError = '';
-    editFields = {};
+  function openNew() {
+    draft = { id: null, description: '', qty: '1', units: 'ea' };
+    draftError = '';
+    draftFields = {};
   }
 
-  async function saveEdit(liveId) {
+  function cancelDraft() {
+    draft = null;
+    draftError = '';
+    draftFields = {};
+  }
+
+  async function saveDraft() {
+    draftError = '';
+    draftFields = {};
+    if (!draft.description.trim()) {
+      draftFields = { description: ['Description is required.'] };
+      return;
+    }
     saving = true;
-    editError = '';
-    editFields = {};
+    // qty comes back from the number input as a Number; the API's decimal
+    // field is happiest with the string form the old text inputs sent.
+    const body = { description: draft.description, qty_ordered: String(draft.qty), units: draft.units };
     try {
-      await api.patch(`/api/jobs/${jobId}/deliverables/${liveId}/`, {
-        description: editDescription,
-        qty_ordered: editQty,
-        units: editUnits,
-      });
-      editId = null;
+      if (draft.id) await api.patch(`/api/jobs/${jobId}/deliverables/${draft.id}/`, body);
+      else await api.post(`/api/jobs/${jobId}/deliverables/`, body);
+      draft = null;
+      notifyDeliverablesChanged();
       await onReload();
     } catch (e) {
       const t = triageError(e);
       if (t.overlay) showError(t.overlay);
-      else { editError = t.message; editFields = t.fields; }
+      else { draftError = t.message; draftFields = t.fields; }
     } finally {
       saving = false;
     }
@@ -83,6 +84,7 @@
   async function deleteDeliverable(liveId) {
     try {
       await api.delete(`/api/jobs/${jobId}/deliverables/${liveId}/`);
+      notifyDeliverablesChanged();
       await onReload();
     } catch (e) {
       showError(errorMessage(e, 'Could not delete deliverable.'));
@@ -97,6 +99,7 @@
         qty_ordered: snap.qty_ordered,
         units: snap.units,
       });
+      notifyDeliverablesChanged();
       await onReload();
     } catch (e) {
       showError(errorMessage(e, 'Could not undo change.'));
@@ -111,69 +114,20 @@
         qty_ordered: snap.qty_ordered,
         units: snap.units,
       });
+      notifyDeliverablesChanged();
       await onReload();
     } catch (e) {
       showError(errorMessage(e, 'Could not restore deliverable.'));
     }
   }
 
-  function openNew() {
-    newDescription = '';
-    newQty = '1';
-    newUnits = 'ea';
-    newOpen = true;
-    newError = '';
-    newFields = {};
-  }
-
-  function cancelNew() {
-    newOpen = false;
-    newError = '';
-    newFields = {};
-  }
-
-  async function saveNew() {
-    newError = '';
-    newFields = {};
-    if (!newDescription.trim()) {
-      newFields = { description: ['Description is required.'] };
-      return;
-    }
-    saving = true;
-    try {
-      await api.post(`/api/jobs/${jobId}/deliverables/`, {
-        description: newDescription,
-        qty_ordered: newQty,
-        units: newUnits,
-      });
-      newOpen = false;
-      await onReload();
-    } catch (e) {
-      const t = triageError(e);
-      if (t.overlay) showError(t.overlay);
-      else { newError = t.message; newFields = t.fields; }
-    } finally {
-      saving = false;
-    }
-  }
-
-  // Keyboard handler for inline-edit rows (Enter = save, Esc = cancel)
-  function editKeydown(event, saveHandler, cancelHandler) {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      saveHandler();
-    } else if (event.key === 'Escape') {
-      event.preventDefault();
-      cancelHandler();
-    }
-  }
 </script>
 
 <section class="section">
   <div class="section-head">
     <h3>Deliverables</h3>
     <span class="spacer"></span>
-    {#if canEdit && !newOpen}
+    {#if canEdit}
       <button type="button" onclick={openNew}>+ New deliverable</button>
     {/if}
   </div>
@@ -185,34 +139,14 @@
       <col style="width:160px">
     </colgroup>
     <tbody>
-      {#if rows.length === 0 && !newOpen}
+      {#if rows.length === 0}
         <tr>
           <td colspan="3" class="empty-msg">No deliverables yet.</td>
         </tr>
       {:else}
         {#each rows as row}
           {#if row.kind === 'unchanged'}
-            {#if editId === row.live.id}
-              <!-- Inline edit form for this row -->
-              <tr class="row-editing">
-                <td colspan="3">
-                  <div class="edit-row-layout">
-                    <input class="qty-input" bind:value={editQty}
-                      onkeydown={(e) => editKeydown(e, () => saveEdit(row.live.id), cancelEdit)} />
-                    <UnitsSelect bind:value={editUnits} />
-                    <input class="desc-input-inline" bind:value={editDescription}
-                      onkeydown={(e) => editKeydown(e, () => saveEdit(row.live.id), cancelEdit)} />
-                    <button type="button" onclick={() => saveEdit(row.live.id)} disabled={saving}>Save</button>
-                    <button type="button" onclick={cancelEdit} disabled={saving}>Cancel</button>
-                  </div>
-                  <FieldError errors={editFields} field="qty_ordered" />
-                  <FieldError errors={editFields} field="units" />
-                  <FieldError errors={editFields} field="description" />
-                  <FormMessage error={editError} />
-                </td>
-              </tr>
-            {:else}
-              <tr>
+            <tr>
                 <td class="num">{fmtQty(row.qty)} {row.units}</td>
                 <td>{row.description || '—'}</td>
                 <td class="acts">
@@ -226,28 +160,8 @@
                   {/if}
                 </td>
               </tr>
-            {/if}
           {:else if row.kind === 'changed'}
-            {#if editId === row.live.id}
-              <tr class="row-editing">
-                <td colspan="3">
-                  <div class="edit-row-layout">
-                    <input class="qty-input" bind:value={editQty}
-                      onkeydown={(e) => editKeydown(e, () => saveEdit(row.live.id), cancelEdit)} />
-                    <UnitsSelect bind:value={editUnits} />
-                    <input class="desc-input-inline" bind:value={editDescription}
-                      onkeydown={(e) => editKeydown(e, () => saveEdit(row.live.id), cancelEdit)} />
-                    <button type="button" onclick={() => saveEdit(row.live.id)} disabled={saving}>Save</button>
-                    <button type="button" onclick={cancelEdit} disabled={saving}>Cancel</button>
-                  </div>
-                  <FieldError errors={editFields} field="qty_ordered" />
-                  <FieldError errors={editFields} field="units" />
-                  <FieldError errors={editFields} field="description" />
-                  <FormMessage error={editError} />
-                </td>
-              </tr>
-            {:else}
-              <tr class="row-changed">
+            <tr class="row-changed">
                 <td class="num">{fmtQty(row.qty)} {row.units}</td>
                 <td>{row.description || '—'}</td>
                 <td class="acts">
@@ -261,7 +175,6 @@
                   {/if}
                 </td>
               </tr>
-            {/if}
           {:else if row.kind === 'changed-orig'}
             <tr class="row-gone">
               <td class="num keep">{fmtQty(row.qty)} {row.units}</td>
@@ -279,26 +192,7 @@
               </td>
             </tr>
           {:else if row.kind === 'added'}
-            {#if editId === row.live.id}
-              <tr class="row-editing">
-                <td colspan="3">
-                  <div class="edit-row-layout">
-                    <input class="qty-input" bind:value={editQty}
-                      onkeydown={(e) => editKeydown(e, () => saveEdit(row.live.id), cancelEdit)} />
-                    <UnitsSelect bind:value={editUnits} />
-                    <input class="desc-input-inline" bind:value={editDescription}
-                      onkeydown={(e) => editKeydown(e, () => saveEdit(row.live.id), cancelEdit)} />
-                    <button type="button" onclick={() => saveEdit(row.live.id)} disabled={saving}>Save</button>
-                    <button type="button" onclick={cancelEdit} disabled={saving}>Cancel</button>
-                  </div>
-                  <FieldError errors={editFields} field="qty_ordered" />
-                  <FieldError errors={editFields} field="units" />
-                  <FieldError errors={editFields} field="description" />
-                  <FormMessage error={editError} />
-                </td>
-              </tr>
-            {:else}
-              <tr class="row-added">
+            <tr class="row-added">
                 <td class="num"><span class="added-tag">+</span>{fmtQty(row.qty)} {row.units}</td>
                 <td>{row.description || '—'}</td>
                 <td class="acts">
@@ -312,32 +206,44 @@
                   {/if}
                 </td>
               </tr>
-            {/if}
           {/if}
         {/each}
-      {/if}
-      {#if newOpen}
-        <tr class="row-editing">
-          <td colspan="3">
-            <div class="edit-row-layout">
-              <input class="qty-input" bind:value={newQty}
-                onkeydown={(e) => editKeydown(e, saveNew, cancelNew)} />
-              <UnitsSelect bind:value={newUnits} />
-              <input class="desc-input-inline" bind:value={newDescription} placeholder="Description"
-                onkeydown={(e) => editKeydown(e, saveNew, cancelNew)} />
-              <button type="button" onclick={saveNew} disabled={saving}>Add</button>
-              <button type="button" onclick={cancelNew} disabled={saving}>Cancel</button>
-            </div>
-            <FieldError errors={newFields} field="qty_ordered" />
-            <FieldError errors={newFields} field="units" />
-            <FieldError errors={newFields} field="description" />
-            <FormMessage error={newError} />
-          </td>
-        </tr>
       {/if}
     </tbody>
   </table>
 </section>
+
+
+<!-- The drafting modal: Qty / Units / Description for both new and edit. -->
+<Modal open={draft !== null} onCancel={cancelDraft} maxWidth="520px"
+  label={draft?.id ? 'Edit deliverable' : 'New deliverable'}>
+  {#if draft}
+  <form onsubmit={(e) => { e.preventDefault(); if (!saving) saveDraft(); }}>
+    <h3 class="modal-title">{draft.id ? 'Edit deliverable' : 'New deliverable'}</h3>
+    <p>
+      <label for="deliv-qty"><strong>Qty</strong></label><br>
+      <input id="deliv-qty" type="number" step="any" min="0" bind:value={draft.qty} style="width:6em">
+      <FieldError errors={draftFields} field="qty_ordered" />
+    </p>
+    <p>
+      <label for="deliv-units"><strong>Units</strong></label><br>
+      <UnitsSelect id="deliv-units" bind:value={draft.units} />
+      <FieldError errors={draftFields} field="units" />
+    </p>
+    <p>
+      <label for="deliv-desc"><strong>Description</strong></label><br>
+      <input id="deliv-desc" type="text" bind:value={draft.description} placeholder="Description"
+        style="width:100%;box-sizing:border-box">
+      <FieldError errors={draftFields} field="description" />
+    </p>
+    <p>
+      <button type="submit" disabled={saving}>{draft.id ? 'Save' : 'Add'}</button>
+      <button type="button" onclick={cancelDraft} disabled={saving}>Cancel</button>
+    </p>
+    <FormMessage error={draftError} />
+  </form>
+  {/if}
+</Modal>
 
 <style>
   /* Vertical rhythm only — no horizontal inset, so the diff table aligns to
@@ -375,16 +281,7 @@
   .deliv-table td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .deliv-table .added-tag { color: #166534; font-weight: 600; margin-right: 4px; }
 
-  /* Inline editing row — uses a flex layout spanning all columns */
-  .diff-table tr.row-editing { background: #f0f9ff; }
-  .diff-table tr.row-editing td { padding: 4px 8px; }
-
-  /* Flex row: qty input | units select | description (grows) | action buttons */
-  .edit-row-layout {
-    display: flex; align-items: center; gap: 6px;
-  }
-  .qty-input { width: 3.5em; flex-shrink: 0; }
-  .desc-input-inline { flex: 1; min-width: 0; box-sizing: border-box; }
+  .modal-title { margin: 0 0 12px; font-size: 16px; }
 
   /* Anchored note */
   .anchored-note { font-size: 11px; color: #9ca3af; font-style: italic; }

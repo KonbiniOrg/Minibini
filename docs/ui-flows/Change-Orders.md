@@ -66,7 +66,7 @@ Entry: **Job overview** (`#/jobs/{id}`), job `approved` or `in_progress`.
 
 Entry: `#/jobs/{jobId}/change-order/{coId}`, draft CO. (The old
 `#/change-orders/{id}` route redirects here; the send page stays at
-`#/change-orders/{id}/send`.)
+the **Send change order** modal over the CO page.)
 
 - [ ] **The CO page is a job-workspace panel (2026-07-19).** The JobShell
   chrome renders around it — job header, context band, nav rail — and
@@ -189,7 +189,7 @@ Entry: **Add line** on a draft CO (§3).
 
 ## 5. Send + the AC send guard
 
-- [ ] **Send to customer** (draft toolbar) → the send page pre-fills to/subject/
+- [ ] **Send to customer** (draft toolbar) → the send modal pre-fills to/subject/
   body with the portal link and attaches the CO PDF; sending flips the CO to
   `open` and the toolbar gains **Resend** + **Record Accepted / Record
   Rejected**.

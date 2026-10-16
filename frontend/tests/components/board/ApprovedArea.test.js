@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, fireEvent, waitFor, within } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({ api: { post: vi.fn() } }));
 
@@ -35,6 +35,20 @@ describe('ApprovedArea', () => {
     // gatekeeper opens the duration prompt instead of assigning
     expect(getByRole('button', { name: 'Assign' })).toBeInTheDocument();
     expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it('shows the dropped task name and estimated quantity in the prompt', async () => {
+    const { container, getByRole } = render(ApprovedArea, {
+      props: {
+        data: data({ est_worker_time: null, est_qty: '4.00', unit_label: 'ea' }),
+        canManage: true,
+      },
+    });
+    await dropOnWorkerColumn(container);
+    // scoped to the dialog: the task card in the pool also shows the name
+    const dialog = within(getByRole('dialog'));
+    expect(dialog.getByText('Cut')).toBeInTheDocument();
+    expect(dialog.getByText('4.00 ea')).toBeInTheDocument();
   });
 
   it('assigns directly when the task already has an estimate', async () => {

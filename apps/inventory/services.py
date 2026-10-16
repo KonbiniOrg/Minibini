@@ -132,17 +132,23 @@ class InventoryService:
 
         Moves the discard's on-hand onto keep, repoints EVERY reference
         (earmarks — sum-collapsed on the (item, job) unique constraint —
-        materials, plan materials, all four line-item tables, template-material
-        associations, and expense stock links), folds the quantity aggregates,
-        applies the caller's retained-field choices to keep, then deletes the
+        materials, plan materials, all five line-item tables (estimate,
+        change order, invoice, PO, bill), template-material associations, and
+        expense stock links), folds the quantity aggregates, applies the
+        caller's retained-field choices to keep, then deletes the
         now-reference-free discard. `overrides` is a dict of final values for
         keep (the frontend resolves which side's value to keep).
 
         Hard-blocks on a unit mismatch (the QOH addition would be nonsense).
         Accepts any discard item — the catalog discard-guard is retired; an
-        explicit confirm lives in the UI."""
+        explicit confirm lives in the UI.
+
+        T9 review finding: ChangeOrderLineItem was omitted from the repoint
+        list — a merge would leave a discard-referencing CO line's
+        inventory_item SET_NULL'd (dangling FK deleted out from under it)
+        instead of repointed onto keep."""
         from django.core.exceptions import ValidationError
-        from apps.estimates.models import EstimateLineItem
+        from apps.estimates.models import ChangeOrderLineItem, EstimateLineItem
         from apps.invoicing.models import InvoiceLineItem
         from apps.purchasing.models import PurchaseOrderLineItem, BillLineItem
         from apps.inventory.models import TemplateMaterialAssociation
@@ -183,6 +189,7 @@ class InventoryService:
             # Repoint every remaining reference (pure FK swaps).
             Material.objects.filter(inventory_item=discard).update(inventory_item=keep)
             EstimateLineItem.objects.filter(inventory_item=discard).update(inventory_item=keep)
+            ChangeOrderLineItem.objects.filter(inventory_item=discard).update(inventory_item=keep)
             InvoiceLineItem.objects.filter(inventory_item=discard).update(inventory_item=keep)
             PurchaseOrderLineItem.objects.filter(inventory_item=discard).update(inventory_item=keep)
             BillLineItem.objects.filter(inventory_item=discard).update(inventory_item=keep)
@@ -255,24 +262,33 @@ class InventoryService:
         return item
 
     @staticmethod
-    def order_stock(item, quantity, po=None):
-        """Order an inventory item to stock: a plain PO line with no material
-        link and no job — legit to buy just to have the inventory. Receipt
-        lands in QOH via the normal PO receiving path. Mirrors
-        MaterialService.order's draft-append-or-create contract."""
+    def _split_order_line(line):
+        """Pop `qty` off a validated `line` block; the rest are
+        add_line_item_from_pli overrides."""
+        overrides = dict(line or {})
+        return overrides.pop('qty', None), overrides
+
+    @staticmethod
+    def order_stock(item, *, po=None, po_fields=None, line=None):
+        """Order an inventory item to stock: a plain PO line, no material link,
+        no job (PO order flow §4.2). `po` appends to that draft; otherwise a
+        PO is created from `po_fields` (the API requires a business; the
+        service tolerates an empty dict) and the line added in the same
+        transaction. `line['qty']` is required — stock has no material to
+        default from."""
         from django.core.exceptions import ValidationError
         from django.db import transaction
         from apps.purchasing.models import PurchaseOrder
         from apps.purchasing.services import PurchaseOrderService
-        if quantity is None or quantity <= 0:
-            raise ValidationError({'quantity': ['Quantity must be greater than 0.']})
+        qty, overrides = InventoryService._split_order_line(line)
+        if qty is None or qty <= 0:
+            raise ValidationError({'qty': ['Quantity must be greater than 0.']})
         if po is not None and po.status != PurchaseOrder.STATUS_DRAFT:
             raise ValidationError('Can only add lines to a draft purchase order.')
         with transaction.atomic():
             if po is None:
-                po = PurchaseOrderService.create_po()
-            li = PurchaseOrderService.add_line_item_from_pli(
-                po.pk, item.pk, quantity)
+                po = PurchaseOrderService.create_po(**(po_fields or {}))
+            li = PurchaseOrderService.add_line_item_from_pli(po.pk, item.pk, qty, **overrides)
         return po, li
 
     # --- QOH operations ---
@@ -366,6 +382,66 @@ class InventoryService:
             reason=reason or 'Stock receipt (expense)', user=user,
         )
         return qty
+
+    @staticmethod
+    def vendor_history(item, *, exclude_job=None):
+        """Who has this item been bought from (PO order flow §4.1). One row per
+        business from lines on POs that are neither draft nor cancelled, newest
+        first; `last_*` / `vendor_sku` / `contact_id` come from the newest
+        line's PO. `earmarks` lists the item's committed earmarks by job
+        (minus `exclude_job`, the calling material's own job). `open_drafts`
+        is every draft PO — vendor-less ones included, flagged by
+        business_id None — so the modal can filter by vendor client-side."""
+        from django.db.models import Count
+        from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
+        lines = (
+            PurchaseOrderLineItem.objects
+            .filter(inventory_item=item, purchase_order__business__isnull=False)
+            .exclude(purchase_order__status__in=[
+                PurchaseOrder.STATUS_DRAFT, PurchaseOrder.STATUS_CANCELLED])
+            .select_related('purchase_order__business')
+            .order_by('-purchase_order__issued_date', '-purchase_order__created_date', '-pk')
+        )
+        vendors, by_business, pos_seen = [], {}, {}
+        for li in lines:
+            po = li.purchase_order
+            row = by_business.get(po.business_id)
+            if row is None:
+                row = {
+                    'business_id': po.business_id,
+                    'business_name': po.business.business_name,
+                    'contact_id': po.contact_id,
+                    'last_ordered': (po.issued_date or po.created_date).date().isoformat(),
+                    'last_price': str(li.price),
+                    'vendor_sku': li.vendor_sku,
+                    'po_number': po.po_number,
+                    'times': 0,
+                }
+                by_business[po.business_id] = row
+                pos_seen[po.business_id] = set()
+                vendors.append(row)
+            if po.pk not in pos_seen[po.business_id]:
+                pos_seen[po.business_id].add(po.pk)
+                row['times'] += 1
+
+        earmark_qs = (Earmark.objects.filter(inventory_item=item, quantity__gt=0)
+                      .select_related('job').order_by('job__job_number'))
+        if exclude_job is not None:
+            earmark_qs = earmark_qs.exclude(job_id=exclude_job)
+        earmarks = [{'job_id': e.job_id, 'job_number': e.job.job_number,
+                     'quantity': str(e.quantity)} for e in earmark_qs]
+
+        drafts = (PurchaseOrder.objects.filter(status=PurchaseOrder.STATUS_DRAFT)
+                  .select_related('business')
+                  .annotate(line_count=Count('purchaseorderlineitem'))
+                  .order_by('-created_date')[:100])
+        open_drafts = [{
+            'po_id': d.pk, 'po_number': d.po_number,
+            'business_id': d.business_id,
+            'business_name': d.business.business_name if d.business_id else None,
+            'line_count': d.line_count,
+        } for d in drafts]
+        return {'vendors': vendors, 'earmarks': earmarks, 'open_drafts': open_drafts}
 
     # --- Earmark operations ---
 
@@ -612,7 +688,8 @@ class MaterialService:
         No permission check: open to any authenticated user (deliberate carve-out
         from can_manage_financials per design).
         """
-        from apps.jobs.services import _assert_job_not_on_hold
+        from apps.jobs.services import _assert_job_not_on_hold, _assert_job_not_frozen
+        _assert_job_not_frozen(material.job, 'edit this material')
         _assert_job_not_on_hold(material.job, 'edit this material')
         if sell_price is not None and sell_price != material.sell_price:
             MaterialService._assert_not_invoiced(material)
@@ -651,7 +728,8 @@ class MaterialService:
                       inventory_item=None, accounting_category=None, units='none',
                       cost_source=None, customer_supplied=False):
         from django.core.exceptions import ValidationError
-        from apps.jobs.services import _assert_job_not_on_hold
+        from apps.jobs.services import _assert_job_not_on_hold, _assert_job_not_frozen
+        _assert_job_not_frozen(job, 'add a material to this job')
         _assert_job_not_on_hold(job, 'add a material to this job')
         from django.db import transaction
         if customer_supplied and (
@@ -735,12 +813,13 @@ class MaterialService:
         """
         from django.core.exceptions import ValidationError
         from django.db import transaction
-        from apps.jobs.services import _assert_job_not_on_hold
+        from apps.jobs.services import _assert_job_not_on_hold, _assert_job_not_frozen
         if {'quantity', 'released_qty'} & set(fields):
             raise ValidationError(
                 'Quantity changes must use the draw-more or restock actions.')
         # Every mutation path below (establish, PLI pricing, metadata) edits the
         # material, so the on-hold guard applies uniformly up front.
+        _assert_job_not_frozen(material.job, 'edit this material')
         _assert_job_not_on_hold(material.job, 'edit this material')
         # Locked before either pricing route below (the provisional-establish
         # branch and the PLI-backed pricing carve-out) can be reached: a
@@ -807,6 +886,8 @@ class MaterialService:
         Returns the surviving material, or None when the row was deleted.
         """
         from django.core.exceptions import ValidationError
+        from apps.jobs.services import _assert_job_not_frozen
+        _assert_job_not_frozen(material.job, 'remove this material')
         if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
             raise ValidationError(
                 'A consumed or released material is job history and cannot be '
@@ -832,6 +913,10 @@ class MaterialService:
         task = material.task
         if task is None or task.status != Task.STATUS_IN_PROGRESS:
             return material
+        # Frozen job (inactive contact): the receipt/expense that got us here
+        # must not fail — leave the material pending (RM 2026-10-11, #11).
+        if material.job is not None and not material.job.contact.is_active:
+            return material
         if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
             return material
         pli = material.inventory_item
@@ -850,6 +935,8 @@ class MaterialService:
         from django.core.exceptions import ValidationError
         from django.db import transaction
         from django.db.models import F
+        from apps.jobs.services import _assert_job_not_frozen
+        _assert_job_not_frozen(material.job, 'receive this material')
         if material.inventory_item_id is None:
             raise ValidationError('Set pricing on this material first.')
         if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
@@ -873,6 +960,8 @@ class MaterialService:
     def consume(material):
         from django.db import transaction
         from django.core.exceptions import ValidationError
+        from apps.jobs.services import _assert_job_not_frozen
+        _assert_job_not_frozen(material.job, 'consume this material')
         if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
             raise ValidationError(
                 f'consume requires pending state; got {material.consumption_state}'
@@ -1001,7 +1090,8 @@ class MaterialService:
         """
         from django.db import transaction
         from django.core.exceptions import ValidationError
-        from apps.jobs.services import _assert_job_not_on_hold
+        from apps.jobs.services import _assert_job_not_on_hold, _assert_job_not_frozen
+        _assert_job_not_frozen(material.job, 'restock this material')
         _assert_job_not_on_hold(material.job, 'restock this material')
         if qty <= Decimal('0.00') or qty > material.quantity:
             raise ValidationError('restock qty must be > 0 and <= quantity')
@@ -1027,6 +1117,8 @@ class MaterialService:
     def draw_more(material, qty):
         from django.db import transaction
         from django.core.exceptions import ValidationError
+        from apps.jobs.services import _assert_job_not_frozen
+        _assert_job_not_frozen(material.job, 'draw more of this material')
         if qty <= Decimal('0.00'):
             raise ValidationError('draw_more qty must be > 0')
         if material.is_expense_bound:
@@ -1052,6 +1144,8 @@ class MaterialService:
     def assign_task(material, task):
         """Move a material to a different task (or make it taskless with task=None)."""
         from django.core.exceptions import ValidationError
+        from apps.jobs.services import _assert_job_not_frozen
+        _assert_job_not_frozen(material.job, 'reassign this material')
         if material.consumption_state != Material.CONSUMPTION_STATE_PENDING:
             raise ValidationError('assign_task requires pending state')
         if task is not None:
@@ -1112,9 +1206,12 @@ class MaterialService:
                 material.delete()
 
     @staticmethod
-    def order(material, po=None):
-        """Path 1: start (or append to) a draft PO with a line linked to this
-        material. Vendor-less create is fine — vendor is required at issue."""
+    def order(material, *, po=None, po_fields=None, line=None):
+        """Path 1 (PO order flow §4.2): start a PO from `po_fields` or append
+        to draft `po`, with one line linked to this material, in one
+        transaction. `line` overrides default from the material (qty) and
+        its item (the rest). The resolver's explicit path links the material;
+        `_apply_po_line_cost` pushes the line price onto it."""
         from django.core.exceptions import ValidationError
         from django.db import transaction
         from apps.purchasing.models import PurchaseOrder
@@ -1130,20 +1227,23 @@ class MaterialService:
             raise ValidationError('Material is already on a purchase order.')
         if po is not None and po.status != PurchaseOrder.STATUS_DRAFT:
             raise ValidationError('Can only add lines to a draft purchase order.')
+        qty, overrides = InventoryService._split_order_line(line)
+        if qty is None:
+            qty = material.quantity
         with transaction.atomic():
             if po is None:
-                po = PurchaseOrderService.create_po()
+                po = PurchaseOrderService.create_po(**(po_fields or {}))
             li = PurchaseOrderService.add_line_item_from_pli(
-                po.pk, material.inventory_item_id, material.quantity,
-                job=material.job_id, material_id=material.pk)
+                po.pk, material.inventory_item_id, qty,
+                job=material.job_id, material_id=material.pk, **overrides)
         return po, li
 
     @staticmethod
     def _apply_po_line_cost(material, po_line, price):
         """Supply/override a PO-linked material's cost from the PO line price.
 
-        - Provisional (lot-less) material → ESTABLISH it: mint a QOH-0 lot at
-          `price`, stamp cost_source='po', and (when the PO line itself has no
+        - Provisional (lot-less) material → ESTABLISH it: onto the line's item
+          when the line has one, else mint a QOH-0 lot, at `price`, stamp cost_source='po', and (when the PO line itself has no
           inventory_item) repoint the line at the minted lot so
           PurchaseOrderReceivingService.receive_items' `li.inventory_item.qty_on_hand
           += qty` bump lands on that lot. establish is the SOLE earmark writer
@@ -1157,8 +1257,13 @@ class MaterialService:
         if price is None:
             return material
         if material.inventory_item_id is None:
+            # A catalog line establishes the material ONTO the line's item
+            # (PO order flow §4.4) so receipt lands on the item the material
+            # consumes from; only a freeform line mints a lot and repoints the
+            # line at it.
             MaterialService.establish(
-                material, unit_cost=price, cost_source=Material.COST_SOURCE_PO)
+                material, inventory_item=po_line.inventory_item,
+                unit_cost=price, cost_source=Material.COST_SOURCE_PO)
             if po_line.inventory_item_id is None:
                 po_line.inventory_item = material.inventory_item
                 po_line.save(update_fields=['inventory_item'])
@@ -1197,6 +1302,11 @@ class MaterialService:
                     raise ValidationError(f'Material {material_id} not found')
                 if job is not None and mat.job_id != job.pk:
                     raise ValidationError('Material is not on the requested job')
+                if (mat.inventory_item_id is not None and inventory_item is not None
+                        and mat.inventory_item_id != inventory_item.pk):
+                    raise ValidationError({'material_id': [
+                        f'This material needs {mat.inventory_item.code}, '
+                        f'not {inventory_item.code}.']})
                 MaterialService.link_to_po_line(mat, po_line)
                 # The PO write supplies/overrides the material's cost (a
                 # hand-built PO line may name a provisional material).

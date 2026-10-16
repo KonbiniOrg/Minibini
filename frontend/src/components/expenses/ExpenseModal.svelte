@@ -7,6 +7,7 @@
     expense = null,
     initialJob = null,
     initialMaterial = null,
+    lockPurchasedByToSelf = false,  // home card: the worker submits for themselves
     onSaved = () => {},
     onClose = () => {},
   } = $props();
@@ -19,6 +20,7 @@
         {expense}
         {initialJob}
         {initialMaterial}
+        {lockPurchasedByToSelf}
         onSaved={(exp) => onSaved(exp)}
         onCancel={onClose}
       />

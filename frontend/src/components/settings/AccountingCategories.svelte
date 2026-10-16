@@ -2,7 +2,13 @@
   import CategoriesImportPanel from '../qboimport/CategoriesImportPanel.svelte';
   import QboPullButton from '../qboimport/QboPullButton.svelte';
   import { onMount } from 'svelte';
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
+  import LoadState from '../LoadState.svelte';
+  import Modal from '../Modal.svelte';
+  import FieldError from '../FieldError.svelte';
+  import FormMessage from '../FormMessage.svelte';
+  import { triageError } from '../../lib/errorTriage.js';
+  import { showError } from '../../stores/messages.js';
 
   let pullEpoch = $state(0);
 
@@ -11,6 +17,7 @@
   let loadingCategories = $state(true);
   let loadingQBO = $state(true);
   let error = $state('');
+  let loadError = $state(null);
   let success = $state('');
   let saving = $state(null);
   let showInactive = $state(false);
@@ -20,6 +27,9 @@
 
   const emptyForm = { code: '', name: '', taxable: true, is_deposit: false, default_description: '', is_active: true };
   let form = $state({ ...emptyForm });
+  // Form-modal error venue (triaged): field bag + footer message.
+  let formError = $state('');
+  let fieldErrs = $state({});
 
   let visibleCategories = $derived(
     showInactive ? categories : categories.filter(c => c.is_active)
@@ -27,12 +37,13 @@
 
   async function loadCategories() {
     loadingCategories = true;
+    loadError = null;
     try {
       const catData = await api.get('/api/accounting-categories/');
       categories = catData.results || catData;
     } catch (e) {
       if (e.status !== 403) {
-        error = e.message || 'Failed to load categories';
+        loadError = errorMessage(e, 'Failed to load categories.');
       }
     } finally {
       loadingCategories = false;
@@ -58,6 +69,7 @@
     editing = null;
     editingReferenced = false;
     form = { ...emptyForm };
+    formError = ''; fieldErrs = {};
     adding = true;
   }
 
@@ -73,11 +85,13 @@
       default_description: cat.default_description || '',
       is_active: cat.is_active,
     };
+    formError = ''; fieldErrs = {};
   }
 
   function cancelForm() {
     adding = false;
     editing = null;
+    formError = ''; fieldErrs = {};
   }
 
   async function saveForm() {
@@ -97,7 +111,9 @@
       await loadCategories();
       setTimeout(() => success = '', 3000);
     } catch (e) {
-      error = e.message || 'Failed to save';
+      const t = triageError(e);
+      if (t.overlay) showError(t.overlay);
+      else { formError = t.message; fieldErrs = t.fields; }
     } finally {
       saving = null;
     }
@@ -142,9 +158,8 @@
   <CategoriesImportPanel onCommitted={loadCategories} />
 {/key}
 
-{#if loadingCategories}
-  <p>Loading accounting categories...</p>
-{:else if categories.length === 0 && !adding}
+<LoadState loading={loadingCategories} error={loadError} loadingText="Loading accounting categories...">
+{#if categories.length === 0 && !adding}
   <p>No accounting categories found. <button type="button" onclick={startAdd}>Add one</button></p>
 {:else}
   <fieldset>
@@ -223,17 +238,23 @@
     </p>
   </fieldset>
 {/if}
+</LoadState>
 
-{#if adding || editing}
-  <fieldset>
-    <legend><strong>{editing ? 'Edit Category' : 'New Category'}</strong></legend>
+<!-- Create/edit in the Modal shell (2026-10-10; was an inline fieldset below
+     the table). Button-driven content (Create / Save Changes are
+     type=button), so the shell takes onSave + busy. -->
+<Modal open={adding || !!editing} onSave={saveForm} onCancel={cancelForm} busy={saving != null} maxWidth="560px"
+  label={editing ? 'Edit category' : 'New category'}>
+    <h3 class="modal-title">{editing ? 'Edit Category' : 'New Category'}</h3>
     <p>
       <label for="cat-code"><strong>Code *</strong></label><br>
       <input type="text" id="cat-code" bind:value={form.code} maxlength="20" required>
+      <FieldError errors={fieldErrs} field="code" />
     </p>
     <p>
       <label for="cat-name"><strong>Name *</strong></label><br>
       <input type="text" id="cat-name" bind:value={form.name} maxlength="100" required>
+      <FieldError errors={fieldErrs} field="name" />
     </p>
     <p>
       <label>
@@ -269,5 +290,9 @@
       </button>
       <button type="button" onclick={cancelForm}>Cancel</button>
     </p>
-  </fieldset>
-{/if}
+    <FormMessage error={formError} />
+</Modal>
+
+<style>
+  .modal-title { margin: 0 0 12px; font-size: 16px; }
+</style>

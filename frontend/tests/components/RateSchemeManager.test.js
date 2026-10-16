@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, within } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() }, errorMessage: (e, fallback) => e?.message || fallback }));
 
 import { api } from '@/lib/api.js';
 import RateSchemeManager from '@/components/RateSchemeManager.svelte';
+import { viewMode } from '@/stores/viewMode.js';
 
 const SCHEME = { rate_scheme_id: 1, name: 'Hourly', algorithm: 'elapsed_time', rate: '25', unit_label: 'hour', accounting_category: 1, modifiers: [], reference_counts: {}, is_active: true };
 const INACTIVE_SCHEME = { rate_scheme_id: 2, name: 'Retired Rate', algorithm: 'elapsed_time', rate: '10', unit_label: 'hour', accounting_category: 1, modifiers: [], reference_counts: {}, is_active: false };
@@ -458,5 +459,23 @@ describe('RateSchemeManager flat-fee mode (2026-08-16)', () => {
     expect(body.algorithm).toBe('flat_fee');
     expect(body.rate).toBe('0.00');
     expect(body.modifiers).toEqual([]);
+  });
+});
+
+describe('RateSchemeManager — DataTable', () => {
+  const headersOf = (t) => Array.from(t.querySelectorAll('thead th')).map((th) => th.textContent.trim());
+  const ALL = ['Name', 'Type', 'Rate', 'Unit', 'Category', 'Modifiers', 'Active', ''];
+  it('renders the scheme columns in both densities with data-col', async () => {
+    viewMode.set('lite');
+    const { findByRole, container } = render(RateSchemeManager);
+    await findByRole('cell', { name: 'Hourly' });
+    const table = container.querySelector('table.data-table');
+    expect(headersOf(table)).toEqual(ALL);
+    expect(table.querySelector('td[data-col="rate"]').textContent.trim()).toBe('$25/hour');
+    expect(table.querySelector('td[data-col="actions"] button').textContent).toBe('Edit');
+    viewMode.set('full');
+    const { findByRole: f2, container: c2 } = render(RateSchemeManager);
+    await f2('cell', { name: 'Hourly' });
+    expect(headersOf(c2.querySelector('table.data-table'))).toEqual(ALL);
   });
 });

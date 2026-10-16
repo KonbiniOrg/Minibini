@@ -1,15 +1,17 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { user as userStore } from '../../stores/auth.js';
   import { canManageTime as canManageTimeStore } from '../../stores/permissions.js';
   import { shiftActivityVersion } from '../../stores/shift.js';
   import ShiftLogTable from '../time/ShiftLogTable.svelte';
   import TimeEditModal from '../time/TimeEditModal.svelte';
+  import LoadState from '../LoadState.svelte';
 
   let { sinceDays = 7 } = $props();
 
   let shifts = $state([]);
   let loading = $state(true);
+  let error = $state(null);
   let modalOpen = $state(false);
   let editing = $state(null);
   let modalAction = $state('edit');
@@ -21,10 +23,13 @@
 
   async function load() {
     loading = true;
+    error = null;
     try {
       const since = new Date(Date.now() - sinceDays * 86400000).toISOString();
       const resp = await api.get(`/api/shifts/?user=me&since=${encodeURIComponent(since)}`);
       shifts = resp.results || resp;
+    } catch (e) {
+      error = errorMessage(e, 'Could not load shifts.');
     } finally { loading = false; }
   }
   function openEdit(s) { editing = s; modalAction = 'edit'; modalOpen = true; }
@@ -39,8 +44,8 @@
 <section>
   <h3>My Shifts</h3>
   <p class="window-note">(past {sinceDays} days)</p>
-  {#if loading}<p>Loading…</p>
-  {:else if shifts.length === 0}<p>No recent shifts.</p>
+  <LoadState {loading} {error}>
+  {#if shifts.length === 0}<p>No recent shifts.</p>
   {:else}
     <ShiftLogTable {shifts}>
       {#snippet actions(s)}
@@ -52,6 +57,7 @@
       {/snippet}
     </ShiftLogTable>
   {/if}
+  </LoadState>
 </section>
 
 <TimeEditModal open={modalOpen} recordType="shift" action={modalAction} record={editing}

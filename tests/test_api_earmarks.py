@@ -48,7 +48,7 @@ class EarmarkAPITest(BaseTestCase):
         self.assertEqual(row['pos'], [])
 
     def test_pos_lists_outstanding_pos_only(self):
-        po, li = InventoryService.order_stock(self.item, Decimal('3'))
+        po, li = InventoryService.order_stock(self.item, line={'qty': Decimal('3')})
         resp = self.client.get('/api/earmarks/')
         row = next(r for r in self._rows(resp)
                    if r['earmark_id'] == self.earmark.pk)

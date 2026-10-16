@@ -4,9 +4,30 @@ from apps.api.mixins import JobScopedCanManageMixin
 
 
 class JobSummarySerializer(serializers.ModelSerializer):
+    """One job row on the contact/business detail pages (and search).
+    `estimated_amount` is the same per-job financials figure JobSerializer
+    reports, memoized per serializer instance so a many=True render computes
+    each job once."""
+    contact_name = serializers.SerializerMethodField()
+    estimated_amount = serializers.SerializerMethodField()
+
     class Meta:
         model = Job
-        fields = ['job_id', 'job_number', 'name', 'status']
+        fields = ['job_id', 'job_number', 'name', 'status', 'contact', 'contact_name',
+                  'start_date', 'created_date', 'estimated_amount']
+
+    def get_contact_name(self, obj):
+        return obj.contact.name if obj.contact_id else None
+
+    def get_estimated_amount(self, obj):
+        cache = getattr(self, '_financials_cache', None)
+        if cache is None:
+            cache = {}
+            self._financials_cache = cache
+        if obj.pk not in cache:
+            from apps.jobs.financials import compute_job_financials
+            cache[obj.pk] = compute_job_financials(obj)
+        return str(cache[obj.pk]['estimated'])
 
 
 class JobSearchSerializer(serializers.ModelSerializer):
@@ -24,6 +45,10 @@ class JobSearchSerializer(serializers.ModelSerializer):
 class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
     can_manage_job_path = 'self'
     contact_name = serializers.SerializerMethodField()
+    contact_is_active = serializers.SerializerMethodField()
+    contact_business_id = serializers.SerializerMethodField()
+    contact_business_name = serializers.SerializerMethodField()
+    contact_business_is_active = serializers.SerializerMethodField()
     project_manager_name = serializers.SerializerMethodField()
     tasks = serializers.SerializerMethodField()
     materials = serializers.SerializerMethodField()
@@ -41,7 +66,8 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
         fields = [
             'job_id', 'job_number', 'name', 'status',
             'on_hold', 'hold_reason',
-            'contact', 'contact_name', 'project_manager', 'project_manager_name',
+            'contact', 'contact_name', 'contact_is_active', 'contact_business_id',
+            'contact_business_name', 'contact_business_is_active', 'project_manager', 'project_manager_name',
             'can_manage',
             'customer_po_number', 'description',
             'created_date', 'start_date', 'due_date', 'completed_date',
@@ -54,6 +80,20 @@ class JobSerializer(JobScopedCanManageMixin, serializers.ModelSerializer):
         # release actions so the service guards always run.
         read_only_fields = ['job_id', 'job_number', 'created_date', 'completed_date',
                             'on_hold', 'hold_reason']
+
+    def get_contact_is_active(self, obj):
+        return obj.contact.is_active
+
+    def get_contact_business_id(self, obj):
+        return obj.contact.business_id
+
+    def get_contact_business_name(self, obj):
+        b = obj.contact.business
+        return b.business_name if b else None
+
+    def get_contact_business_is_active(self, obj):
+        b = obj.contact.business
+        return b.is_active if b else None
 
     def get_contact_name(self, obj):
         return f"{obj.contact.first_name} {obj.contact.last_name}"

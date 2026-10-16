@@ -38,10 +38,13 @@ test('terms CRUD roundtrip and business-form visibility', async ({ page }) => {
   await editModal.getByRole('button', { name: 'Save' }).click();
   await expect(page.locator('tr', { hasText: 'Net 45 EOM E2E' })).toBeVisible();
 
-  // The new term is offered on the business form's assignment select.
-  await page.goto('/#/businesses/new');
-  await expect(page.locator('#terms option', { hasText: 'Net 45 EOM E2E' }))
-    .toHaveCount(1);
+  // The new term is offered on the business form's assignment select (the
+  // form is a modal over the contacts list since 2026-10-10).
+  await page.goto('/#/contacts');
+  await page.getByRole('button', { name: 'New Business' }).click();
+  await expect(page.getByRole('dialog', { name: 'New business' })
+    .locator('#terms option', { hasText: 'Net 45 EOM E2E' })).toHaveCount(1);
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click();
 
   // Two-phase delete: accept the confirm quoting the impact.
   await page.goto('/#/settings');

@@ -1,8 +1,11 @@
 """commit_contacts: terms → customers → vendors, with same-name merge.
 commit_terms: the standalone Settings → Business terms panel."""
+from unittest.mock import patch
+
 from django.test import TestCase
 
 from apps.contacts.models import Business, Contact, PaymentTerms
+from apps.contacts.services import ContactService
 from apps.qbo.import_services import QBOImportCommitService, QBOImportState
 
 
@@ -219,3 +222,84 @@ class CommitContactsTest(TestCase):
         self.assertEqual(result['customers']['updated'], 1)
         business = Business.objects.get(qbo_customer_id='71')
         self.assertEqual(business.default_contact.email, 'new@acme.com')
+
+
+class ImportPhoneMergeTest(TestCase):
+    def setUp(self):
+        from tests.test_qbo_import_state import store_snapshot
+        store_snapshot()
+
+    def test_create_puts_qbo_phone_as_sole_entry(self):
+        QBOImportCommitService.commit_contacts(_payload())
+        b = Business.objects.get(qbo_customer_id='71')
+        self.assertEqual(b.phones, [{'number': '555-1000', 'label': 'qbo'}])
+        self.assertEqual(b.default_contact.phones, [{'number': '555-1000', 'label': 'qbo'}])
+
+    def test_update_appends_unknown_number_and_skips_known(self):
+        QBOImportCommitService.commit_contacts(_payload())
+        b = Business.objects.get(qbo_customer_id='71')
+        c = b.default_contact
+        c.phones = [{'number': '(555) 100-0', 'label': 'cell'}]   # strips to 5551000 == QBO's
+        c.save()
+        row = dict(_payload()['customers'][0], action='update', phone='555-1000')
+        QBOImportCommitService.commit_contacts({'customers': [row], 'vendors': []})
+        c.refresh_from_db()
+        self.assertEqual(len(c.phones), 1)                       # known -> untouched
+        row['phone'] = '555-2000'
+        QBOImportCommitService.commit_contacts({'customers': [row], 'vendors': []})
+        c.refresh_from_db()
+        self.assertEqual(c.phones[-1], {'number': '555-2000', 'label': 'qbo'})
+
+
+class CommitStatusTest(TestCase):
+    def setUp(self):
+        from tests.test_qbo_import_state import store_snapshot
+        store_snapshot()
+        dc = Contact.objects.create(first_name='Jo', last_name='Acme', email='jo@acme.com')
+        self.biz = Business.objects.create(business_name='Acme Corp', default_contact=dc, qbo_customer_id='71')
+        dc.business = self.biz; dc.save()
+
+    def _row(self, action):
+        return dict(_payload()['customers'][0], action=action)
+
+    def test_deactivate_row_flips_locally_without_push(self):
+        with patch('apps.contacts.services._push_status_to_qbo') as push:
+            out = QBOImportCommitService.commit_contacts({'customers': [self._row('deactivate')], 'vendors': []})
+        push.assert_not_called()
+        self.assertEqual(out['customers']['deactivated'], 1)
+        self.biz.refresh_from_db(); self.assertFalse(self.biz.is_active)
+
+    def test_deactivate_row_with_blocker_is_skipped_with_reason(self):
+        from tests.test_contacts_status import make_job
+        from apps.jobs.models import Job
+        make_job(self.biz.default_contact, Job.STATUS_DRAFT)
+        out = QBOImportCommitService.commit_contacts({'customers': [self._row('deactivate')], 'vendors': []})
+        self.assertEqual(out['customers']['deactivated'], 0)
+        self.assertIn('1 open job', out['customers']['skipped'][0]['reason'])
+        self.biz.refresh_from_db(); self.assertTrue(self.biz.is_active)
+
+    def test_reactivate_row_cascades(self):
+        ContactService.deactivate_business(self.biz, push_to_qbo=False)
+        out = QBOImportCommitService.commit_contacts({'customers': [self._row('reactivate')], 'vendors': []})
+        self.assertEqual(out['customers']['reactivated'], 1)
+        self.biz.refresh_from_db(); self.assertTrue(self.biz.is_active)
+        self.assertTrue(self.biz.default_contact.is_active)
+
+    def test_vendor_deactivate_and_reactivate(self):
+        Business.objects.filter(pk=self.biz.pk).update(qbo_vendor_id='81')
+        vrow = dict(_payload()['vendors'][0])
+        out = QBOImportCommitService.commit_contacts(
+            {'customers': [], 'vendors': [dict(vrow, action='deactivate')]})
+        self.assertEqual(out['vendors']['deactivated'], 1)
+        self.biz.refresh_from_db(); self.assertFalse(self.biz.is_active)
+        out = QBOImportCommitService.commit_contacts(
+            {'customers': [], 'vendors': [dict(vrow, action='reactivate')]})
+        self.assertEqual(out['vendors']['reactivated'], 1)
+        self.biz.refresh_from_db(); self.assertTrue(self.biz.is_active)
+
+    def test_vendor_update_merges_qbo_phone(self):
+        Business.objects.filter(pk=self.biz.pk).update(qbo_vendor_id='81')
+        vrow = dict(_payload()['vendors'][0], action='update', phone='555-7777')
+        QBOImportCommitService.commit_contacts({'customers': [], 'vendors': [vrow]})
+        self.biz.refresh_from_db()
+        self.assertIn('555-7777', str(self.biz.phones))

@@ -1,11 +1,11 @@
 <script>
   import BusinessPicker from '../BusinessPicker.svelte';
+  import PhoneListEditor from './PhoneListEditor.svelte';
   import FieldError from '../FieldError.svelte';
   import FormMessage from '../FormMessage.svelte';
 
   const {
     contact = null,
-    businesses = [],
     defaultBusinessId = null,
     onSubmit,
     onCancel,
@@ -24,11 +24,7 @@
     // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
     email: contact?.email || '',
     // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
-    mobile_number: contact?.mobile_number || '',
-    // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
-    work_number: contact?.work_number || '',
-    // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
-    home_number: contact?.home_number || '',
+    phones: contact?.phones ? contact.phones.map((p) => ({ ...p })) : [],
     // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
     addr1: contact?.addr1 || '',
     // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
@@ -53,7 +49,7 @@
     // `business_id` (PrimaryKeyRelatedField, source='business'). Send that key
     // or the association is silently dropped.
     const { business, ...rest } = form;
-    const data = { ...rest, business_id: (business === '' || business == null) ? null : business };
+    const data = { ...rest, phones: rest.phones.filter((p) => p.number.trim()), business_id: (business === '' || business == null) ? null : business };
     onSubmit(data);
   }
 </script>
@@ -80,24 +76,7 @@
     <FieldError {errors} field="email" />
   </p>
 
-  <fieldset>
-    <legend><strong>Phone Numbers (at least one required)</strong></legend>
-    <p>
-      <label for="work_number"><strong>Work</strong></label><br>
-      <input type="text" id="work_number" bind:value={form.work_number}>
-      <FieldError {errors} field="work_number" />
-    </p>
-    <p>
-      <label for="mobile_number"><strong>Mobile</strong></label><br>
-      <input type="text" id="mobile_number" bind:value={form.mobile_number}>
-      <FieldError {errors} field="mobile_number" />
-    </p>
-    <p>
-      <label for="home_number"><strong>Home</strong></label><br>
-      <input type="text" id="home_number" bind:value={form.home_number}>
-      <FieldError {errors} field="home_number" />
-    </p>
-  </fieldset>
+  <PhoneListEditor bind:phones={form.phones} {errors} />
 
   <fieldset>
     <legend><strong>Address</strong></legend>

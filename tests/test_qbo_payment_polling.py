@@ -18,7 +18,7 @@ class PaymentPollingTest(TestCase):
         AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
 
         self.contact = Contact.objects.create(
-            first_name='John', last_name='Doe', email='john@example.com', mobile_number='555-0000',
+            first_name='John', last_name='Doe', email='john@example.com', phones=[{'number': '555-0000', 'label': 'mobile'}],
         )
         self.business = Business.objects.create(business_name='Acme Corp', default_contact=self.contact)
         self.contact.business = self.business

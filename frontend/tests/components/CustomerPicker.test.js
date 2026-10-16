@@ -19,5 +19,6 @@ describe('CustomerPicker', () => {
     await new Promise((r) => setTimeout(r, 300));
     await fireEvent.mouseDown(await findByRole('button', { name: /Acme \(business\)/ }));
     expect(onSelect).toHaveBeenCalledWith({ type: 'business', id: 5 });
+    expect(api.get.mock.calls.map((c) => c[0]).filter((u) => /\/api\/(contacts|businesses)\//.test(u)).every((u) => !u.includes('status='))).toBe(true);
   });
 });

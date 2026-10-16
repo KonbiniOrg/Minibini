@@ -1,7 +1,8 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import JobShell from '../../components/jobs/JobShell.svelte';
   import TasksPanel from '../../components/tasks/TasksPanel.svelte';
+  import LoadState from '../../components/LoadState.svelte';
 
   let { params = {} } = $props();
 
@@ -16,20 +17,20 @@
       job = await api.get(`/api/jobs/${jobId}/`);
       contact = job?.contact ? await api.get(`/api/contacts/${job.contact}/`).catch(() => null) : null;
     } catch (e) {
-      error = e.message || 'Could not load job.';
+      error = errorMessage(e, 'Could not load job.');
     }
   }
 
   $effect(() => { if (jobId) loadJob(); });
 </script>
 
-{#if error}<p class="error">{error}</p>
-{:else if job}
+<LoadState loading={!job && !error} {error}>
+{#if job}
   <JobShell {job} {contact} current="tasks" colorway="cw-tasks" onJobChange={loadJob}>
     <TasksPanel {job} onJobChange={loadJob} />
   </JobShell>
-{:else}<p>Loading…</p>{/if}
+{/if}
+</LoadState>
 
 <style>
-  .error { color: #a8071a; }
 </style>

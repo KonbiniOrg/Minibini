@@ -6,13 +6,20 @@ from weasyprint import HTML
 
 from apps.core.pdf_branding import render_document_html
 
+from apps.core.pdf_branding import render_document_html
+
 
 def render_purchase_order_html(po):
     """The purchase order document as an HTML string (what WeasyPrint
     renders)."""
     line_items = po.purchaseorderlineitem_set.select_related(
         'accounting_category', 'inventory_item'
-    ).order_by('line_number')
+    ).order_by('line_number'))
+    # Code column: the catalog code, blank for freeform lines and for minted
+    # LOT-* lots (a lot id means nothing to the vendor).
+    for li in line_items:
+        code = li.inventory_item.code if li.inventory_item_id else ''
+        li.display_code = '' if code.startswith('LOT-') else code
 
     total = sum(item.total_amount for item in line_items)
 

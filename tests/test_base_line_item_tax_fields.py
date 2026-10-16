@@ -23,7 +23,7 @@ class BaseLineItemTaxFieldsTest(TestCase):
             first_name='Test',
             last_name='Customer',
             email='test@example.com',
-            work_number='555-1234'
+            phones=[{'number': '555-1234', 'label': 'work'}]
         )
 
         # Create a job

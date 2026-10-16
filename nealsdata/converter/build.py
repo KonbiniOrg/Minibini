@@ -15,6 +15,9 @@ from decimal import Decimal
 
 from nealsdata.converter import parsing as P
 
+# Mirrors apps.contacts' phone-digit stripping (converter stays standalone).
+_PHONE_STRIP = re.compile(r'[\s\-.()+]')
+
 # Material unit cost as a fraction of sell price, for materials not linked to a
 # PriceListItem. Mirrors the PriceListItem purchase_price factor so linked and
 # unlinked materials cost consistently.
@@ -268,7 +271,7 @@ def build_configuration(c):
         ('email_smtp_host',    'smtp.gmail.com'),
         ('email_smtp_port',    '587'),
         ('business_email',     'minibini.test@gmail.com'),
-        ('our_public_url',     'minbini.me'),
+        ('our_public_url',     'minibini.me'),
         ('our_domain',         'robot-six.com'),
         # Mirror apps.core.units.DEFAULT_UNITS so every emitted line-item /
         # material / deliverable row validates against the running app's
@@ -480,6 +483,8 @@ def _emit_contact(c, business_pk, fa_row=None, fallback_name=None):
     mobile = _anonymize_phone(mobile) if mobile else ''
     if not work and not mobile:
         work = '555-555-5555'
+    phones = [{'number': n[:50], 'label': lab}
+              for n, lab in ((work, 'work'), (mobile, 'mobile')) if n]
 
     c.add_fixture('contacts.contact', contact_pk, {
         'first_name': first,
@@ -488,9 +493,9 @@ def _emit_contact(c, business_pk, fa_row=None, fallback_name=None):
         'email': email,
         'addr1': '', 'addr2': '', 'addr3': '',
         'city': '', 'municipality': '', 'postal_code': '', 'country_code': '',
-        'mobile_number': mobile[:20],
-        'work_number': work[:20],
-        'home_number': '',
+        'phones': phones,
+        'phones_digits': ' '.join(_PHONE_STRIP.sub('', ph['number']) for ph in phones),
+        'is_active': True,
         'business': business_pk,
         'qbo_customer_id': None,
     })
@@ -546,7 +551,9 @@ def _emit_business(c, key, info):
         'our_reference_code': f'BUS-{business_pk:04d}',
         'default_contact': default_pk,
         'business_address': '',
-        'business_phone': '',
+        'phones': [],
+        'phones_digits': '',
+        'is_active': True,
         'tax_exemption_number': '',
         'website': '',
         'terms': None,
@@ -1153,8 +1160,7 @@ def _scheme_pk(c, scheme_name):
 
 def _stamp_money_block(c, scheme_pk, modifier_keys=None):
     """Copy a seed RateScheme's money fields onto a jobs.task fixture dict
-    (task-owned money Phase 1). Mirrors Task.stamp_from_scheme /
-    apps.jobs.task_money_backfill.backfill_task_money exactly: qty_source
+    (task-owned money Phase 1). Mirrors Task.stamp_from_scheme exactly: qty_source
     from scheme.algorithm, plus rate/unit_label/accounting_category
     verbatim, source_scheme as provenance only (never read for money math),
     and active_modifiers resolved from modifier_keys (a list of
@@ -1329,7 +1335,7 @@ def _build_checklist_tasks(c, base_ref, job_pk, items, start_sort=0):
     sort_order = start_sort
     for item in items:
         # The 'Picked up/Delivered' marker drives Shipments, not Tasks.
-        if _is_pickup_marker(item['text']):
+        if P.is_pickup_marker(item['text']):
             continue
         # Board status-markers (Invoice Sent, Payment Received, …) are noise.
         if _is_dropped_checklist_line(item['text']):
@@ -2137,21 +2143,6 @@ def build_invoice_line_item_sources(c):
                     })
 
 
-def _is_pickup_marker(text):
-    """True when a checklist line is the 'Picked up/Delivered' marker.
-
-    Matches with or without a trailing recipient name; ordinary
-    'pick up ...' notes fail the 'picked up/delivered' prefix test.
-    """
-    return text.strip().lower().replace(' ', '').startswith('pickedup/delivered')
-
-
-def _has_pickup_done(card):
-    """True when the card's checklist has a checked 'Picked up/Delivered' item."""
-    return any(it['completed'] and _is_pickup_marker(it['text'])
-               for it in P.parse_checklist(card.get('Checklist')))
-
-
 def build_shipments(c):
     """Emit deliverables.shipment + deliverables.shipmentitem fixtures.
 
@@ -2197,7 +2188,7 @@ def build_shipments(c):
         if job_fields is None:
             continue
 
-        marker_present = _has_pickup_done(card)
+        marker_present = P.has_pickup_done(card)
         is_completed = job_fields.get('status') == 'completed'
         # Two trigger paths: checked pickup marker, or completed status
         # without one (synthetic). Anything else: no Shipment.
@@ -2796,7 +2787,11 @@ def build_purchasing(c):
        Materials) gets a received_in_full PO to that Bill's vendor carrying all
        the Job's Materials (Material.po_line_item set) plus the linked Bill.
        First matched bill/vendor wins per Job; the vendor business is created if
-       it wasn't among the imported vendors.
+       it wasn't among the imported vendors (the only way a vendor enters the
+       output unless the orchestrator's all_vendors flag ran build_vendors).
+       The PO's contact is the Bill's Contact Name — added to the vendor as a
+       further Contact when missing — falling back to the business default only
+       when the Bill names nobody.
     """
     job_status = {f['pk']: f['fields']['status']
                   for f in c.fixture_data if f['model'] == 'jobs.job'}
@@ -2832,6 +2827,7 @@ def build_purchasing(c):
         if base not in bill_for_base:
             bill_for_base[base] = {
                 'org': org,
+                'person': (row.get('Contact Name') or '').strip(),
                 'date': P.to_datetime(row.get('Date')),
                 'ref': str(row.get('Reference') or '').strip(),
             }
@@ -2902,6 +2898,8 @@ def build_purchasing(c):
         res = resolve_contact(c, bill['org'])
         if res is None:
             continue
+        person = bill['person']
+        pnorm = P.normalize_name(person) if person else ''
         ent = c.entity_map.get(res['key'])
         if ent is None:                       # vendor not imported — create it now
             if res['kind'] == 'individual':
@@ -2910,10 +2908,20 @@ def build_purchasing(c):
             else:
                 _emit_business(c, res['key'],
                                {'display': res['display'], 'fa_row': res['fa_row'],
-                                'persons': {}})
+                                'persons': {pnorm: person} if pnorm else {}})
             ent = c.entity_map[res['key']]
         if ent['kind'] != 'business':         # a PO needs a Business vendor
             continue
+        # The PO names the Bill's own contact person (attached to the vendor
+        # as another Contact if the business doesn't have them yet); only a
+        # Bill with no Contact Name falls back to the business default.
+        contact_pk = ent['default_contact']
+        if pnorm:
+            contact_pk = ent['contacts'].get(pnorm)
+            if contact_pk is None:
+                contact_pk = _emit_contact(c, ent['business'],
+                                           fallback_name=person)
+                ent['contacts'][pnorm] = contact_pk
 
         dt = bill['date']
         dstr = (dt.strftime('%Y-%m-%dT00:00:00+00:00') if dt
@@ -2923,7 +2931,7 @@ def build_purchasing(c):
         c.add_fixture('purchasing.purchaseorder', po_pk, {
             'po_number': f'PO{po_count:04d}',
             'business': ent['business'],
-            'contact': ent.get('default_contact'),
+            'contact': contact_pk,
             'status': 'received_in_full',
             'created_date': dstr,
             'requested_date': None,

@@ -35,6 +35,43 @@ See CLAUDE.md "Architecture" for the full app tree. The split is by
 domain (jobs, estimates, contacts, invoicing, purchasing, inventory,
 core) plus a single `apps/api/` app that owns the REST layer.
 
+### 2.1a Migrations
+
+The migration graph was **consolidated on 2026-10-05**: every app's history
+(255 files, 2025-08 → 2026-08) was deleted and regenerated from the models
+as per-app `0001_initial` (plus the `0002`/`0003_initial` splits Django
+emits for circular FKs). The schema is byte-identical to before; only the
+bookkeeping changed. Two operations that `models.py` cannot express were
+re-authored by hand and **must survive any future squash**:
+
+| Migration | What it does |
+|---|---|
+| `core/0003_seed_setup_defaults` | Seeds the AppState counters, document-number patterns, gmail server defaults, and `units_list` on a fresh DB (`data-constraints.md` §1.1). Logic lives in `apps/core/setup_defaults.py` so tests can re-run it directly. |
+| `invoicing/0002_unique_draft_invoice_per_job` | MySQL stored generated column `draft_job_id` + unique index — the real one-draft-invoice-per-job enforcement. `Invoice.Meta`'s conditional `UniqueConstraint` is skipped on MySQL (no partial indexes). |
+
+Every one-time data backfill from the old graph was dropped: no empty
+database needs them, and every surviving dataset already carries their
+results. Do not re-introduce migrations that import historical models.
+
+**Gotcha:** `makemigrations` silently refuses to create an *initial*
+migration for an app whose `migrations/` directory contains any `.py`
+besides `__init__.py` (Django's `ask_initial` heuristic). Keep helper
+modules out of `migrations/` — that is why the seed logic lives in
+`apps/core/setup_defaults.py`.
+
+**Fresh developer database:** `migrate`, then
+`loaddata fixtures/large_datasets/nealseed.json` (the RM-managed seed). The
+staging deploy (`.github/workflows/main.yml`) runs `migrate --noinput` only;
+seeding staging is a one-time operator step (drop/recreate the DB, then
+`migrate` + `loaddata` via `docker compose run --rm minibini_django`), done
+2026-10-08 — the deploy never reloads the seed over a live DB, since
+`loaddata` upserts by PK and would revert edits and reset the counters.
+`tests/test_nealseed_fixture.py` proves the
+seed loads onto a migrate-only DB and passes `validate_data`. Existing
+databases that ran the old graph need their `django_migrations` rows
+replaced (`migrate --fake` after clearing the ten apps' rows); that is an
+operator step, not something the code does.
+
 ### 2.2 Service layer
 
 **All model CRUD goes through the service layer.** Every create, update, and
@@ -260,6 +297,9 @@ viewsets disable it (e.g., `UserViewSet` sets `pagination_class = None`).
 > - **Disable pagination on the viewset** (`pagination_class = None`) — only when
 >   the result set is *intrinsically bounded* and small (like `UserViewSet`).
 > - **Real pagination UI** — page controls, when the user should page through.
+>   In the SPA that is always `components/Pager.svelte` (both buttons rendered,
+>   the inapplicable one disabled, so Next never moves between pages); see
+>   `frontend/README.md` → Pagination.
 >
 > The anti-pattern to avoid: bumping `?page_size` to a big number and assuming
 > it's complete. If you bound a result deliberately, say so in the UI; never let
@@ -290,8 +330,11 @@ params, and row/selected rendering:
 | `PurchaseOrderPicker` | `/api/purchase-orders/?search=` | Global (po_number, vendor name) |
 | `InventoryItemPicker` | `/api/inventory/?search=` | Accepts `params` prop; "None (freeform)" via `header` snippet |
 | `CustomerPicker` | dual-source contacts + businesses | Emits `{type, id}` (not a plain id) |
+| `VendorPicker` | `GET /api/inventory/{id}/vendor-history/` (recent vendors) → `BusinessPicker` search | Not a `SearchPicker` wrapper: a recent-vendors `<select>` with a "Search all businesses…" escape into `BusinessPicker`; used by `OrderModal` (materials doc §15) |
 
 **Shared single-model picker contract:** `value` (bindable entity id), `onSelect(fullRow|null)`, optional `selectedItem` for id-based prefill. `CustomerPicker` deviates: its `value` is `{type, id}`.
+
+**Inventory sub-endpoints** beyond CRUD: `POST /api/inventory/{id}/order/` (order to stock), `GET /api/inventory/{id}/vendor-history/` (`IsAuthenticated`; vendors, earmarks and open drafts for the Order modal) — materials doc §11.
 
 **Backend `?search=`** is hand-rolled in `get_queryset` for purchase-orders (po_number, vendor name) and inventory items (code, description) — the same pattern as contacts/jobs. DRF `SearchFilter` is not used.
 
@@ -722,6 +765,15 @@ the same `/api` proxy covers its requests.
   `ShiftBand` header strip (Clock In / Clock Out; the `CurrentBlepBand`
   slides in beneath it while a session runs — both in `App.svelte`'s
   sticky `.app-bands` wrapper).
+- `deliverables.js` — `deliverablesVersion` + `notifyDeliverablesChanged()`
+  (2026-09-29). The version-store pattern (same shape as `blepActivity.js`
+  / `shift.js`): every SPA mutation of a job's deliverables bumps it
+  (`DeliverablesEditModal` save, `CODeliverablesSection` add/edit/delete/
+  undo, Make Deliverable on an estimate line, removing a line together
+  with its deliverable), and every view holding a copy refetches
+  (`EstimatePanel` / `ChangeOrderPanel` send gates, the context band's
+  `DeliverablesSection`, the CO panel's live list). Same-client only; the
+  server guards remain the backstop for other clients' edits.
 
 ### 5.4 Routing
 
@@ -767,7 +819,9 @@ banner pages, plain pages; `frontend/README.md` § CSS). The 2026-07
 consolidation promoted every rule that existed as copies in two or more
 components: `.toolbar` (+ buttons), `.back-link`, `.page-title`,
 `.action-link`, `.edit-link`, `.panel`/`.panel-head`/`.panel-scroll`,
-`.badge-invoiced`, `.row-actions button`, and `.page-tabs`, alongside
+`.badge-invoiced`, `.row-actions button`, `.page-tabs`, and (2026-10-11)
+`.section-title` — the summary blocks' small-caps title, now also the
+contact/business activity-section heading — alongside
 the families below. Rule of the road: page styles arrange and tune;
 copying a rule between components means it should be promoted instead;
 local overrides may resize a family for dense contexts but never
@@ -1150,63 +1204,148 @@ blep wrapper.
 
 ---
 
-## 6. View mode (full / lite)
+## 6. View mode: density and layout
 
-Two-axis design: **content density** (lite vs. full) is independent of
-**layout/styling** (responsive CSS). The store handles density only;
-layout is per-component CSS.
+Two independent axes (design: `docs/plans/2026-10-08-view-mode-seams.md`,
+2026-10-08):
 
-The bigger lite-mode design — what each page actually shows in lite,
-how aggressively to hide things, the toggle's permanent home — is
-deferred pending real user feedback. Today's behavior (sparse
-`<FullOnly>` adoption, sidebar-mounted toggle, `localStorage`
-persistence) is intentionally minimal until that feedback exists.
+- **Density** — `lite` / `full`. A *user preference* about how much data is
+  in front of them: some people want everything, some want only what the
+  task at hand needs. Most shop-floor workers are expected to stay in lite,
+  but it is a working-style choice, not a role. It is **never** a permission
+  mechanism: anything a user may not see is gated by the permission stores
+  first (a page builds its column array from `$canManageX`), and density
+  only trims what remains.
+- **Layout** — `desktop` / `phone`. A *device fact*: is there room for a
+  sidebar and a wide table? Derived from `matchMedia`, never from the
+  density choice.
 
-### 6.1 Store
+Nothing reads one axis to infer the other. A phone user may run full
+density in a stacked layout; a desktop user may run lite in a tabular one.
 
-`frontend/src/stores/viewMode.js` — Svelte writable, defaults to
-`'lite'`, persisted to `localStorage` under `minibini_view_mode`.
-`toggleViewMode()` flips between `'full'` and `'lite'`.
+### 6.1 Stores
 
-```javascript
-const stored = localStorage.getItem(STORAGE_KEY) || 'lite';
-export const viewMode = writable(stored);
-viewMode.subscribe((value) => localStorage.setItem(STORAGE_KEY, value));
-```
+`frontend/src/stores/viewMode.js` — writable `'lite' | 'full'`, default
+`'lite'`, persisted to `localStorage` under `minibini_view_mode`;
+`toggleViewMode()` flips it. Written only by the two toggle affordances
+(sidebar `LITE | FULL`, profile panel). Server-side per-user persistence
+remains future work.
 
-Persistence is client-side only. Future work: store as a user
-preference fetched from the API on load.
+`frontend/src/stores/layout.js` — readable `'desktop' | 'phone'` from
+`window.matchMedia('(max-width: 720px)')`, following `change` events;
+`'desktop'` when `matchMedia` is unavailable (jsdom). Exports
+`PHONE_MAX_WIDTH = 720`; CSS uses the same number in `@media` rules.
+Nothing writes it.
 
-### 6.2 The `<FullOnly>` wrapper
+`main.js` mirrors both onto `<body>` as `data-view-mode` and `data-layout`
+so plain CSS can key off either axis.
 
-`frontend/src/components/FullOnly.svelte`:
+### 6.2 The four seams
 
-```svelte
-<script>
-  import { viewMode } from '../stores/viewMode.js';
-  const { children } = $props();
-</script>
+All mode-dependent behaviour lives in exactly one of these. A template that
+reads `$viewMode` or `$layout` anywhere else is a convention violation, and
+`routes/*.svelte` never import either store.
 
-{#if $viewMode === 'full'}
-  {@render children()}
-{/if}
-```
+1. **Sections — `<FullOnly>`** (`components/FullOnly.svelte`). Whole blocks
+   lite doesn't show. No current consumers: the contact/business detail
+   pages, its only users, went FULL-only in the 2026-10-10 redesign (their
+   "show N completed" toggle replaced density-driven hiding; a LITE
+   trimming pass is pending). The seam stays — it is the right tool when a
+   whole block should disappear in lite.
+2. **Rows and labels — `$derived` view objects.** Which rows appear (closed
+   items hidden), what a label says, whether a cell links out. One
+   `$derived` (or a pure `lib/` helper) consults the store; the markup
+   iterates the result and never branches on mode. Exemplar:
+   `HistoryPanel.svelte`'s `entries` (lite keeps only entries with text).
+3. **Columns — `components/DataTable.svelte`.** Every plain list table in
+   the SPA (~40 tables, consolidated 2026-10) declares its columns as data:
+   `{ id, label, liteLabel?, field?, cell?, header?, lite?, phone?, align? }`.
+   `lite: false` hides a column in lite density; `phone: false` hides it in
+   phone layout. `cell` is a Svelte 5 snippet `(row) => markup` for links,
+   badges, buttons and `{@html}`; `field` renders `row[field]` as text;
+   `header` is an optional snippet for the `<th>` (sortable headers).
+   Permission-gated columns are added to the array conditionally by the
+   page, never via a flag. On phone the same visible columns render as one
+   `<dl>` card per row (`.data-cards` / `.data-card` in `app.css`) instead
+   of a `<table>`. Props: `rows`, `columns`, `key` (`(row, i) => key`),
+   `emptyText`, `class`, `rowClass` (`(row) => class`). Component-scoped
+   styles that target the rendered rows must opt out of scoping
+   (`:global(tr.short td)`), because the `<tr>`/`<td>` belong to
+   `DataTable`'s scope.
+   **Not** on `DataTable`, deliberately: editing grids with per-row inputs
+   (QBO import panels, receive/reconcile forms, deliverables editors,
+   settings grids, `MaterialSeverDialog`), document line tables with footers
+   (`LineItemTable`, estimate/CO/invoice edit views, docsurface, portals,
+   send pages), and grouped-row structures (`UnpaidCard`,
+   `JobHistorySection`). Label/value layouts are `<dl>` (the global `dl`
+   grid in `app.css`), never a table.
+4. **Shell — `App.svelte`.** The one place a *parallel component* is
+   legitimate: on phone layout the shell may mount a drawer nav instead of
+   `Sidebar.svelte` and make modals full-screen. Not built yet.
 
-Convention: wrap full-mode-only sections in `<FullOnly>` rather than
-checking `$viewMode` in business components.
+Anti-patterns: wrapping a single `<th>` in `<FullOnly>` (use a column
+flag); wrapping a single row (use a `$derived` filter); hiding fetched,
+data-heavy content with `display: none`; a `lite`/`phone` flag on a
+permission-gated column.
 
-Adoption is sparse — currently only two consumers
-(`components/contacts/BusinessDetail.svelte`,
-`components/contacts/ContactDetail.svelte`). Other components either
-predate the convention or check `$viewMode` directly (e.g.,
-`HistoryPanel.svelte` filters history entries based on `$viewMode === 'lite'`).
+**Per-page defaults (planned, not built).** Density may also change which
+view a page *opens on*, not only what it shows — e.g. lite opening an
+estimate on Customer view where full opens on Edit view, or a different
+chip order in the mode bar. This is a use of seam 2, not a fifth seam:
+the page already holds its tab as data (`EstimatePanel` /
+`ChangeOrderPanel` have one `mode` state, a `modes` array that decides
+which chips appear and in what order, and one chooser that reads the
+per-document memory in `stores/jobWorkspace.js` and falls back to
+`'edit'`; `JobHistorySection`'s summary/timeline tab has the same shape).
+When the first such decision is made, the fallback and the `modes` order
+come from a `$derived` defaults object keyed by `$viewMode` — a small
+shared helper in the docsurface kit (returning `{ initialMode, modes }`)
+rather than an `if ($viewMode === 'lite')` in each panel — and the
+markup keeps branching only on `mode`. Remembered mode still wins over
+the density default (memory is the user's own last choice); whether
+memory is keyed per density, or reset on a density flip, is decided
+inside that same chooser when it comes up, and nowhere else.
+
+### 6.2a Fetch-site state — `components/LoadState.svelte`
+
+Not a mode seam, but consolidated in the same pass (2026-10): every
+fetch site renders `<LoadState {loading} {error}>…content…</LoadState>`
+instead of a hand-written `{#if loading}…{:else if error}…{:else}` chain.
+State stays in the caller (`let loading = $state(true); let error =
+$state(null);`); the catch block sets `error = errorMessage(err,
+'Could not load …')` per §3.9. `loadingText` carries page-specific copy
+("Searching..."); the default is "Loading...". The error renders with
+`role="alert"`. Loading wins over a stale error during a reload. Where a
+component shares one error state between its load and its row actions
+(`UnitsManager`, `ShiftRequestQueue`, `ShipmentsPanel`) it keeps its own
+error paragraph and `LoadState` wraps loading only; the four `*FormPage`
+routes and `PaymentTermsManager` send a load failure to the global overlay
+(no form to land on). The five redirect placeholder pages render an
+unconditional "Loading…" while redirecting and are not fetch-state
+branches. `TasksPanel` is the one deliberate partial-degradation site:
+its enrichment fetches (expenses, per-task materials, estimate and
+change-order context/pools) each fall back to a neutral value so the task
+tree stays usable, and the panel renders one `role="status"` notice naming
+what failed, with a Retry. One known gap (LATER.md): `SchedulePage` stays
+on "Loading schedule…" when the schedule store's fetch fails.
 
 ### 6.3 Toggle location
 
-The view-mode toggle currently lives at the bottom of the sidebar
-(`components/Sidebar.svelte`), shown as `LITE | FULL` with the
-active state in white. The original sidebar spec called for relocating
-it to a user profile page — that move hasn't happened.
+The density toggle lives at the bottom of the sidebar
+(`components/Sidebar.svelte`, `LITE | FULL`) and in the profile panel
+(`home/ProfilePanel.svelte`). Consolidating to one home is an open
+question. There is no layout toggle: layout is a device fact.
+
+### 6.4 Rollout state
+
+Done (2026-10, `feature/lite-view`): both stores, `DataTable`, `LoadState`
+at every fetch site, all plain list tables migrated, header-less
+label/value tables converted to `<dl>`. **No lite-content decisions have
+been made**: no migrated table sets a `lite`/`phone` flag, so lite and full
+currently render identical lists. RM is finishing the Full UI first; the
+per-page lite inventory (spec §7) then decides the flags. Remaining after
+that: the phone shell and its `phone: false` flags, toggle consolidation,
+server-side density persistence.
 
 ---
 
@@ -1465,8 +1604,9 @@ Disassociate `<button>`; when unlinked it shows two `<a>`s styled like
 buttons — *Create new* and *Link existing* — that route to the
 respective Create-from-Email and Associate-with-Existing pages. Each
 section is hidden when the viewer lacks the relevant permission atom
-(`can_manage_jobs` for the Job section; `can_manage_financials` for
-PO).
+(`can_manage_jobs` for the Job section; `can_manage_jobs` **or**
+`can_manage_financials` for PO — "Create new" shows for either, while
+Link existing / Disassociate stay financials-only).
 
 The Create-from-Email pages share `SenderResolutionForm.svelte`
 (`frontend/src/components/email/`), the sender-info + contact-picker /
@@ -1480,12 +1620,19 @@ every Create flow that produces a vendor Business naturally produces
 a Contact alongside it. The placeholder name "PO receiver" (or
 similar) is acceptable when no real sales rep is involved.
 
-SPA routes registered in `App.svelte`:
+SPA surfaces (2026-10-10: the job-side actions are modals hosted by
+`EmailDetailPage.svelte`, opened via the action panel's `onAction(name)`;
+their old routes are `RedirectTo` stubs bouncing to `/email/:id`):
 
-- `/email/:id/create-job` → `EmailCreateJobPage.svelte`
-- `/email/:id/create-po` → `EmailCreatePOPage.svelte`
-- `/email/:id/associate` → `EmailAssociatePage.svelte` (Job picker)
-- `/email/:id/associate-po` → `EmailAssociatePOPage.svelte`
+- Job "Create new" → `EmailCreateJobModal.svelte` (sender resolution +
+  job name/description; duplicate contact/business as in-modal sub-states;
+  a create lands on the new job)
+- Job / PO "Link existing" → `EmailLinkModal.svelte` with `kind: 'job' |
+  'po'` (`JobPicker` / `PurchaseOrderPicker`; links in place and reloads)
+- PO "Create new" → `OrderModal.svelte` with `source='email'`
+  (`components/purchaseorders/`; sender resolution + optional first line;
+  materials doc §15). `/email/:id/create-po` is a `RedirectTo` stub to
+  `/email/:id`; `EmailCreatePOPage.svelte` was deleted 2026-10-15
 
 (The create-bill / associate-bill routes and pages were deleted with the
 2026-07-23 bill retirement.)
@@ -1627,39 +1774,47 @@ history entry for each sibling would flood the activity feed.
 Disassociate doesn't propagate. Per-email is the surgical tool the
 user reaches for when a sibling really doesn't belong.
 
-### 7.12 SPA send pages
+### 7.12 Send modal
 
-The send compose surface is a per-document route
-(`/estimates/:id/send`, `/purchase-orders/:id/send`,
-`/invoices/:id/send`). Each wraps the shared
-`frontend/src/components/email/DocumentSendForm.svelte` (To / CC /
+The send compose surface for estimates, change orders and invoices is
+`frontend/src/components/email/DocumentSendModal.svelte` (2026-10-10; it
+replaced the three `/…/:id/send` pages, which are now `RedirectTo` stubs
+bouncing to the document). It is mounted beside the document panel
+(`EstimatePanel`, `ChangeOrderPanel`, `InvoicePanel`) and takes
+`{ open, label, title, defaultsUrl, sendUrl, submitLabel, beforeSubmit,
+onSent, onClose }`: on open it fetches `defaultsUrl` (the document's
+`send-defaults`), wraps the shared `DocumentSendForm.svelte` (To / CC /
 BCC / Subject / Body / Attachments-with-remove-checkboxes /
-Add-attachment / Send button with native `confirm()`), fetches its
-own `send-defaults` for prefill, and renders a focused read-only
-document summary below the form. Submit POSTs as
-`multipart/form-data` via `api.postMultipart()` in `lib/api.js` —
-the new sibling of the JSON `api.post()`.
+Add-attachment / Send button with native `confirm()`, plus a Cancel
+button when `onCancel` is given), and on submit POSTs `multipart/form-data`
+to `sendUrl` via `api.postMultipart()`. `beforeSubmit` (async → bool) runs
+*after* the form's own recipient confirm — the invoice panel's
+unapplied-deposit-credit confirm rides it. The read-only document summary
+the old pages rendered under the form is gone: the document is behind the
+modal. The estimate/CO deliverables gate is a modal→modal handoff
+(`DeliverablesEditModal` saves → the send modal opens). The purchase-order
+send page (`/purchase-orders/:id/send`) is unchanged — PO work is parked.
 
 ### 7.13 Reply composer
 
-The reply composer is inline on the email detail page —
-`EmailReplyComposer.svelte` mounted by `EmailDetailPage.svelte` above
-the original `EmailContent` when the user clicks Reply or Reply All in
-the right-rail `EmailActionPanel`. The page tracks a small
+The reply composer is a modal over the email detail page (2026-10-10; it
+used to render inline above the message) — `EmailReplyComposer.svelte`,
+mounted by `EmailDetailPage.svelte` while the user has clicked Reply or
+Reply All in the right-rail `EmailActionPanel`. The page tracks a small
 `replyMode = $state(null)` (one of `null | 'reply' | 'reply-all'`); the
 action panel's Reply / Reply All buttons set it via an `onReply(mode)`
-callback prop. The right rail uses `position: sticky` so the action
-panel (Job / PO associations + Reply controls) stays visible
-while the user scrolls between the compose form and the original
-email below it.
+callback prop, and the composer renders `<Modal open={true}>` while it is
+non-null.
 
 `EmailReplyComposer` owns the form state (to / cc / bcc / subject /
 body / extraFiles) directly and binds it into `DocumentSendForm`
-via `$bindable` props. Mid-compose mode switching (clicking Reply
-All while composing a Reply, or vice versa) preserves everything the
-user has typed and only updates the CC field — driven by an
-`$effect` that fires when `mode` changes after the initial load.
-Cancel button calls `onClose` which clears `replyMode`. Submit calls
+via `$bindable` props. Mid-compose mode switching preserves everything
+the user has typed and only updates the CC field — driven by an
+`$effect` that fires when `mode` changes after the initial load. Because
+the action panel's own buttons sit behind the overlay while composing,
+the Reply / Reply All toggle lives in the modal header and reports through
+an `onModeChange(mode)` prop that the page feeds back into `replyMode`.
+The form's Cancel button calls `onClose` which clears `replyMode`. Submit calls
 the reply endpoint and on success calls `onSent`, which clears the
 composer and reloads the email (so any inherited associations and
 the new outbound row in the linked Job's panel render
@@ -1930,11 +2085,11 @@ Concrete items, smallest first:
   `Job.objects.filter(...)` directly to compute the impact dict. That
   belongs on the service.
 
-- **Lite-mode rollout** (deferred pending user feedback). Once the
-  shape of lite mode is decided, expect: server-side persistence of
-  the per-user preference (currently `localStorage`-only), wider
-  `<FullOnly>` adoption (only two components use it today), and a
-  decision on the toggle's permanent home.
+- **View-mode rollout.** Plumbing and the list-table consolidation are in
+  (§6); lite still shows everything. Remaining, in order: Full UI work,
+  then the per-page lite inventory (`docs/plans/2026-10-08-view-mode-seams.md`
+  §7) sets `lite:` flags, then the phone shell, toggle consolidation, and
+  server-side density persistence.
 
 - **Pick a signals-vs-services convention.** `apps/jobs/signals.py` is
   empty; `apps/estimates/signals.py` is 123 lines. Decide on one

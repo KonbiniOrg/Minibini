@@ -160,6 +160,7 @@ def _assert_job_allows_blep(job, allowed_statuses, action):
     work should not be recorded against it. The hold check is explicit — the
     allow-lists describe pipeline position, and a held job keeps its true
     status underneath, so omission can't cover it."""
+    _assert_job_not_frozen(job, action)
     if job.on_hold:
         raise ValidationError(f"Cannot {action}: the job is on hold.")
     if job.status not in allowed_statuses:
@@ -168,6 +169,34 @@ def _assert_job_allows_blep(job, allowed_statuses, action):
             f"Cannot {action}: job status is '{job.status}', "
             f"must be one of {labels}."
         )
+
+
+def _assert_party_active(contact, field='contact'):
+    """A new job/PO may not point at an inactive contact, nor at a contact
+    whose business is inactive (spec §4.8)."""
+    if contact is None:
+        return
+    if not contact.is_active:
+        raise ValidationError({field: [f'{contact} is inactive.']})
+    business = contact.business
+    if business is not None and not business.is_active:
+        raise ValidationError({field: [f'{business.business_name} is inactive.']})
+
+
+def _assert_job_not_frozen(job, action):
+    """Spec 5.1: a job whose contact is inactive accepts no user-driven
+    mutation. Mirrors _assert_job_not_on_hold; system transitions never
+    call this."""
+    contact = job.contact
+    if contact.is_active:
+        return
+    business = contact.business
+    hint = (f', or move the job to an active contact at {business.business_name},'
+            if business is not None and business.is_active else ',')
+    raise ValidationError(
+        f"Cannot {action}: this job's contact, {contact.name}, is inactive. "
+        f"Reactivate the contact{hint} before making changes."
+    )
 
 
 def _assert_job_not_on_hold(job, action):
@@ -382,6 +411,7 @@ class BlepService:
         """Update a blep. Only `start_time` and `end_time` are editable here."""
         from apps.invoicing.claims import InvoiceClaimService
         from apps.invoicing.models import InvoiceLineItemSource
+        _assert_job_not_frozen(blep.task.job, 'edit this timeslip')
         # Billed actuals are frozen for everyone — the same rule `delete`
         # enforces, for the same reason: moving a blep's times under an
         # invoiced task silently changes the basis of a number already
@@ -456,6 +486,7 @@ class BlepService:
     def delete(blep, actor):
         from apps.invoicing.claims import InvoiceClaimService
         from apps.invoicing.models import InvoiceLineItemSource
+        _assert_job_not_frozen(blep.task.job, 'delete this timeslip')
         # Billed actuals are frozen for everyone: deleting a blep under an
         # invoiced task would silently change the basis of a number already
         # charged. (Estimate claims never block — estimates bill est_qty.)
@@ -522,6 +553,7 @@ class JobService:
     @staticmethod
     def create_job(**kwargs):
         """Create a new Job with auto-generated number."""
+        _assert_party_active(kwargs.get('contact'))
         job_number = NumberGenerationService.generate_next_number('job')
         job = Job(job_number=job_number, **kwargs)
         job.full_clean()
@@ -549,6 +581,18 @@ class JobService:
             job = Job.objects.get(pk=pk)
         except Job.DoesNotExist:
             raise NotFoundError(f'Job {pk} not found')
+        if not system_transition:
+            new_contact = kwargs.get('contact')
+            swap_only = set(kwargs) == {'contact'}
+            if new_contact is not None:
+                _assert_party_active(new_contact)          # never onto an inactive party
+            same_business_swap = (
+                swap_only and new_contact is not None
+                and job.contact.business_id is not None
+                and new_contact.business_id == job.contact.business_id
+                and new_contact.business.is_active)
+            if not same_business_swap:
+                _assert_job_not_frozen(job, 'edit this job')
         old_status = job.status
         for field, value in kwargs.items():
             setattr(job, field, value)
@@ -685,11 +729,16 @@ class JobService:
         )
 
     @staticmethod
+    def assert_mutable(job, action='change this job'):
+        _assert_job_not_frozen(job, action)
+
+    @staticmethod
     def release_loose_materials(job):
         """Restock (release) any task-less PENDING materials still committed
         to the job. Returns a list of {'description', 'quantity'} captured
         before restock removes the rows — used for an audit record."""
         from apps.inventory.services import MaterialService
+        _assert_job_not_frozen(job, 'release materials on this job')
         released = []
         for material in list(JobService._loose_pending_materials(job)):
             released.append({
@@ -726,6 +775,7 @@ class JobService:
             job = Job.objects.get(pk=pk)
         except Job.DoesNotExist:
             raise NotFoundError(f'Job {pk} not found')
+        _assert_job_not_frozen(job, 'hold this job')
         if job.on_hold:
             raise ValidationError('Job is already on hold.')
         if job.status not in (Job.STATUS_APPROVED, Job.STATUS_IN_PROGRESS):
@@ -752,6 +802,7 @@ class JobService:
             job = Job.objects.get(pk=pk)
         except Job.DoesNotExist:
             raise NotFoundError(f'Job {pk} not found')
+        _assert_job_not_frozen(job, 'release this job')
         if not job.on_hold:
             raise ValidationError('Job is not on hold.')
         JobService._assert_no_live_change_order(job)
@@ -770,6 +821,7 @@ class JobService:
         """
         from apps.estimates.models import ChangeOrder, Estimate
         from apps.invoicing.models import Invoice
+        _assert_job_not_frozen(job, 'delete this job')
         if Blep.objects.filter(task__job=job).exists():
             raise ValidationError(
                 'This job has recorded time and cannot be deleted. '
@@ -1074,6 +1126,7 @@ class TaskService:
         """
         from apps.jobs.models import SchemeInactiveError
 
+        _assert_job_not_frozen(job, 'add a task to this job')
         _assert_job_not_on_hold(job, 'add a task to this job')
         if not template.is_active:
             raise ValidationError(f"Template {template.template_name} is not active.")
@@ -1137,6 +1190,7 @@ class TaskService:
             for key in ('rate', 'unit_label', 'accounting_category')
             if key in task_fields
         }
+        _assert_job_not_frozen(job, 'add a task to this job')
         _assert_job_not_on_hold(job, 'add a task to this job')
         if not rate_scheme_id:
             raise ValidationError({'rate_scheme': 'Required.'})
@@ -1203,6 +1257,7 @@ class TaskService:
             task = Task.objects.get(pk=pk)
         except Task.DoesNotExist:
             raise NotFoundError(f'Task {pk} not found')
+        _assert_job_not_frozen(task.job, 'edit this task')
         _assert_job_not_on_hold(task.job, 'edit this task')
         # A terminal task is frozen: its work and billing inputs are settled.
         # sort_order is cosmetic (list position) and stays editable so a
@@ -1318,6 +1373,7 @@ class TaskService:
             task = Task.objects.get(pk=task_pk)
         except Task.DoesNotExist:
             raise NotFoundError(f'Task {task_pk} not found')
+        _assert_job_not_frozen(task.job, 'delete this task')
         _assert_job_not_on_hold(task.job, 'delete this task')
         if task.job.status in (Job.STATUS_COMPLETED, Job.STATUS_CANCELLED,
                                Job.STATUS_REJECTED):
@@ -1360,6 +1416,7 @@ class TaskService:
             task = Task.objects.get(pk=task_id)
         except Task.DoesNotExist:
             raise NotFoundError(f'Task {task_id} not found')
+        _assert_job_not_frozen(task.job, 'reorder tasks on this job')
         _assert_job_not_on_hold(task.job, 'reorder tasks on this job')
 
         items_qs = Task.objects.filter(job=task.job)
@@ -1382,6 +1439,7 @@ class TaskService:
         is the actual enforcer of the invariant. Unassigning (`assignee_id`
         falsy) has no such requirement.
         """
+        _assert_job_not_frozen(task.job, "change this task's assignment")
         _assert_job_not_on_hold(task.job, "change this task's assignment")
         if assignee_id and est_worker_time is None and not task.est_worker_time:
             raise TaskWorkerTimeRequired()
@@ -1458,6 +1516,7 @@ class TaskLifecycleService:
         from decimal import Decimal, InvalidOperation
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
+            _assert_job_not_frozen(task.job, 'record a quantity on this task')
             if task.status in (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED):
                 raise ValidationError('Task is already settled.')
             if task.qty_source != Task.QTY_ENTERED:
@@ -1492,6 +1551,7 @@ class TaskLifecycleService:
         """
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
+            _assert_job_not_frozen(task.job, 'complete this task')
             _assert_job_not_on_hold(task.job, 'complete this task')
             if task.status not in (Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS, Task.STATUS_BLOCKED):
                 raise ValidationError(
@@ -1591,6 +1651,7 @@ class TaskLifecycleService:
         """
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
+            _assert_job_not_frozen(task.job, 'block this task')
             _assert_job_not_on_hold(task.job, 'block this task')
             if task.status not in (Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS):
                 raise ValidationError(
@@ -1634,6 +1695,7 @@ class TaskLifecycleService:
         """Transition task from blocked -> in_progress."""
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
+            _assert_job_not_frozen(task.job, 'unblock this task')
             _assert_job_not_on_hold(task.job, 'unblock this task')
             if task.status != Task.STATUS_BLOCKED:
                 raise ValidationError(
@@ -1660,6 +1722,7 @@ class TaskLifecycleService:
         """
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
+            _assert_job_not_frozen(task.job, 'cancel this task')
             _assert_job_not_on_hold(task.job, 'cancel this task')
             allowed = (Task.STATUS_PENDING, Task.STATUS_IN_PROGRESS, Task.STATUS_BLOCKED)
             if task.status not in allowed:
@@ -1889,6 +1952,7 @@ class TaskLifecycleService:
             )
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
+            _assert_job_not_frozen(task.job, 'stop work on this task')
             if (on_behalf_of is None and not prior_qty_handled
                     and task.qty_source == Task.QTY_ENTERED
                     and Blep.objects.filter(
@@ -1942,6 +2006,7 @@ class TaskLifecycleService:
         """
         with transaction.atomic():
             task = Task.objects.select_for_update().get(pk=task_pk)
+            _assert_job_not_frozen(task.job, 'cancel work on this task')
             blep = (
                 Blep.objects
                 .filter(task=task, user=user, end_time__isnull=True)
@@ -2381,6 +2446,7 @@ class BoardService:
             })
         data['estimates'] = estimates
         data['is_revision'] = BoardService.is_revision(job)
+        data['section'] = BoardService.pipeline_section(job)
         return data
 
     @staticmethod
@@ -2425,6 +2491,7 @@ class BoardService:
                 'amount_paid': inv.qbo_amount_paid,
             })
         data['invoices'] = invoices
+        data['section'] = BoardService.unpaid_section(job)
         profitability = BoardService._compute_profitability(job)
         data.update(profitability)
         return data
@@ -2448,6 +2515,9 @@ class BoardService:
             'est_worker_time': (
                 str(task.est_worker_time) if task.est_worker_time else None
             ),
+            # Reference display for the board's worker-time prompt.
+            'est_qty': str(task.est_qty) if task.est_qty is not None else None,
+            'unit_label': task.unit_label,
             'has_active_blep': bool(open_user_ids),
             'active_worker_count': len(open_user_ids),
             'has_bleps': bool(bleps),
@@ -2509,7 +2579,7 @@ class BoardService:
 
         return 'needs-scoping'
 
-    UNPAID_SUB_STATUSES = {'invoice-sent', 'invoice-prepped', 'needs-invoice'}
+    UNPAID_SUB_STATUSES = {'invoice-sent', 'invoice-prepped', 'needs-invoice', 'needs-pickup'}
 
     @staticmethod
     def _in_progress_sub_status(job):
@@ -2537,13 +2607,70 @@ class BoardService:
 
     @staticmethod
     def _work_complete_sub_status(job):
-        """Sub-status for work_complete jobs: invoice lifecycle."""
-        from apps.invoicing.models import Invoice
+        """Sub-status for work_complete jobs: the invoice/pickup lifecycle.
+        Also the Unpaid column's section rule — see `unpaid_section`.
+
+        Priority order over the job's live (non-cancelled, non-superseded)
+        invoices:
+
+        1. any invoice sent and still owed (`Invoice.UNPAID_STATUSES` — open,
+           partly-paid, defaulted) → 'invoice-sent' (Awaiting Payment)
+        2. else any draft → 'invoice-prepped' (Invoice Drafted)
+        3. else a *paid, non-deposit* invoice exists and the deliverables are
+           not all picked up → 'needs-pickup' (Needs Pickup): the real bill
+           is settled, the customer just hasn't collected the work. Live,
+           the paid-and-collected variant never reaches the board — the
+           completion gate (`JobService.maybe_complete_if_resolved`) closes
+           the job — so this is what "money done, job still open" means.
+        4. else 'needs-invoice' (Needs Invoice). This includes the job whose
+           only paid invoice is a deposit — the final invoice hasn't been
+           started, whatever the pickup state (RM 2026-10-13/14).
+
+        A deposit invoice is one carrying a deposit line (a line whose
+        accounting category is `is_deposit` and that is not itself a
+        deposit *deduction*) — the system's own definition, see
+        `InvoiceLineItem.is_deposit_line`.
+        """
+        from apps.deliverables.services import DeliverableService
+        from apps.invoicing.models import (
+            Invoice, InvoiceLineItem, InvoiceLineItemSource,
+        )
         invoices = job.invoice_set.exclude(
             status__in=[Invoice.STATUS_CANCELLED, Invoice.STATUS_SUPERSEDED]
         )
-        if invoices.filter(status=Invoice.STATUS_OPEN).exists():
+        if invoices.filter(status__in=Invoice.UNPAID_STATUSES).exists():
             return 'invoice-sent'
         if invoices.filter(status=Invoice.STATUS_DRAFT).exists():
             return 'invoice-prepped'
+        paid = invoices.filter(status=Invoice.STATUS_PAID)
+        deposit_invoice_ids = set(
+            InvoiceLineItem.objects
+            .filter(invoice__in=paid, accounting_category__is_deposit=True)
+            .exclude(sources__source_type=InvoiceLineItemSource.SOURCE_DEPOSIT)
+            .values_list('invoice_id', flat=True)
+        )
+        settled_bill = paid.exclude(pk__in=deposit_invoice_ids).exists()
+        if settled_bill and not DeliverableService.all_deliverables_shipped(job):
+            return 'needs-pickup'
         return 'needs-invoice'
+
+    @staticmethod
+    def pipeline_section(job):
+        """Which Pipeline column section a card lives in, from the job's
+        underlying status and estimates — the hold flag is ignored (a held
+        job's `sub_status` is 'on-hold', which is what the pill says; the
+        section is where the card sits). Keys: 'needs-scoping',
+        'estimating', 'awaiting-response', 'awaiting-prep'."""
+        if job.status == Job.STATUS_APPROVED:
+            return 'awaiting-prep'
+        return BoardService._pipeline_sub_status(job)
+
+    @staticmethod
+    def unpaid_section(job):
+        """Which Unpaid column section a card lives in. The lane admits
+        non-work_complete jobs (held, cancelled-with-receivable, in_progress
+        with a deposit/progress invoice), whose `sub_status` is not an
+        invoice state; the section applies the one invoice/pickup rule to
+        every card regardless of status or hold. Keys: 'needs-invoice',
+        'invoice-prepped', 'invoice-sent', 'needs-pickup'."""
+        return BoardService._work_complete_sub_status(job)

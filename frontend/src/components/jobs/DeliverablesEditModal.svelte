@@ -1,21 +1,30 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import Modal from '../Modal.svelte';
   import UnitsSelect from '../UnitsSelect.svelte';
+  import { notifyDeliverablesChanged } from '../../stores/deliverables.js';
+  import LoadState from '../LoadState.svelte';
 
-  let { jobId, onClose } = $props();
+  // `notice`: optional one-line message shown under the heading. The
+  // estimate panel passes "deliverables are required" when Send Email is
+  // clicked on a job with none; the job overview's Edit link passes nothing.
+  let { jobId, onClose, notice = '' } = $props();
 
   let rows = $state([]);
   let loading = $state(true);
+  let loadError = $state(null);
   let saving = $state(false);
   let dirty = $state(false);
   let errorMsg = $state('');
 
   async function load() {
     loading = true;
+    loadError = null;
     try {
       const items = await api.get(`/api/jobs/${jobId}/deliverables/`);
       rows = items.map(r => ({ ...r, _new: false, _deleted: false }));
+    } catch (err) {
+      loadError = errorMessage(err, 'Could not load deliverables.');
     } finally {
       loading = false;
     }
@@ -99,9 +108,10 @@
       if (ordered_ids.length > 0) {
         await api.post(`/api/jobs/${jobId}/deliverables/reorder/`, { ordered_ids });
       }
+      notifyDeliverablesChanged();
       onClose(true);
     } catch (err) {
-      errorMsg = err.message || 'Save failed.';
+      errorMsg = errorMessage(err, 'Save failed.');
     } finally {
       saving = false;
     }
@@ -120,9 +130,8 @@
   onCancel={cancel} maxWidth="80vw" label="Edit deliverables">
 <form onsubmit={(e) => { e.preventDefault(); if (!saving && dirty) save(); }}>
   <h3>Edit deliverables</h3>
-    {#if loading}
-      <p>Loading...</p>
-    {:else}
+    {#if notice}<p class="notice">{notice}</p>{/if}
+    <LoadState {loading} error={loadError}>
       <table class="data-table">
         <thead>
           <tr><th>Order</th><th>Description</th><th>Qty</th><th>Units</th><th></th></tr>
@@ -148,11 +157,12 @@
         <button type="submit" disabled={saving || !dirty}>Save</button>
         <button type="button" onclick={cancel} disabled={saving}>Cancel</button>
       </p>
-    {/if}
+    </LoadState>
 </form>
 </Modal>
 
 <style>
   .err { color: #c00; }
+  .notice { color: #92400e; background: #fef3c7; padding: 6px 10px; border-radius: 3px; }
   table { width: 100%; border-collapse: collapse; }
 </style>

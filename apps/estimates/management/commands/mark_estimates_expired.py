@@ -37,7 +37,8 @@ class Command(ScheduledProcessCommand):
                     if est.status != Estimate.STATUS_OPEN:
                         continue
                     days = self._validity_days(est)
-                    EstimateService.update_status(pk, Estimate.STATUS_EXPIRED)
+                    EstimateService.update_status(pk, Estimate.STATUS_EXPIRED,
+                                                 system_transition=True)
                     record_history(
                         entry_type='action', object_type='estimate', object_id=pk,
                         user=system_user,

@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, findByText } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn() }, errorMessage: (e, fallback) => e?.message || fallback }));
 vi.mock('svelte-spa-router', () => ({ push: vi.fn(), link: () => {} }));
 
 import { api } from '@/lib/api.js';
 import InvoiceListPage from '@/routes/invoices/InvoiceListPage.svelte';
+import { viewMode } from '@/stores/viewMode.js';
 
 beforeEach(() => { api.get.mockReset(); });
 
@@ -78,5 +79,36 @@ describe('InvoiceListPage', () => {
     const { container, queryByText } = render(InvoiceListPage);
     await findByText(container, 'INV-2026-0004');
     expect(queryByText('DEPOSIT')).toBeNull();
+  });
+});
+
+describe('InvoiceListPage — DataTable', () => {
+  const headersOf = (t) => Array.from(t.querySelectorAll('thead th')).map((th) => th.textContent.trim());
+  const payload = {
+    count: 1, next: null, previous: null,
+    results: [{
+      invoice_id: 42, invoice_number: 'INV-1', display_number: 'INV-1', customer_name: 'Acme Corp',
+      job: 10, job_number: 'JOB-10', status: 'open', is_deposit: true,
+      sent_date: '2026-05-01T00:00:00Z', due_date: '2026-05-31', is_late: true,
+      total: '500.00', amount_paid: '100.00', balance: '400.00',
+    }],
+  };
+  const ALL = ['Invoice #', 'Job', 'Customer', 'Status', 'Sent', 'Due', 'Amount', 'Paid', 'Balance'];
+
+  it('renders the same nine columns in lite and full, with money right-aligned and data-col stamped', async () => {
+    api.get.mockResolvedValue(payload);
+    viewMode.set('lite');
+    const { container } = render(InvoiceListPage);
+    await findByText(container, 'INV-1');
+    const table = container.querySelector('table.data-table');
+    expect(headersOf(table)).toEqual(ALL);
+    expect(table.querySelector('td[data-col="balance"]').getAttribute('style')).toMatch(/text-align:\s*right/);
+    expect(table.querySelector('td[data-col="status"]').textContent).toContain('DEPOSIT');
+    expect(table.querySelector('td[data-col="due"]').textContent).toContain('⚠️');
+    expect(table.querySelector('td[data-col="job"] a')).toHaveAttribute('href', '#/jobs/10');
+    viewMode.set('full');
+    const { container: c2 } = render(InvoiceListPage);
+    await findByText(c2, 'INV-1');
+    expect(headersOf(c2.querySelector('table.data-table'))).toEqual(ALL);
   });
 });

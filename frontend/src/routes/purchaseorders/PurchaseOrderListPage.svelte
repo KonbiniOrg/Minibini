@@ -1,9 +1,11 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import PurchaseOrderList from '../../components/purchaseorders/PurchaseOrderList.svelte';
   import { push } from 'svelte-spa-router';
-  import { canManageFinancials as canManageFinancialsStore } from '../../stores/permissions.js';
-  import { pageRange, pageFromUrl } from '../../lib/pagination.js';
+  import { canManageFinancials as canManageFinancialsStore, canManageJobs as canManageJobsStore } from '../../stores/permissions.js';
+  import { pageRange } from '../../lib/pagination.js';
+  import LoadState from '../../components/LoadState.svelte';
+  import Pager from '../../components/Pager.svelte';
 
   let purchaseOrders = $state(null);
   let page = $state(1);
@@ -12,7 +14,7 @@
   let statusFilter = $state('');
   let awaitingReconciliationOnly = $state(false);
 
-  let canManageFinancials = $derived($canManageFinancialsStore);
+  let canCreate = $derived($canManageFinancialsStore || $canManageJobsStore);
 
   async function loadPOs() {
     loading = true;
@@ -27,7 +29,7 @@
       }
       purchaseOrders = await api.get(url);
     } catch (e) {
-      error = e.message;
+      error = errorMessage(e, 'Could not load purchase orders.');
     } finally {
       loading = false;
     }
@@ -49,7 +51,7 @@
 <h2>Purchase Orders {purchaseOrders ? `(${purchaseOrders.count})` : ''}</h2>
 
 <p>
-  {#if canManageFinancials}
+  {#if canCreate}
     <a href="#/purchase-orders/new">New Purchase Order</a> |
   {/if}
   <label>
@@ -69,26 +71,14 @@
   </label>
 </p>
 
-{#if loading}
-  <p>Loading...</p>
-{:else if error}
-  <p>Error: {error}</p>
-{:else if purchaseOrders}
+<LoadState {loading} {error}>
+{#if purchaseOrders}
   <PurchaseOrderList
     purchaseOrders={purchaseOrders.results}
     onSelect={handleSelect}
   />
 
-  {#if purchaseOrders.count > 25}
-    <p>
-      {pageRange(purchaseOrders)}
-      {#if purchaseOrders.previous}
-        | <button onclick={() => { page = pageFromUrl(purchaseOrders.previous); }}>Previous</button>
-      {/if}
-      {#if purchaseOrders.next}
-        | <button onclick={() => { page = pageFromUrl(purchaseOrders.next); }}>Next</button>
-      {/if}
-    </p>
-  {/if}
+  <Pager {page} count={purchaseOrders.count} label={pageRange(purchaseOrders)} onPage={(n) => { page = n; }} />
 {/if}
+</LoadState>
 </div>

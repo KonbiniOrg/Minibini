@@ -14,6 +14,7 @@ vi.mock('svelte-spa-router', () => ({
 import { api } from '@/lib/api.js';
 import { user } from '@/stores/auth.js';
 import CatalogInventoryPage from '@/routes/catalog/CatalogInventoryPage.svelte';
+import { viewMode } from '@/stores/viewMode.js';
 
 const ITEMS = [
   {
@@ -111,21 +112,36 @@ describe('CatalogInventoryPage — manage actions (financials/config)', () => {
     vi.stubGlobal('confirm', vi.fn(() => true));
   });
 
-  it('shows an order button on every row that opens the stock-order dialog', async () => {
-    api.get.mockResolvedValue({ results: ITEMS });  // load(), then the dialog's draft lookup
-    const { findAllByRole, getByLabelText, getByText } = render(CatalogInventoryPage);
+  it('shows an order button on every row that opens the Order modal prefilled with the shortfall', async () => {
+    api.get.mockImplementation((url) => {
+      if (url === '/api/inventory/1/') return Promise.resolve(ITEMS[0]);
+      if (url.startsWith('/api/inventory/1/vendor-history/')) return Promise.resolve({ vendors: [], earmarks: [], open_drafts: [] });
+      if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: [] });
+      if (url.startsWith('/api/units')) return Promise.resolve(['none', 'sheet']);
+      return Promise.resolve({ results: ITEMS });
+    });
+    const { findAllByRole, findByRole, getByLabelText } = render(CatalogInventoryPage);
     const orderBtns = await findAllByRole('button', { name: 'order' });
     expect(orderBtns.length).toBe(2);  // one per ITEMS row
     await fireEvent.click(orderBtns[0]);  // FELT: earmarked 2, on hand 5 -> shortfall 0
-    getByText(/Order — FELT/);
-    expect(getByLabelText(/Quantity/).value).toBe('0');
+    await findByRole('dialog', { name: 'Order' });
+    await vi.waitFor(() => expect(getByLabelText(/^Qty/).value).toBe('0'));
   });
 
-  it('hides the order button for a config-only user (PO creation is financials)', async () => {
+  it('config-only user sees edit / write off but no order (ordering is financials or jobs)', async () => {
     user.set({ username: 'cfg', permissions: ['can_manage_config'] });
-    const { findAllByRole, queryByRole } = render(CatalogInventoryPage);
+    const { findAllByRole, queryByRole, queryAllByRole } = render(CatalogInventoryPage);
     await findAllByRole('button', { name: 'edit' });  // config still manages items
     expect(queryByRole('button', { name: 'order' })).toBeNull();
+    expect(queryAllByRole('button', { name: 'write off' }).length).toBeGreaterThan(0);
+  });
+
+  it('a jobs-only user sees order but neither edit nor write off', async () => {
+    user.set({ username: 'pm', permissions: ['can_manage_jobs'] });
+    const { findAllByRole, queryByRole } = render(CatalogInventoryPage);
+    expect((await findAllByRole('button', { name: 'order' })).length).toBe(2);
+    expect(queryByRole('button', { name: 'edit' })).toBeNull();
+    expect(queryByRole('button', { name: 'write off' })).toBeNull();
   });
 
   it('writes off a partial quantity via the panel', async () => {
@@ -168,5 +184,51 @@ describe('CatalogInventoryPage — manage actions (financials/config)', () => {
       expect(String(call[1].keep_id)).toBe('1');
       expect(String(call[1].discard_id)).toBe('2');
     });
+  });
+});
+
+describe('CatalogInventoryPage — DataTable', () => {
+  const headersOf = (t) => Array.from(t.querySelectorAll('thead th')).map((th) => th.textContent.trim());
+  const BASE = ['Code', 'Description', 'Units', 'On hand', 'Earmarked', 'Available', 'On order', 'Status', 'Cost', 'Sell'];
+  it('renders the ten base columns for a worker in both densities (no Actions column without the atom)', async () => {
+    viewMode.set('lite');
+    const { findByText, container } = render(CatalogInventoryPage);
+    await findByText('FELT');
+    const table = container.querySelector('table.data-table');
+    expect(headersOf(table)).toEqual(BASE);
+    expect(table.querySelector('td[data-col="onhand"]').getAttribute('style')).toMatch(/text-align:\s*right/);
+    viewMode.set('full');
+    const { findByText: f2, container: c2 } = render(CatalogInventoryPage);
+    await f2('FELT');
+    expect(headersOf(c2.querySelector('table.data-table'))).toEqual(BASE);
+  });
+
+  it('adds the Actions column for a financials manager', async () => {
+    user.set({ username: 'u', permissions: ['can_manage_financials'] });
+    const { findByText, container } = render(CatalogInventoryPage);
+    await findByText('FELT');
+    const table = container.querySelector('table.data-table');
+    expect(headersOf(table)).toEqual([...BASE, 'Actions']);
+    expect(table.querySelector('td[data-col="actions"]').textContent).toContain('edit');
+  });
+});
+
+describe('CatalogInventoryPage — merge and write-off are modals (2026-10-10)', () => {
+  beforeEach(() => { user.set({ username: 'fin', permissions: ['can_manage_financials'] }); });
+
+  it('write off opens a dialog named Write off', async () => {
+    const { findAllByRole, findByRole } = render(CatalogInventoryPage);
+    const writeOffBtns = await findAllByRole('button', { name: 'write off' });
+    await fireEvent.click(writeOffBtns[0]);
+    const dialog = await findByRole('dialog', { name: 'Write off' });
+    expect(dialog).toHaveTextContent('Write off — FELT');
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it('Merge items opens a dialog named Merge items', async () => {
+    const { findByText, getByRole, findByRole } = render(CatalogInventoryPage);
+    await findByText('FELT');
+    await fireEvent.click(getByRole('button', { name: 'Merge items' }));
+    expect(await findByRole('dialog', { name: 'Merge items' })).toBeInTheDocument();
   });
 });

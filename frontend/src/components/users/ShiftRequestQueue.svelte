@@ -1,7 +1,9 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
   import { user as userStore } from '../../stores/auth.js';
   import TimeEditModal from '../time/TimeEditModal.svelte';
+  import LoadState from '../LoadState.svelte';
+  import DataTable from '../DataTable.svelte';
 
   let rows = $state([]);
   let loading = $state(true);
@@ -24,7 +26,7 @@
       rows = [...tag(sh, 'Shift', 'shift-change-requests'),
               ...tag(bl, 'Time', 'blep-change-requests')]
         .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-    } catch (e) { error = e.message || 'Could not load requests.'; }
+    } catch (e) { error = errorMessage(e, 'Could not load requests.'); }
     finally { loading = false; }
   }
 
@@ -36,7 +38,7 @@
       modalRecord = await api.get(`/api/${type === 'shift' ? 'shifts' : 'bleps'}/${id}/`);
       modalType = type;
       modalOpen = true;
-    } catch (e) { error = e.message || 'Could not load the record.'; }
+    } catch (e) { error = errorMessage(e, 'Could not load the record.'); }
   }
   function openTarget(r) {
     return openRecord(r.kind === 'Shift' ? 'shift' : 'blep',
@@ -51,12 +53,12 @@
   async function approve(r) {
     error = '';
     try { await api.post(`/api/${r.ep}/${r.request_id}/approve/`); await load(); }
-    catch (e) { error = e.message || 'Approve failed (resolve the conflict first).'; }
+    catch (e) { error = errorMessage(e, 'Approve failed (resolve the conflict first).'); }
   }
   async function deny(r) {
     const note = prompt('Reason for denial (optional):') ?? '';
     try { await api.post(`/api/${r.ep}/${r.request_id}/deny/`, { note }); await load(); }
-    catch (e) { error = e.message || 'Deny failed.'; }
+    catch (e) { error = errorMessage(e, 'Deny failed.'); }
   }
 
   $effect(() => { load(); });
@@ -65,51 +67,26 @@
 <section>
   <h3>Pending Time Change Requests</h3>
   {#if error}<p style="color:#b91c1c">{error}</p>{/if}
-  {#if loading}<p>Loading…</p>
-  {:else if rows.length === 0}<p>No pending requests.</p>
-  {:else}
-    <table class="data-table">
-      <thead><tr>
-        <th>Type</th><th>Worker</th><th>Record</th><th>Requested</th>
-        <th>Reason</th><th>Conflict</th><th>Actions</th>
-      </tr></thead>
-      <tbody>
-        {#each rows as r (r.kind + r.request_id)}
-          <tr>
-            <td>{r.kind}</td>
-            <td>{r.requester_name}</td>
-            <td>
-              {#if r.kind === 'Shift' && r.shift}
-                <button type="button" onclick={() => openTarget(r)}>Open shift</button>
-              {:else if r.kind === 'Time' && r.blep}
-                <button type="button" onclick={() => openTarget(r)}>Open timeslip{#if r.task_name} ({r.task_name}){/if}</button>
-              {:else}
-                <em>new {r.kind === 'Shift' ? 'shift' : 'entry'}</em>
-              {/if}
-            </td>
-            <td>{new Date(r.requested_start).toLocaleString()} → {r.requested_end ? new Date(r.requested_end).toLocaleString() : '—'}</td>
-            <td>{r.reason}</td>
-            <td>
-              {#if r.conflicts && r.conflicts.length}
-                ⚠
-                {#each r.conflicts as c}
-                  <button type="button" onclick={() => openRecord(c.type, c.id)}>Open {c.type === 'shift' ? 'shift' : 'timeslip'} ({c.label})</button>
-                {/each}
-              {:else if r.has_known_conflict}
-                ⚠ no covering shift
-              {:else}—{/if}
-            </td>
-            <td>
-              <button type="button" onclick={() => approve(r)}>Approve</button>
-              <button type="button" onclick={() => deny(r)}>Deny</button>
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
+  <LoadState {loading}>
+  <DataTable
+    rows={rows}
+    key={(r) => r.kind + r.request_id}
+    emptyText="No pending requests."
+    columns={[
+      { id: 'type',      label: 'Type',      field: 'kind' },
+      { id: 'worker',    label: 'Worker',    field: 'requester_name' },
+      { id: 'record',    label: 'Record',    cell: recordCell },
+      { id: 'requested', label: 'Requested', cell: requestedCell },
+      { id: 'reason',    label: 'Reason',    field: 'reason' },
+      { id: 'conflict',  label: 'Conflict',  cell: conflictCell },
+      { id: 'actions',   label: 'Actions',   cell: actionsCell },
+    ]}
+  />
+  {#if rows.length > 0}
     <p><em>If Approve is blocked by a conflict, open the relevant shift/timeslip here, adjust
       it so the shift encloses the timeslip, then approve.</em></p>
   {/if}
+  </LoadState>
 </section>
 
 <TimeEditModal
@@ -121,3 +98,28 @@
   onSaved={onModalSaved}
   onClose={() => { modalOpen = false; modalRecord = null; }}
 />
+
+{#snippet recordCell(r)}
+  {#if r.kind === 'Shift' && r.shift}
+    <button type="button" onclick={() => openTarget(r)}>Open shift</button>
+  {:else if r.kind === 'Time' && r.blep}
+    <button type="button" onclick={() => openTarget(r)}>Open timeslip{#if r.task_name} ({r.task_name}){/if}</button>
+  {:else}
+    <em>new {r.kind === 'Shift' ? 'shift' : 'entry'}</em>
+  {/if}
+{/snippet}
+{#snippet requestedCell(r)}{new Date(r.requested_start).toLocaleString()} → {r.requested_end ? new Date(r.requested_end).toLocaleString() : '—'}{/snippet}
+{#snippet conflictCell(r)}
+  {#if r.conflicts && r.conflicts.length}
+    ⚠
+    {#each r.conflicts as c}
+      <button type="button" onclick={() => openRecord(c.type, c.id)}>Open {c.type === 'shift' ? 'shift' : 'timeslip'} ({c.label})</button>
+    {/each}
+  {:else if r.has_known_conflict}
+    ⚠ no covering shift
+  {:else}—{/if}
+{/snippet}
+{#snippet actionsCell(r)}
+  <button type="button" onclick={() => approve(r)}>Approve</button>
+  <button type="button" onclick={() => deny(r)}>Deny</button>
+{/snippet}

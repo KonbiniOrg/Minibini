@@ -43,3 +43,31 @@ describe('EmailActionPanel', () => {
     confirmSpy.mockRestore();
   });
 });
+
+describe('EmailActionPanel — job/PO actions open modals (2026-10-10)', () => {
+  it('Create new / Link existing are buttons that report their action (PO section included)', async () => {
+    user.set({ permissions: ['can_manage_jobs', 'can_manage_financials'] });
+    const onAction = vi.fn();
+    const { getAllByRole, queryByRole } = render(EmailActionPanel, {
+      props: { emailRecord: { email_record_id: 1 }, onAction },
+    });
+    const creates = getAllByRole('button', { name: 'Create new' });
+    expect(creates).toHaveLength(2);
+    await fireEvent.click(creates[0]);
+    await fireEvent.click(creates[1]);
+    expect(onAction).toHaveBeenNthCalledWith(1, 'create-job');
+    expect(onAction).toHaveBeenNthCalledWith(2, 'create-po');
+    expect(queryByRole('link', { name: 'Create new' })).toBeNull();
+  });
+
+  it('a jobs-only user sees the PO "Create new" but not "Link existing"', () => {
+    user.set({ permissions: ['can_manage_jobs'] });
+    const { getByRole, getAllByRole, queryByRole } = render(EmailActionPanel, {
+      props: { emailRecord: { email_record_id: 1 }, onAction: vi.fn() },
+    });
+    expect(getByRole('heading', { name: 'Purchase Order' })).toBeInTheDocument();
+    expect(getAllByRole('button', { name: 'Create new' })).toHaveLength(2);
+    expect(getAllByRole('button', { name: 'Link existing' })).toHaveLength(1);   // the Job one only
+    expect(queryByRole('link', { name: 'Create new' })).toBeNull();
+  });
+});

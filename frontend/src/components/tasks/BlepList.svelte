@@ -1,5 +1,6 @@
 <script>
   import { canManageTime as canManageTimeStore } from '../../stores/permissions.js';
+  import DataTable from '../DataTable.svelte';
 
   let {
     bleps = [],
@@ -39,32 +40,28 @@
 
 <section>
   <h3>Work Sessions</h3>
-  {#if bleps.length === 0}
-    <p>No work sessions recorded.</p>
-  {:else}
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>Worker</th><th>Start</th><th>End</th><th>Elapsed</th><th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each bleps as blep (blep.blep_id)}
-          <tr>
-            <td>{blep.user_name || '—'}</td>
-            <td>{fmt(blep.start_time)}</td>
-            <td>{blep.end_time ? fmt(blep.end_time) : 'Active'}</td>
-            <td>{elapsed(blep)}</td>
-            <td>
-              {#if isEditable(blep)}
-                <button type="button" onclick={() => onEdit(blep)}>Edit</button>
-                <button type="button" onclick={() => onDelete(blep)}>Delete</button>
-              {/if}
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  {/if}
+  <DataTable
+    rows={bleps}
+    key={(blep) => blep.blep_id}
+    emptyText="No work sessions recorded."
+    columns={[
+      { id: 'worker',  label: 'Worker',  cell: workerCell },
+      { id: 'start',   label: 'Start',   cell: startCell },
+      { id: 'end',     label: 'End',     cell: endCell },
+      { id: 'elapsed', label: 'Elapsed', cell: elapsedCell },
+      { id: 'actions', label: '',        cell: actionsCell },
+    ]}
+  />
   <p><button type="button" onclick={onAdd}>Add Entry</button></p>
 </section>
+
+{#snippet workerCell(blep)}{blep.user_name || '—'}{/snippet}
+{#snippet startCell(blep)}{fmt(blep.start_time)}{/snippet}
+{#snippet endCell(blep)}{blep.end_time ? fmt(blep.end_time) : 'Active'}{/snippet}
+{#snippet elapsedCell(blep)}{elapsed(blep)}{/snippet}
+{#snippet actionsCell(blep)}
+  {#if isEditable(blep)}
+    <button type="button" onclick={() => onEdit(blep)}>Edit</button>
+    <button type="button" onclick={() => onDelete(blep)}>Delete</button>
+  {/if}
+{/snippet}

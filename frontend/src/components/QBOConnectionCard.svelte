@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
-  import { api } from '../lib/api.js';
+  import { api, errorMessage } from '../lib/api.js';
+  import LoadState from './LoadState.svelte';
 
   let status = $state(null);
   let loading = $state(true);
@@ -17,7 +18,7 @@
       if (e.status === 403) {
         status = null;
       } else {
-        error = e.message || 'Failed to load QBO status';
+        error = errorMessage(e, 'Failed to load QBO status');
       }
     } finally {
       loading = false;
@@ -31,7 +32,7 @@
       await api.post('/api/qbo/disconnect/');
       await loadStatus();
     } catch (e) {
-      error = e.message || 'Failed to disconnect';
+      error = errorMessage(e, 'Failed to disconnect');
     } finally {
       disconnecting = false;
     }
@@ -42,12 +43,9 @@
   });
 </script>
 
-{#if loading}
-  <p>Loading QuickBooks status...</p>
-{:else if status === null}
+<LoadState {loading} {error} loadingText="Loading QuickBooks status...">
+{#if status === null}
   <!-- User lacks permission or endpoint unavailable — hide card -->
-{:else if error}
-  <p><strong>Error:</strong> {error}</p>
 {:else}
   <fieldset>
     <legend><strong>QuickBooks Online</strong></legend>
@@ -74,3 +72,4 @@
     {/if}
   </fieldset>
 {/if}
+</LoadState>

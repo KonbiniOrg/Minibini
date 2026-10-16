@@ -4,7 +4,8 @@
   // machine, the action-button row, and the three confirmation fieldsets.
   // The document-specific rendering (heading, status messages, tables) comes
   // in as the `content` snippet; per-document copy comes in as props.
-  import { api } from '../lib/api.js';
+  import { api, errorMessage } from '../lib/api.js';
+  import LoadState from './LoadState.svelte';
 
   let {
     apiPath,             // URL segment: /api/portal/<apiPath>/<token>/…
@@ -57,7 +58,7 @@
            : 'requested';
       confirming = '';
     } catch (e) {
-      error = e.message || 'Something went wrong. Please contact us.';
+      error = errorMessage(e, 'Something went wrong. Please contact us.');
     } finally {
       submitting = false;
     }
@@ -76,11 +77,8 @@
 </script>
 
 <main class="portal">
-  {#if loading}
-    <p>Loading…</p>
-  {:else if error}
-    <p class="err">{error}</p>
-  {:else if data}
+  <LoadState {loading} {error}>
+  {#if data}
     {@render content(data, { done, fmtDate })}
 
     {#if canAct && !done}
@@ -116,9 +114,9 @@
       </fieldset>
     {/if}
   {/if}
+  </LoadState>
 </main>
 
 <style>
   .portal { max-width: 720px; margin: 2em auto; font-family: sans-serif; }
-  .err { color: #b00; }
 </style>

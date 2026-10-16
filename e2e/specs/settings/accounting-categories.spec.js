@@ -22,11 +22,13 @@ test('unreferenced category gets a Delete button; referenced does not', async ({
   await expect(seededRow.getByRole('button', { name: 'Delete' })).toHaveCount(0);
   await expect(seededRow.getByRole('button', { name: 'Edit' })).toBeVisible();
 
-  // Create a throwaway, unreferenced category.
+  // Create a throwaway, unreferenced category (the form is a modal, 2026-10-10).
   await page.getByRole('button', { name: 'Add category' }).click();
-  await page.getByLabel('Code *').fill(code);
-  await page.getByLabel('Name *').fill(name);
-  await page.getByRole('button', { name: 'Create' }).click();
+  const dialog = page.getByRole('dialog', { name: 'New category' });
+  await dialog.getByLabel('Code *').fill(code);
+  await dialog.getByLabel('Name *').fill(name);
+  await dialog.getByRole('button', { name: 'Create' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
 
   const row = page.locator('tr', { hasText: name });
   await expect(row).toBeVisible();
@@ -49,9 +51,11 @@ test('cancelling the confirm dialog leaves the category in place', async ({ page
 
   await page.goto('/#/settings');
   await page.getByRole('button', { name: 'Add category' }).click();
-  await page.getByLabel('Code *').fill(code);
-  await page.getByLabel('Name *').fill(name);
-  await page.getByRole('button', { name: 'Create' }).click();
+  const dialog = page.getByRole('dialog', { name: 'New category' });
+  await dialog.getByLabel('Code *').fill(code);
+  await dialog.getByLabel('Name *').fill(name);
+  await dialog.getByRole('button', { name: 'Create' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
 
   const row = page.locator('tr', { hasText: name });
   await expect(row).toBeVisible();

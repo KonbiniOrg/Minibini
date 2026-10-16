@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { location } from 'svelte-spa-router';
-  import { api } from '../lib/api.js';
+  import { api, errorMessage } from '../lib/api.js';
   import { blepActivityVersion } from '../stores/blepActivity.js';
   import { user as currentUser } from '../stores/auth.js';
   import PmJobList from '../components/jobs/PmJobList.svelte';
@@ -15,6 +15,7 @@
   import MyEnvelopeEditor from '../components/home/MyEnvelopeEditor.svelte';
   import ProfilePanel from '../components/home/ProfilePanel.svelte';
   import HelpPanel from '../components/home/HelpPanel.svelte';
+  import LoadState from '../components/LoadState.svelte';
 
   let loading = $state(true);
   let error = $state('');
@@ -49,7 +50,7 @@
       recentLogins = data.recent_logins || [];
       recentDays = data.recent_days ?? 7;
     } catch (e) {
-      error = e.message || 'Could not load home page.';
+      error = errorMessage(e, 'Could not load home page.');
     } finally {
       loading = false;
     }
@@ -83,11 +84,9 @@
   <ProfilePanel />
 {:else if tab === 'help'}
   <HelpPanel />
-{:else if loading}
-  <p>Loading...</p>
-{:else if error}
-  <p>{error}</p>
-{:else if tab === 'work'}
+{:else}
+<LoadState {loading} {error}>
+{#if tab === 'work'}
   <CurrentTaskList tasks={currentTasks} />
   {#if $currentUser}
     <h3>Jobs I manage</h3>
@@ -102,6 +101,8 @@
   <RecentLoginsList logins={recentLogins} sinceDays={recentDays} />
 {:else if tab === 'expenses'}
   <ExpensesList />
+{/if}
+</LoadState>
 {/if}
 </div>
 

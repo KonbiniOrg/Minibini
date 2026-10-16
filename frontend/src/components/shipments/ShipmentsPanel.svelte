@@ -1,5 +1,6 @@
 <script>
-  import { api } from '../../lib/api.js';
+  import { api, errorMessage } from '../../lib/api.js';
+  import LoadState from '../LoadState.svelte';
 
   let { job, onJobChange = () => {} } = $props();
 
@@ -27,7 +28,7 @@
       const list = s.results || s;
       shipments = list.slice().sort((a, b) => a.sequence - b.sequence);
     } catch (e) {
-      errorMsg = e.message || 'Load failed.';
+      errorMsg = errorMessage(e, 'Load failed.');
     } finally {
       loading = false;
     }
@@ -113,7 +114,7 @@
       draftShipments = [];
       await load();
       onJobChange();
-    } catch (e) { errorMsg = e.message || 'Pick-up failed.'; }
+    } catch (e) { errorMsg = errorMessage(e, 'Pick-up failed.'); }
   }
 
   async function discardShipment(sh) {
@@ -149,7 +150,7 @@
       pending = next;
       await load();
       onJobChange();
-    } catch (e) { errorMsg = e.message || 'Discard failed.'; }
+    } catch (e) { errorMsg = errorMessage(e, 'Discard failed.'); }
   }
 
   // Pending cells for a given shipment, normalized {deliverableId, qty:string}.
@@ -236,7 +237,7 @@
       await load();
       onJobChange();
     } catch (e) {
-      errorMsg = e.message || 'Save failed. Earlier rows may have been saved; later rows were not.';
+      errorMsg = errorMessage(e, 'Save failed. Earlier rows may have been saved; later rows were not.');
     } finally {
       saving = false;
     }
@@ -271,9 +272,7 @@
 </script>
 
 <div class="page">
-  {#if loading}
-    <p>Loading...</p>
-  {:else}
+  <LoadState {loading}>
     <div class="page-body">
     <header class="page-header">
       <h2>Shipments</h2>
@@ -361,7 +360,7 @@
       </table>
     {/if}
   </div>
-  {/if}
+  </LoadState>
 </div>
 
 <style>

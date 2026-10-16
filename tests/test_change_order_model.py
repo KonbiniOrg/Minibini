@@ -2,6 +2,8 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from tests.base import FixtureTestCase
+from apps.deliverables.models import Deliverable
+from apps.deliverables.services import DeliverableService
 from apps.estimates.models import Estimate, EstimateLineItem, ChangeOrder, ChangeOrderLineItem, ServiceItem
 from apps.inventory.models import InventoryItem, Material
 from apps.jobs.models import Job, RateScheme, Task
@@ -26,6 +28,14 @@ class ChangeOrderModelTests(FixtureTestCase):
             job=self.job, estimate_number='EST-CO-1', version=1,
             status=Estimate.STATUS_ACCEPTED,
         )
+        # A CO can't leave draft while the job has no deliverables
+        # (ChangeOrderService.assert_job_has_deliverables).
+        Deliverable.objects.get_or_create(
+            job=self.job, description='Guard deliverable',
+            defaults={'qty_ordered': Decimal('1'), 'units': 'ea', 'sort_order': 10})
+        # Baseline == live so a bare CO has no deliverables diff and the
+        # "requires a line item" assertions below still hit the empty gate.
+        DeliverableService.snapshot_document(estimate=self.est)
 
     def test_create_defaults_to_draft(self):
         co = ChangeOrder.objects.create(job=self.job, estimate=self.est)

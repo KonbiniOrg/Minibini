@@ -215,7 +215,7 @@ class EmailAPITest(BaseTestCase):
 
     def test_create_job_returns_400_on_validation_error(self):
         from apps.contacts.models import Contact
-        contact = Contact.objects.create(first_name='X', last_name='Y', email='x@y.com', mobile_number='555')
+        contact = Contact.objects.create(first_name='X', last_name='Y', email='x@y.com', phones=[{'number': '555', 'label': 'mobile'}])
         overlong = 'a' * 100  # Job.name max_length is 50
         response = self.client.post(
             f'/api/emails/{self.email.pk}/create-job/',
@@ -259,7 +259,7 @@ class EmailAPITest(BaseTestCase):
     def test_create_job_stores_description(self):
         from apps.contacts.models import Contact
         contact = Contact.objects.create(
-            first_name='X', last_name='Y', email='x@y.com', mobile_number='555',
+            first_name='X', last_name='Y', email='x@y.com', phones=[{'number': '555', 'label': 'mobile'}],
         )
         response = self.client.post(
             f'/api/emails/{self.email.pk}/create-job/',
@@ -358,11 +358,11 @@ class EmailAPITest(BaseTestCase):
         from apps.contacts.models import Contact
         jane = Contact.objects.create(
             first_name='Jane', last_name='Doe', email='jane@example.com',
-            mobile_number='555-1',
+            phones=[{'number': '555-1', 'label': 'mobile'}],
         )
         bob = Contact.objects.create(
             first_name='Bob', last_name='Smith', email='bob@example.com',
-            mobile_number='555-2',
+            phones=[{'number': '555-2', 'label': 'mobile'}],
         )
         content = self._mock_email_content(
             from_header='Jane Doe <jane@example.com>',
@@ -394,7 +394,7 @@ class EmailAPITest(BaseTestCase):
         from apps.contacts.models import Contact
         jane = Contact.objects.create(
             first_name='Jane', last_name='Doe', email='sender@example.com',
-            mobile_number='555-3',
+            phones=[{'number': '555-3', 'label': 'mobile'}],
         )
         with patch('apps.api.email.views.EmailService') as mock_service_class:
             mock_service = MagicMock()
@@ -487,7 +487,7 @@ class EmailPoAPITest(BaseTestCase):
         self.email = EmailRecord.objects.create(message_id='<po-link@example.com>')
         self.contact = Contact.objects.create(
             first_name='Vendor', last_name='Sales',
-            email='sales@vendor.com', mobile_number='555-9',
+            email='sales@vendor.com', phones=[{'number': '555-9', 'label': 'mobile'}],
         )
         self.business = Business.objects.create(
             business_name='Vendor Inc.', default_contact=self.contact,
@@ -575,7 +575,7 @@ class EmailPoAPITest(BaseTestCase):
         # 400 from validation OR 404 — depending on service shape. Accept either.
         self.assertIn(response.status_code, (400, 404))
 
-    def test_create_po_requires_can_manage_financials(self):
+    def test_create_po_requires_jobs_or_financials(self):
         worker = User.objects.create_user(username='worker_create_po', password='pw')
         self.client.force_authenticate(user=worker)
         response = self.client.post(
@@ -595,6 +595,95 @@ class EmailPoAPITest(BaseTestCase):
         self.assertEqual(response.data['po_number'], self.po.po_number)
 
 
+    def test_create_po_stores_contact_and_requested_date(self):
+        response = self.client.post(
+            f'/api/emails/{self.email.pk}/create-po/',
+            {'vendor_business_id': self.business.pk, 'contact_id': self.contact.pk,
+             'requested_date': '2026-10-20'}, format='json',
+        )
+        self.assertEqual(response.status_code, 201, response.content)
+        from apps.purchasing.models import PurchaseOrder
+        po = PurchaseOrder.objects.get(pk=response.data['po_id'])
+        self.assertEqual(po.contact_id, self.contact.pk)
+        self.assertEqual(po.requested_date.date().isoformat(), '2026-10-20')
+        self.assertIsNone(response.data['line_item_id'])
+
+    def test_create_po_rejects_contact_from_other_business(self):
+        from apps.contacts.models import Contact
+        stranger = Contact.objects.create(
+            first_name='S', last_name='S', email='stranger@elsewhere.com',
+            phones=[{'number': '1', 'label': 'mobile'}])
+        response = self.client.post(
+            f'/api/emails/{self.email.pk}/create-po/',
+            {'vendor_business_id': self.business.pk, 'contact_id': stranger.pk}, format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('contact_id', response.data)
+        self.email.refresh_from_db()
+        self.assertIsNone(self.email.purchase_order_id)
+
+    def test_create_po_with_catalog_line(self):
+        from decimal import Decimal
+        from apps.core.models import AccountingCategory
+        from apps.inventory.models import InventoryItem
+        from apps.purchasing.models import PurchaseOrderLineItem
+        cat = AccountingCategory.objects.first()
+        item = InventoryItem.objects.create(
+            code='EM-PLY', description='ply', accounting_category=cat,
+            purchase_price=Decimal('50.00'), units='sheet')
+        response = self.client.post(
+            f'/api/emails/{self.email.pk}/create-po/',
+            {'vendor_business_id': self.business.pk,
+             'line': {'inventory_item': item.pk, 'qty': '3', 'vendor_sku': 'EM-1'}},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201, response.content)
+        li = PurchaseOrderLineItem.objects.get(pk=response.data['line_item_id'])
+        self.assertEqual(li.purchase_order_id, response.data['po_id'])
+        self.assertEqual((li.inventory_item_id, li.qty, li.price, li.vendor_sku),
+                         (item.pk, Decimal('3'), Decimal('50.00'), 'EM-1'))
+
+    def test_create_po_with_freeform_line(self):
+        from decimal import Decimal
+        from apps.purchasing.models import PurchaseOrderLineItem
+        response = self.client.post(
+            f'/api/emails/{self.email.pk}/create-po/',
+            {'vendor_business_id': self.business.pk,
+             'line': {'qty': '1', 'description': 'freight', 'price': '25.00'}},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201, response.content)
+        li = PurchaseOrderLineItem.objects.get(pk=response.data['line_item_id'])
+        self.assertIsNone(li.inventory_item_id)
+        self.assertEqual((li.description, li.price), ('freight', Decimal('25.00')))
+
+    def test_create_po_freeform_line_needs_description(self):
+        response = self.client.post(
+            f'/api/emails/{self.email.pk}/create-po/',
+            {'vendor_business_id': self.business.pk, 'line': {'qty': '1'}}, format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('description', response.data['line'])
+
+    def test_create_po_is_atomic_when_the_line_fails(self):
+        from unittest.mock import patch
+        from django.core.exceptions import ValidationError
+        from apps.purchasing.models import PurchaseOrder
+        from apps.purchasing.services import PurchaseOrderService
+        before = PurchaseOrder.objects.count()
+        with patch.object(PurchaseOrderService, 'add_line_item',
+                          side_effect=ValidationError({'price': ['bad']})):
+            response = self.client.post(
+                f'/api/emails/{self.email.pk}/create-po/',
+                {'vendor_business_id': self.business.pk,
+                 'line': {'qty': '1', 'description': 'x', 'price': '1.00'}},
+                format='json',
+            )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(PurchaseOrder.objects.count(), before)
+        self.email.refresh_from_db()
+        self.assertIsNone(self.email.purchase_order_id)
+
 class EmailReplyAPITest(BaseTestCase):
     """Coverage for /api/emails/{id}/reply-defaults/ and /reply/ endpoints."""
 
@@ -610,7 +699,7 @@ class EmailReplyAPITest(BaseTestCase):
         self.client.force_authenticate(user=self.admin)
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='jane@customer.com', mobile_number='555',
+            email='jane@customer.com', phones=[{'number': '555', 'label': 'mobile'}],
         )
         self.business = Business.objects.create(
             business_name='Customer Co', default_contact=self.contact,
@@ -849,7 +938,7 @@ class ThreadPropagationAPITest(BaseTestCase):
         self.client.force_authenticate(user=self.admin)
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='jane@customer.com', mobile_number='555',
+            email='jane@customer.com', phones=[{'number': '555', 'label': 'mobile'}],
         )
         self.business = Business.objects.create(
             business_name='Customer Co', default_contact=self.contact,

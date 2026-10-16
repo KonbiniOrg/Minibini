@@ -1,5 +1,20 @@
 <script>
+  import { unpaidSectionColor } from '../../lib/unpaidSections.js';
+  import { statusLabel } from '../../lib/customerActivity.js';
   let { job } = $props();
+
+  // The card's section, computed server-side (BoardService.unpaid_section)
+  // and shared with UnpaidColumn's headers so tab and header can never
+  // disagree — incl. held / cancelled / in_progress cards whose sub_status
+  // isn't an invoice state.
+  let section = $derived(job.section);
+
+  // Badge text for a non-work_complete job. Title-cased to match the board's
+  // own column labels ("In Progress"); statusLabel's sentence case covers
+  // anything unexpected.
+  function badgeLabel(status) {
+    return statusLabel(status).replace(/\b\w/g, (c) => c.toUpperCase());
+  }
 
   function formatAmount(amount) {
     if (amount == null) return '$0.00';
@@ -11,15 +26,12 @@
     return new Date(isoDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   }
 
+  // Gray: needs invoice · Amber: drafted, unsent · Blue: sent, awaiting
+  // payment · Purple: paid, awaiting customer pickup.
+  // TODO: Red (#dc2626) for overdue invoices, once Invoice has a due_date
+  // field or PaymentTerms has net_days to compute it.
   function borderColor() {
-    // Gray: work done, no invoice created yet
-    if (job.sub_status === 'needs-invoice') return '#64748b';
-    // Amber: invoice drafted but not sent yet
-    if (job.sub_status === 'invoice-prepped') return '#f59e0b';
-    // TODO: Red (#dc2626) for overdue invoices, once Invoice has
-    // a due_date field or PaymentTerms has net_days to compute it.
-    // Default: invoice sent, awaiting payment
-    return '#3b82f6';
+    return unpaidSectionColor(section);
   }
 
   function invoiceStatusPill(inv) {
@@ -65,7 +77,13 @@
     <div class="card-head">
       <div class="card-head-top">
         <div class="card-left">
-          <div class="job-name">{job.name}</div>
+          <div class="job-name">
+            <span class="job-name-text">{job.name}</span>
+            {#if job.status !== 'work_complete'}
+              <!-- Why an active or cancelled job sits in the money column. -->
+              <span class="status-badge">{badgeLabel(job.status)}</span>
+            {/if}
+          </div>
           <div class="card-sub">
             <a class="customer" href="#/contacts/{job.contact_id}">{job.contact_name || 'No contact'}</a>
           </div>
@@ -85,10 +103,10 @@
         {job.deposit_state === 'paid' ? 'DEP PAID' : 'DEP REQUESTED'}
       </div>
     {/if}
-    {#if job.sub_status === 'needs-invoice'}
+    {#if section === 'needs-invoice'}
       <div class="needs-invoice">
         <span class="pill needs-inv">Needs Invoice</span>
-        <span class="needs-inv-text">Work complete — no invoice created yet</span>
+        <span class="needs-inv-text">Work complete — final invoice not started</span>
       </div>
     {:else}
       <table class="line-table">
@@ -115,7 +133,11 @@
       <div class="card-foot">
         <span>{invoiceCount} invoice{invoiceCount !== 1 ? 's' : ''}{paymentCount > 0 ? ` · ${paymentCount} payment${paymentCount !== 1 ? 's' : ''}` : ''}</span>
         <span class="spacer"></span>
-        <span class="total">{formatAmount(totalDue())} due</span>
+        {#if section === 'needs-pickup'}
+          <span class="total pickup">Awaiting pickup</span>
+        {:else}
+          <span class="total">{formatAmount(totalDue())} due</span>
+        {/if}
       </div>
     {/if}
   </div>
@@ -153,11 +175,17 @@
   .card-head { padding: 8px 10px 6px; border-bottom: 1px solid #f0f0f0; }
   .card-head-top { display: flex; align-items: flex-start; gap: 8px; }
   .card-left { flex: 1; min-width: 0; }
-  .job-name { font-size: 13px; font-weight: 600; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .job-name { font-size: 13px; font-weight: 600; line-height: 1.3; display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+  .job-name-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .card-sub { display: flex; align-items: baseline; gap: 6px; margin-top: 2px; }
   .customer { font-size: 11px; color: #2563eb; text-decoration: none; }
   .customer:hover { text-decoration: underline; }
   .pm-line { font-size: 10px; color: #888; margin-top: 1px; }
+  .status-badge {
+    flex-shrink: 0;
+    font-size: 9px; font-weight: 600; padding: 1px 6px; border-radius: 8px;
+    background: #f1f5f9; color: #64748b; letter-spacing: 0.3px;
+  }
 
   .card-right { flex-shrink: 0; text-align: right; font-size: 10px; color: #888; line-height: 1.5; }
   .pr-line { display: flex; justify-content: flex-end; gap: 3px; }
@@ -199,4 +227,5 @@
   }
   .spacer { flex: 1; }
   .total { font-weight: 700; font-size: 11px; font-family: 'SF Mono', 'Fira Code', monospace; color: #b45309; }
+  .total.pickup { color: #7c3aed; font-family: inherit; }
 </style>

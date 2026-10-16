@@ -168,8 +168,8 @@ must survive its agreement line vanishing. The `agreement_line`
 property returns whichever of the two is set (or `None`) — the single
 read path every consumer (the serializer's `agreement_ref`, the
 backing derivation) uses instead of checking both fields itself.
-Migration: `apps/invoicing/migrations/0024_invoicelineitem_agreement_co_line_and_more.py`
-(two plain `AddField` operations, no data migration).
+Added 2026-08 as two plain `AddField` operations, no data migration (now part
+of the consolidated initial migrations).
 
 **`used_fallback_ac`** (Phase 3, 2026-08) — read-only, serializer-computed
 (not a model field): `true` when the line's `accounting_category` is the
@@ -1434,9 +1434,9 @@ bug.
   — deposit-source claims against them): with multiple deposits,
   **`'requested'` wins over `'paid'`** — any outstanding request shows.
   Present on every board payload's job rows (Pipeline, In Progress,
-  Unpaid, Closed), but only `JobCard.svelte` (Pipeline column cards, and
-  the In Progress chip-hover card via `JobChipStrip.svelte`) renders the
-  banner today — `UnpaidCard.svelte`/`ClosedCard.svelte` don't. The
+  Unpaid, Closed); `JobCard.svelte` (Pipeline column cards, and the In
+  Progress chip-hover card via `JobChipStrip.svelte`) and
+  `UnpaidCard.svelte` render the banner — `ClosedCard.svelte` doesn't. The
   existing manual `on_hold` + "awaiting deposit" reason remains available
   and unrelated to this derived signal.
 
@@ -1463,9 +1463,8 @@ they can't drift apart:
   cancelled invoice doesn't count).
 - The input `invoices` array is the same job-scoped list `InvoicePanel`
   already loads (`GET /api/invoices/?job=`, no `?summary=` → full
-  `InvoiceSerializer`, nested `line_items`/`sources`) and
-  `InvoiceSendPage` additionally fetches once (keyed off the loaded
-  invoice's `job` id) for the same purpose.
+  `InvoiceSerializer`, nested `line_items`/`sources`); the send-time
+  confirm below refreshes that same list before asking.
 
 **Part 1 — draft-panel notice + Apply** (`InvoicePanel.svelte`): while
 viewing a **draft** invoice, one row per unapplied credit renders above
@@ -1496,15 +1495,16 @@ the single invoice, since `InvoiceEditView`'s own atom-pull gestures
 and that only shows up in the job-scoped list this banner's derivation
 reads.
 
-**Part 2 — send-time confirm** (`InvoiceSendPage.svelte`, not
-`InvoicePanel` — the actual `POST /api/invoices/{id}/send/` lives on this
-separate route, reached via the panel's Send/Resend link): `handleSubmit`
-(the `onSubmit` callback `DocumentSendForm` invokes after its own "Send
-this email to `<recipient>`?" confirm) checks
-`unappliedDepositCredits(jobInvoices).length > 0` and, if so, interposes a
+**Part 2 — send-time confirm** (`InvoicePanel.svelte`'s
+`confirmDepositCredits`, passed as `beforeSubmit` to `DocumentSendModal` —
+since 2026-10-10 the send step is a modal over the panel, opened by its
+Send/Resend button, instead of the retired `/invoices/:id/send` page):
+after `DocumentSendForm`'s own "Send this email to `<recipient>`?" confirm,
+the hook re-fetches the job's invoices and checks
+`unappliedDepositCredits(invoices).length > 0`; if so it interposes a
 second `confirm()`: *"There's an unapplied deposit credit on this job —
-send anyway?"*. OK proceeds to the send POST; Cancel returns immediately,
-leaving `submitting`/`submitError` untouched (the dialog was never
+send anyway?"*. OK proceeds to the send POST; Cancel returns `false`,
+leaving the modal open with the typed recipient intact (the dialog was never
 disturbed). No confirm at all when there are no unapplied credits. This is
 a **soft guard** — deducting the credit on a later invoice is legitimate;
 the point is only that silence isn't the default when money is sitting
@@ -1538,10 +1538,11 @@ client- or server-side. Revisit if this bites in practice.
 ## Sending an Invoice
 
 `InvoiceEmailService.send_invoice` in `apps/invoicing/services.py` is
-the orchestrator. SPA route: `/invoices/:id/send`
-(`InvoiceSendPage.svelte`). The compose page is mounted from the
-detail page's "Send Invoice" link (button text reads "Resend Invoice"
-when `qbo_id` is already set).
+the orchestrator. SPA surface: `DocumentSendModal` (architecture doc
+§7.12) mounted by `InvoicePanel`, opened by its "Send Invoice" button
+(reads "Resend Invoice" when `qbo_id` is already set; disabled with a note
+while any real line lacks an accounting category). `/invoices/:id/send` is
+a `RedirectTo` stub bouncing to the invoice (2026-10-10).
 
 ### Minibini-side flow
 
@@ -2059,11 +2060,11 @@ its existing `handleDeleteTask`/`handleCancelTask` handlers, calling
 `DELETE /api/expenses/{id}/` and `POST /api/expenses/{id}/reject/`
 respectively.
 
-The home card surface (self-service personal expense submission) consumes the same `ExpenseForm.svelte`. A Bookkeeper sees an "Expenses" sidebar link; a Worker does not. Owners see the same `UserReimbursementPanel.svelte` embedded as an Expenses tab on the User Detail page.
+The home card surface (self-service personal expense submission) and the global expenses list both open `ExpenseModal.svelte` (the same modal the task pages use; the home card passes `lockPurchasedByToSelf`) around the same `ExpenseForm.svelte` (2026-10-10; both were inline bordered forms before). A Bookkeeper sees an "Expenses" sidebar link; a Worker does not. Owners see the same `UserReimbursementPanel.svelte` embedded as an Expenses tab on the User Detail page.
 
 Per-user reimbursement page sections:
 
-- Outstanding reimbursable expenses (checkbox table, running total, "Reimburse selected" inline form).
+- Outstanding reimbursable expenses (checkbox table, running total, "Reimburse selected" button → a **Create reimbursement** modal whose heading carries the selected count and total; 2026-10-10).
 - Past reimbursement batches (with QBO sync state and retry button on `sync_failed`).
 - "Show rejected" toggle (read-only, off by default).
 

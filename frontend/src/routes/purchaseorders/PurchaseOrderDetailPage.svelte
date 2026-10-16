@@ -2,9 +2,8 @@
   import { api, errorMessage } from '../../lib/api.js';
   import { triageError } from '../../lib/errorTriage.js';
   import { showError, showSuccess } from '../../stores/messages.js';
-  import { orderPrefillQty } from '../../lib/materials.js';
   import { canManageFinancials as canManageFinancialsStore } from '../../stores/permissions.js';
-  import { push, querystring } from 'svelte-spa-router';
+  import { push } from 'svelte-spa-router';
   import PurchaseOrderDetail from '../../components/purchaseorders/PurchaseOrderDetail.svelte';
   import LineItemForm from '../../components/purchaseorders/LineItemForm.svelte';
   import ReceiveItemsForm from '../../components/purchaseorders/ReceiveItemsForm.svelte';
@@ -12,6 +11,7 @@
   import ReconciliationSection from '../../components/purchaseorders/ReconciliationSection.svelte';
   import RatePromptDialog from '../../components/purchaseorders/RatePromptDialog.svelte';
   import HistoryPanel from '../../components/HistoryPanel.svelte';
+  import LoadState from '../../components/LoadState.svelte';
 
   const { params = {} } = $props();
 
@@ -37,17 +37,6 @@
   // never underneath it.
   let pendingReconcileSuccessMessage = $state(null);
 
-  // Prefill state when navigating in with ?prefill_material / ?prefill_inventory_item
-  // (+ optional ?default_job). The neutral `prefilledLine` is what LineItemForm
-  // consumes; it's derived here from whichever source the URL named.
-  const initialQs = new URLSearchParams($querystring);
-  const prefillMaterialId = initialQs.get('prefill_material');
-  const prefillInventoryItemId = initialQs.get('prefill_inventory_item');
-  const defaultJobId = initialQs.get('default_job');
-  let prefilledJob = $state(null);
-  let prefilledMaterialIdNum = $state(null);
-  let prefilledLine = $state(null);   // { inventory_item?, qty?, description?, price?, accounting_category? }
-  let prefillLoaded = $state(false);
 
   function collectLinkedMaterials(lines) {
     return (lines || [])
@@ -62,6 +51,7 @@
   }
 
   let canManageFinancials = $derived($canManageFinancialsStore);
+  let canManage = $derived(!!po?.can_manage);
 
   async function loadPO() {
     loading = true;
@@ -74,51 +64,10 @@
       ]);
       history = histData;
       categories = catData.results || catData;
-      await loadPrefill();
     } catch (e) {
-      loadError = e.message;
+      loadError = errorMessage(e, 'Could not load purchase order.');
     } finally {
       loading = false;
-    }
-  }
-
-  async function loadPrefill() {
-    if (prefillLoaded) return;
-    prefillLoaded = true;
-    if (defaultJobId) {
-      try {
-        prefilledJob = await api.get(`/api/jobs/${defaultJobId}/`);
-      } catch {
-        prefilledJob = null;
-      }
-    }
-    if (prefillMaterialId) {
-      try {
-        const mat = await api.get(`/api/materials/${prefillMaterialId}/`);
-        prefilledMaterialIdNum = Number(prefillMaterialId);
-        // Derive the neutral prefill from the Material here, so LineItemForm
-        // stays model-agnostic. (PLI-backed → inventory_item drives it; freeform
-        // → description/cost.)
-        prefilledLine = {
-          qty: orderPrefillQty(mat),
-          inventory_item: mat.inventory_item || null,
-          description: mat.description,
-          price: mat.unit_cost,
-          accounting_category: mat.accounting_category,
-        };
-      } catch {
-        prefilledMaterialIdNum = null;
-        prefilledLine = null;
-      }
-    } else if (prefillInventoryItemId) {
-      // Inventory "order" flow: just point the line at the item; LineItemForm
-      // fetches it and fills code/description/units/price.
-      prefilledLine = { inventory_item: Number(prefillInventoryItemId) };
-    }
-    // Auto-open the add-line-item form when we have any prefill context
-    // and the PO is still in draft.
-    if ((prefilledJob || prefilledLine) && po?.status === 'draft') {
-      showAddLineItem = true;
     }
   }
 
@@ -209,12 +158,6 @@
     try {
       await api.post(`/api/purchase-orders/${po.po_id}/line-items/`, data);
       showAddLineItem = false;
-      // The "order this material" prefill is one-shot: it applies only to the
-      // first line. Clear it after a successful add so a second line doesn't
-      // re-send the same material_id (which is now linked) — the job stays
-      // selected for convenience on the same job's subsequent lines.
-      prefilledMaterialIdNum = null;
-      prefilledLine = null;
       await reload();
     } catch (e) {
       showError(errorMessage(e, 'Could not add line item.'));
@@ -425,14 +368,11 @@
 </script>
 
 <div class="page-body">
-{#if loading}
-  <p>Loading...</p>
-{:else if loadError}
-  <p><em>Error: {loadError}</em></p>
-{:else if po}
+<LoadState {loading} error={loadError}>
+{#if po}
   <PurchaseOrderDetail
     {po}
-    {canManageFinancials}
+    {canManage}
     {busy}
     onIssue={handleIssue}
     onCancel={handleCancel}
@@ -446,6 +386,7 @@
     onCancelLineItem={handleCancelLineItem}
     onReverseReceipt={handleReverseReceipt}
     onChangeLineJob={handleChangeLineJob}
+    onReload={loadPO}
   />
 
   {#if showReceiveForm}
@@ -478,14 +419,11 @@
     />
   {/key}
 
-  {#if canManageFinancials && po.status === 'draft'}
+  {#if canManage && po.status === 'draft'}
     <p>
       {#if showAddLineItem}
         <LineItemForm
           {categories}
-          defaultJob={prefilledJob}
-          materialId={prefilledMaterialIdNum}
-          prefill={prefilledLine}
           onSubmit={handleAddLineItem}
           onCancel={() => { showAddLineItem = false; }}
         />
@@ -499,6 +437,7 @@
 
   <p><a href="#/purchase-orders">Back to list</a></p>
 {/if}
+</LoadState>
 </div>
 
 {#if severPrompt}

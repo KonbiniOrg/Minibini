@@ -3,10 +3,12 @@
   import Modal from '../Modal.svelte';
   import JobPicker from '../JobPicker.svelte';
   import LinkifiedText from '../LinkifiedText.svelte';
+  import FrozenPartyBanner from '../FrozenPartyBanner.svelte';
+  import ChangeContactModal from '../ChangeContactModal.svelte';
 
   const {
     po,
-    canManageFinancials = false,
+    canManage = false,
     busy = false,
     onIssue = null,
     onCancel = null,
@@ -20,7 +22,10 @@
     onCancelLineItem = null,
     onReverseReceipt = null,
     onChangeLineJob = null,
+    onReload = () => {},
   } = $props();
+
+  let swapOpen = $state(false);
 
   let lineItems = $derived(
     (po.line_items || []).slice().sort((a, b) => a.line_number - b.line_number)
@@ -104,6 +109,7 @@
       qty: li.qty,
       units: li.units || 'none',
       price: li.price,
+      vendor_sku: li.vendor_sku || '',
       _hadLinkedMaterial: !!li.material,
       _linkedMaterial: li.material,
       _lineNumber: li.line_number,
@@ -130,6 +136,7 @@
         qty: Number(editForm.qty),
         units: editForm.units,
         price: editForm.price,
+        vendor_sku: editForm.vendor_sku,
       });
     }
     if (jobChanged && onChangeLineJob) {
@@ -162,15 +169,28 @@
   <span class="status-badge status-{po.status}">{po.status.replace(/_/g, ' ')}</span>
 </div>
 
+{#if po.business_is_active === false}
+  <FrozenPartyBanner kind="po" partyName={po.business_name} partyHref={`#/businesses/${po.business}`} businessActive={false} />
+{:else if po.contact_is_active === false}
+  <FrozenPartyBanner kind="po" partyName={po.contact_name || `Contact #${po.contact}`} partyHref={`#/contacts/${po.contact}`}
+    businessName={po.business_name} businessActive={true}
+    onChangeContact={canManage ? () => { swapOpen = true; } : null} />
+{/if}
+
+<ChangeContactModal open={swapOpen} patchUrl={`/api/purchase-orders/${po.po_id}/`} businessId={po.business}
+  onSaved={onReload} onClose={() => { swapOpen = false; }} />
+
 <p><strong>Vendor:</strong>
   {#if po.business}
     <a href="#/businesses/{po.business}">{po.business_name}</a>
+    {#if po.business_is_active === false}<span class="status-badge status-inactive">inactive</span>{/if}
   {:else}
     —
   {/if}
 </p>
 {#if po.contact}
-  <p><strong>Contact:</strong> <a href="#/contacts/{po.contact}">{po.contact_name || `Contact #${po.contact}`}</a></p>
+  <p><strong>Contact:</strong> <a href="#/contacts/{po.contact}">{po.contact_name || `Contact #${po.contact}`}</a>
+  {#if po.contact_is_active === false}<span class="status-badge status-inactive">inactive</span>{/if}</p>
 {/if}
 <p><strong>Created:</strong> {formatDate(po.created_date)}</p>
 {#if po.requested_date}
@@ -187,20 +207,20 @@
 {/if}
 
 <div class="toolbar">
-  {#if canManageFinancials && po.status === 'draft'}
+  {#if canManage && po.status === 'draft'}
     <button onclick={onSend} disabled={busy || !lineItems.length}>Issue & Send</button>
     <button onclick={onIssue} disabled={busy || !lineItems.length}>Mark as Issued</button>
     <a href="#/purchase-orders/{po.po_id}/edit"><button disabled={busy}>Edit</button></a>
     <button onclick={onDelete} disabled={busy}>Delete</button>
   {/if}
-  {#if canManageFinancials && (po.status === 'issued' || po.status === 'partly_received')}
+  {#if canManage && (po.status === 'issued' || po.status === 'partly_received')}
     <button onclick={onSend} disabled={busy}>Resend</button>
   {/if}
   {#if canReceive}
     <button onclick={onReceiveAll} disabled={busy}>Receive All</button>
     <button onclick={onReceiveItems} disabled={busy}>Receive Items</button>
   {/if}
-  {#if canManageFinancials && po.status === 'issued'}
+  {#if canManage && po.status === 'issued'}
     <button onclick={onCancel} disabled={busy}>Cancel PO</button>
   {/if}
 </div>
@@ -214,6 +234,8 @@
       <tr>
         <th>#</th>
         <th>Description</th>
+        <th>Code</th>
+        <th>SKU</th>
         <th class="text-right">Qty</th>
         <th>Units</th>
         <th class="text-right">Price</th>
@@ -224,7 +246,7 @@
           <th class="text-right">Received</th>
           <th>Status</th>
         {/if}
-        {#if canManageFinancials && po.status === 'draft'}
+        {#if canManage && po.status === 'draft'}
           <th>Actions</th>
         {/if}
         {#if canReceive}
@@ -238,6 +260,8 @@
           <tr>
             <td>{li.line_number}</td>
             <td><input type="text" bind:value={editForm.description} style="width:100%;box-sizing:border-box;"></td>
+            <td>{li.item_code && !li.item_code.startsWith('LOT-') ? li.item_code : ''}</td>
+            <td><input type="text" maxlength="100" bind:value={editForm.vendor_sku} style="width:110px;"></td>
             <td><input type="number" bind:value={editForm.qty} step="any" min="0" style="width:70px;text-align:right;"></td>
             <td><UnitsSelect bind:value={editForm.units} /></td>
             <td><input type="number" bind:value={editForm.price} step="0.01" min="0" style="width:80px;text-align:right;"></td>
@@ -265,6 +289,7 @@
           <tr class:cancelled-row={Number(li.qty_cancelled) >= Number(li.qty)}>
             <td>{li.line_number}</td>
             <td class="preserve-breaks"><LinkifiedText text={li.description} /></td>
+            <td>{#if li.item_code && !li.item_code.startsWith('LOT-')}<code class="mat-code">{li.item_code}</code>{/if}</td><td>{li.vendor_sku || ''}</td>
             <td class="text-right">{li.qty}</td>
             <td>{li.units || ''}</td>
             <td class="text-right">${Number(li.price).toFixed(2)}</td>
@@ -316,7 +341,7 @@
                 {/if}
               </td>
             {/if}
-            {#if canManageFinancials && po.status === 'draft'}
+            {#if canManage && po.status === 'draft'}
               <td>
                 <button onclick={() => startEdit(li)}>Edit</button>
                 <button onclick={() => moveUp(i)} disabled={i === 0}>&#9650;</button>
@@ -347,14 +372,14 @@
     </tbody>
     <tfoot>
       <tr>
-        <td colspan="5" class="text-right"><strong>Total</strong></td>
+        <td colspan="7" class="text-right"><strong>Total</strong></td>
         <td class="text-right"><strong>${total.toFixed(2)}</strong></td>
         <td></td>
         <td></td>
         {#if showReceived}
           <td></td><td></td>
         {/if}
-        {#if (canManageFinancials && po.status === 'draft') || canReceive}
+        {#if (canManage && po.status === 'draft') || canReceive}
           <td></td>
         {/if}
       </tr>
@@ -388,6 +413,7 @@
   /* Task-link chip (Fix 2a, RM browser-testing: the link was invisible on
      the PO line — this makes it a visible, navigable chip). */
   .task-chip { font-size: 13px; }
+  .mat-code { font-size: 11px; color: #374151; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 3px; padding: 0 4px; }
   .cancelled-row { opacity: 0.5; text-decoration: line-through; }
   .line-status {
     font-size: 11px; font-weight: 600; padding: 2px 8px;

@@ -30,7 +30,7 @@ class PerUnitBundleTest(TestCase):
         self.cat = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='j@example.com', mobile_number='555-0001',
+            email='j@example.com', phones=[{'number': '555-0001', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(
             contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001')

@@ -1,4 +1,5 @@
 <script>
+  import PhoneListEditor from '../contacts/PhoneListEditor.svelte';
   // Sender-info display + contact picker / new-contact form + business-mode
   // sub-flow shared by Create Job / Create PO / Create Bill from Email.
   //
@@ -23,9 +24,7 @@
         first_name: '',
         last_name: '',
         email: '',
-        mobile_number: '',
-        work_number: '',
-        home_number: '',
+        phones: [],
       },
       businessMode: 'none',
       selectedBusinessId: '',
@@ -59,15 +58,13 @@
 
 {#if senderInfo && state}
   <h3>Sender</h3>
-  <table class="data-table">
-    <tbody>
-      <tr><th>Name:</th><td>{senderInfo.sender_name || '(unknown)'}</td></tr>
-      <tr><th>Email:</th><td>{senderInfo.sender_email || '(unknown)'}</td></tr>
-      {#if senderInfo.extracted_company}
-        <tr><th>Company (from signature):</th><td>{senderInfo.extracted_company}</td></tr>
-      {/if}
-    </tbody>
-  </table>
+  <dl>
+    <dt>Name</dt><dd>{senderInfo.sender_name || '(unknown)'}</dd>
+    <dt>Email</dt><dd>{senderInfo.sender_email || '(unknown)'}</dd>
+    {#if senderInfo.extracted_company}
+      <dt>Company (from signature)</dt><dd>{senderInfo.extracted_company}</dd>
+    {/if}
+  </dl>
 
   <h3>Contact</h3>
 
@@ -120,21 +117,7 @@
         <label for="email"><strong>Email *</strong></label><br>
         <input type="email" id="email" bind:value={state.contactForm.email} required>
       </p>
-      <fieldset>
-        <legend><strong>Phone (at least one required)</strong></legend>
-        <p>
-          <label for="work_number"><strong>Work</strong></label><br>
-          <input type="text" id="work_number" bind:value={state.contactForm.work_number}>
-        </p>
-        <p>
-          <label for="mobile_number"><strong>Mobile</strong></label><br>
-          <input type="text" id="mobile_number" bind:value={state.contactForm.mobile_number}>
-        </p>
-        <p>
-          <label for="home_number"><strong>Home</strong></label><br>
-          <input type="text" id="home_number" bind:value={state.contactForm.home_number}>
-        </p>
-      </fieldset>
+      <PhoneListEditor bind:phones={state.contactForm.phones} />
     </fieldset>
 
     <fieldset>

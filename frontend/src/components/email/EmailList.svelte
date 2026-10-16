@@ -1,4 +1,5 @@
 <script>
+  import DataTable from '../DataTable.svelte';
   const { emails = [] } = $props();
 
   function formatDate(iso) {
@@ -15,39 +16,29 @@
   }
 </script>
 
-{#if emails.length === 0}
-  <p>No emails found.</p>
-{:else}
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>Date</th>
-        <th>From</th>
-        <th>Subject</th>
-        <th>Job</th>
-        <th>Attachments</th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each emails as email}
-        <tr>
-          <td>{formatDate(email.temp_email?.date_sent)}</td>
-          <td>{email.temp_email?.from_email || ''}</td>
-          <td>
-            <a href="#/email/{email.email_record_id}">
-              {truncate(email.temp_email?.subject || '(no subject)')}
-            </a>
-          </td>
-          <td>
-            {#if email.job}
-              <a href="#/jobs/{email.job}">{email.job_number || `Job #${email.job}`}</a>
-            {:else}
-              <em>None</em>
-            {/if}
-          </td>
-          <td>{email.temp_email?.has_attachments ? 'Yes' : 'No'}</td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
-{/if}
+<DataTable
+  rows={emails}
+  key={(email) => email.email_record_id}
+  emptyText="No emails found."
+  columns={[
+    { id: 'date',        label: 'Date',        cell: dateCell },
+    { id: 'from',        label: 'From',        cell: fromCell },
+    { id: 'subject',     label: 'Subject',     cell: subjectCell },
+    { id: 'job',         label: 'Job',         cell: jobCell },
+    { id: 'attachments', label: 'Attachments', cell: attachmentsCell },
+  ]}
+/>
+
+{#snippet dateCell(email)}{formatDate(email.temp_email?.date_sent)}{/snippet}
+{#snippet fromCell(email)}{email.temp_email?.from_email || ''}{/snippet}
+{#snippet subjectCell(email)}
+  <a href="#/email/{email.email_record_id}">{truncate(email.temp_email?.subject || '(no subject)')}</a>
+{/snippet}
+{#snippet jobCell(email)}
+  {#if email.job}
+    <a href="#/jobs/{email.job}">{email.job_number || `Job #${email.job}`}</a>
+  {:else}
+    <em>None</em>
+  {/if}
+{/snippet}
+{#snippet attachmentsCell(email)}{email.temp_email?.has_attachments ? 'Yes' : 'No'}{/snippet}

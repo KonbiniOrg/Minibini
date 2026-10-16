@@ -124,6 +124,37 @@ buttons `type="button"` — the HTML default inside a form is submit, so an
 untyped Cancel would save); the shell's `onSave`/`busy` path remains for
 future button-driven modals with an unambiguous primary action.
 
+**Sub-state, not stacking (RM 2026-10-10).** The shell has no stacking
+contract: two open modals would both receive Escape (each attaches its own
+window listener) and share one `--z-modal`. When a modal needs a nested
+prompt — the create forms' duplicate-contact/business detection is the
+standing example — render the prompt *inside* the modal as a sub-state:
+keep the form mounted but `hidden` (never `{#if}`, so typed values survive),
+render a plain fragment (`DuplicateContactNotice`) in its place, and pass
+an `onCancel` that backs out one level (prompt → form → closed). Revisit a
+real stack only if nested prompts multiply.
+
+**`OrderModal` (PO order flow, 2026-10-15).** `components/purchaseorders/OrderModal.svelte`
+is the one Order modal, with three `source`s: `material` (MaterialRow Order),
+`item` (catalog Inventory/Earmarks "order") and `email` (email action panel "Create
+new" PO — sender resolution as in-modal sub-states, like `EmailCreateJobModal`).
+It creates nothing until Submit. It replaces `StockOrderDialog` (deleted) and
+`EmailCreatePOPage` (deleted; `/email/:id/create-po` is a `RedirectTo` stub).
+Picks a vendor with `VendorPicker`; see materials doc §15.
+
+**Record forms are modals; create navigates, edit stays.** Since 2026-10-10
+the contact, business, job, user, email create-job/link, document send,
+reply, expense, catalog merge/write-off, service item, accounting
+category, reimbursement batch, change-order deliverable and password forms
+all open in the shell over whatever page the user is on (the page behind
+stays visible for reference). A successful **create** closes and `push`es
+to the new record's detail page; a successful **edit** calls `onSaved` and
+the host reloads in place; **cancel** stays. Prefill context travels as
+props (`defaultContactId`, `defaultBusinessId`), never query strings. The
+retired `/new`, `/edit` and `/send` routes are `RedirectTo` stubs
+(`routes/RedirectTo.svelte`, `wrap({ component, props: { to } })` in
+`App.svelte`) that bounce stale links to the host page.
+
 ### Loaders called from `$effect` are write-only
 
 Runes track *reads* transitively: an `$effect` subscribes to every piece of
@@ -306,7 +337,9 @@ Clear `formError`/`errors` at submit start and on open/cancel.
   look), the feedback overlays; banner-page kit: `.toolbar` (+ its buttons),
   `.back-link`, `.page-title`, `.action-link`, `.edit-link` (quiet links in a
   dark banner), `.action-band` (+ `primary`/`quiet` buttons), `.stat-chips` /
-  `.stat-chip` (+ `money`), `.panel` / `.panel-head` / `.panel-scroll`;
+  `.stat-chip` (+ `money`), `.panel` / `.panel-head` / `.panel-scroll`,
+  `.section-title` (the 13px small-caps title of a section or summary block —
+  `.panel-head` is the quieter 10px micro-label for identity panels);
   plain-page kit: `.page-tabs` (works with `<button>` or `<a>` items). The
   task detail page is the reference implementation of the banner-page kit.
 - **The categories are stations, not a taxonomy** — pages move III→II as area
@@ -409,9 +442,10 @@ Clear `formError`/`errors` at submit start and on open/cancel.
        individualized body inside the shared `JobShell` chrome, not a kit
        consumer; see `docs/designs/architecture-and-conventions.md` §5.5a for
        the "hybrid" categorization this creates.
-    3. **Everything else (whole content buffered):** all remaining list/form/
-       detail/send pages, including search and the contacts/business list+form
-       pages — wrapped in full.
+    3. **Everything else (whole content buffered):** all remaining list/
+       detail pages, including search and the contacts/business lists —
+       wrapped in full. (The former form/send pages are modals now; see
+       "Modals" above.)
 
     The only route-level `.svelte` files without `.page-body` are the four
     Category-1 pages above (job board, schedule, login, shipment print).
@@ -421,13 +455,27 @@ Clear `formError`/`errors` at submit start and on open/cancel.
 - Hash-based routing (`#/path`). All internal links use the `#/` prefix.
 - The `svelte-spa-router` library handles client-side navigation.
 
-### View Mode (Full / Lite)
+### View mode: density and layout
 
-- A `viewMode` Svelte store (`'full'` or `'lite'`) controls content density at runtime.
-- Defaults to `'lite'`, persisted in `localStorage`. (Server-side user preference planned.)
-- Components use a `<FullOnly>` wrapper to hide sections in lite mode — avoids scattering `$viewMode` checks throughout components.
-- Lite mode still fetches full data; hidden sections can be expanded inline without extra API calls.
-- Responsive layout (mobile, kiosk) is handled separately via CSS media queries, independent of view mode.
+- Two independent axes. **Density** (`stores/viewMode.js`, `'lite' | 'full'`)
+  is a user preference, defaults to `'lite'`, persisted in `localStorage`.
+  **Layout** (`stores/layout.js`, `'desktop' | 'phone'`) is a device fact
+  from `matchMedia('(max-width: 720px)')`. Nothing infers one from the other.
+- Mode-dependent behaviour lives in four seams only: `<FullOnly>` for
+  sections, `$derived` filters for rows/labels, `components/DataTable.svelte`
+  for columns (`lite: false` / `phone: false` flags; cards on phone), and the
+  app shell. Routes never import either store.
+- New list tables use `DataTable`; label/value layouts use `<dl>`. Editing
+  grids and document line tables stay hand-written (architecture doc §6.2).
+- Every fetch site wraps its content in `components/LoadState.svelte`
+  (`{loading} {error}` + optional `loadingText`, default "Loading...");
+  the error text comes from `errorMessage()` in the catch block. Never
+  hand-write a loading/error branch. `TasksPanel` degrades partially by
+  design and shows a `role="status"` notice naming what failed; the one
+  remaining silent site (`SchedulePage`) is logged in LATER.md.
+- No lite-content decisions yet: no `lite:`/`phone:` flags are set anywhere.
+- Lite still fetches full data; toggling density re-renders without a refetch.
+- Full reference: `docs/designs/architecture-and-conventions.md` §6.
 
 ### Job workspace state
 
@@ -475,6 +523,15 @@ Clear `formError`/`errors` at submit start and on open/cancel.
   doesn't render material rows at all — its Materials block is an aggregate
   Coverage stat only (`docs/designs/jobs-and-tasks.md` §9.1a).
 - Full vocabulary + backend contract: `docs/designs/materials-inventory-and-purchasing.md` §16.
+
+### Pagination
+
+Every paged list renders `components/Pager.svelte` (`page`, `count`, optional
+`pageSize` / `label`, `onPage(n)`); it hides itself when everything fits on
+one page. Both buttons are always in the DOM — Previous is disabled on page 1
+and Next on the last page, never removed — so the buttons sit in the same
+place on every page and the pointer never has to chase Next after a click.
+Don't hand-roll `{#if page > 1}` pagers.
 
 ### Delete Flow
 

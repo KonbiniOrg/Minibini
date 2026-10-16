@@ -19,7 +19,7 @@ class OpenForJobTest(TestCase):
         AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='jane@example.com', mobile_number='555-0000',
+            email='jane@example.com', phones=[{'number': '555-0000', 'label': 'mobile'}],
         )
         self.approved_job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.draft_job = Job.objects.create(contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0002')
@@ -114,7 +114,7 @@ class GetSourcePoolTest(TestCase):
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='jane@example.com', mobile_number='555-0000',
+            email='jane@example.com', phones=[{'number': '555-0000', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
 
@@ -330,7 +330,7 @@ class AddAtomsToNewLineItemTest(TestCase):
             key='fallback_accounting_category', value=str(self.cat_fallback.pk))
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='jane@example.com', mobile_number='555-0000',
+            email='jane@example.com', phones=[{'number': '555-0000', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.scheme = RateScheme.objects.create(
@@ -634,7 +634,7 @@ class AddAtomsToExistingLineItemTest(TestCase):
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='jane@example.com', mobile_number='555-0000',
+            email='jane@example.com', phones=[{'number': '555-0000', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.user = User.objects.create_user(username='aate_user', password='pw')
@@ -762,7 +762,7 @@ class RemoveAtomsFromLineItemTest(TestCase):
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='jane@example.com', mobile_number='555-0000',
+            email='jane@example.com', phones=[{'number': '555-0000', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.user = User.objects.create_user(username='rafl_user', password='pw')
@@ -985,7 +985,7 @@ class DiscardDraftTest(TestCase):
         self.category = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='jane@example.com', mobile_number='555-0000',
+            email='jane@example.com', phones=[{'number': '555-0000', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001')
         self.user = User.objects.create_user(username='dd_user', password='pw')
@@ -1068,7 +1068,7 @@ class SourcePoolLooseMaterialsTest(TestCase):
         AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
         self.contact = Contact.objects.create(
             first_name='Jane', last_name='Doe',
-            email='jane@example.com', mobile_number='555-0000',
+            email='jane@example.com', phones=[{'number': '555-0000', 'label': 'mobile'}],
         )
 
     def test_taskless_materials_group_appears_with_quantity_filter(self):
@@ -1212,7 +1212,7 @@ class AddAtomsToNewLineItemDescriptionTest(TestCase):
         )
         contact = Contact.objects.create(
             first_name='F', last_name='L', email='f-id@l.test',
-            mobile_number='555-2',
+            phones=[{'number': '555-2', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(job_number='J-id', contact=contact)
         self.invoice = Invoice.objects.create(job=self.job, status=Invoice.STATUS_DRAFT)
@@ -1269,7 +1269,7 @@ class ExpenseAtomTest(TestCase):
         self.user = User.objects.create_user(username='exp_atom', password='pw')
         self.cat = AccountingCategory.objects.create(name='Freight', is_active=True)
         self.contact = Contact.objects.create(
-            first_name='J', last_name='D', email='j@e.com', mobile_number='555')
+            first_name='J', last_name='D', email='j@e.com', phones=[{'number': '555', 'label': 'mobile'}])
         self.job = Job.objects.create(
             contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-EXA-1')
 

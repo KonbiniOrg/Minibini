@@ -20,6 +20,20 @@ describe('ContactForm', () => {
     expect(payload).not.toHaveProperty('business');
   });
 
+  it('submits phones from the list editor, dropping blank-number rows', async () => {
+    const onSubmit = vi.fn();
+    const { getByLabelText, getByRole } = render(ContactForm, { props: { onSubmit, onCancel: vi.fn() } });
+    await fireEvent.input(getByLabelText(/First Name/), { target: { value: 'Jane' } });
+    await fireEvent.input(getByLabelText(/Last Name/), { target: { value: 'Doe' } });
+    await fireEvent.input(getByLabelText(/Email/), { target: { value: 'j@x.com' } });
+    await fireEvent.click(getByRole('button', { name: 'Add phone' }));
+    await fireEvent.input(getByLabelText('Phone 1 number'), { target: { value: '555-0100' } });
+    await fireEvent.input(getByLabelText('Phone 1 label'), { target: { value: 'cell' } });
+    await fireEvent.click(getByRole('button', { name: 'Add phone' }));
+    await fireEvent.click(getByRole('button', { name: 'Create' }));
+    expect(onSubmit.mock.calls[0][0].phones).toEqual([{ number: '555-0100', label: 'cell' }]);
+  });
+
   it('edit: submits the chosen business as business_id so the association persists', async () => {
     const onSubmit = vi.fn();
     const { getByRole } = render(ContactForm, {

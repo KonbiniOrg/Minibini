@@ -49,7 +49,7 @@ class CommentLineValidationTest(TestCase):
     def setUp(self):
         self.cat = AccountingCategory.objects.create(code='GEN', name='General', taxable=True)
         self.contact = Contact.objects.create(
-            first_name='Pat', last_name='Customer', email='pat@acme.com', mobile_number='555-0100',
+            first_name='Pat', last_name='Customer', email='pat@acme.com', phones=[{'number': '555-0100', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(job_number='JOB-CMT-0001', contact=self.contact)
         self.estimate = Estimate.objects.create(
@@ -158,7 +158,7 @@ class EstimateCommentLineAddUpdateTest(TestCase):
         AppState.objects.update_or_create(key='job_counter', defaults={'value': '0'})
 
         self.contact = Contact.objects.create(
-            first_name='Pat', last_name='Customer', email='pat@acme.com', mobile_number='555-0100',
+            first_name='Pat', last_name='Customer', email='pat@acme.com', phones=[{'number': '555-0100', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(job_number='JOB-CMT-0002', contact=self.contact)
         self.estimate = Estimate.objects.create(
@@ -205,7 +205,7 @@ class EstimateAcceptanceSkipsCommentLinesTest(TestCase):
 
         self.cat = AccountingCategory.objects.create(name='Labor', is_active=True, code='LAB2')
         self.contact = Contact.objects.create(
-            first_name='J', last_name='D', email='jd2@d.com', mobile_number='555-1',
+            first_name='J', last_name='D', email='jd2@d.com', phones=[{'number': '555-1', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(
             contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0002',
@@ -264,7 +264,7 @@ class ChangeOrderCommentLineAcceptanceTest(TestCase):
 
         self.cat = AccountingCategory.objects.create(name='Labor', is_active=True, code='LAB3')
         self.contact = Contact.objects.create(
-            first_name='J', last_name='D', email='jd3@d.com', mobile_number='555-2',
+            first_name='J', last_name='D', email='jd3@d.com', phones=[{'number': '555-2', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(
             contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0003',
@@ -333,7 +333,7 @@ class SendGateCommentLineExemptionTest(TestCase):
     def setUp(self):
         self.cat = AccountingCategory.objects.create(code='GATE', name='Gate', taxable=True)
         self.contact = Contact.objects.create(
-            first_name='Pat', last_name='Gate', email='pat.gate@acme.com', mobile_number='555-0107',
+            first_name='Pat', last_name='Gate', email='pat.gate@acme.com', phones=[{'number': '555-0107', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(job_number='JOB-CMT-0007', contact=self.contact)
         self.estimate = Estimate.objects.create(
@@ -421,7 +421,7 @@ class QBOInvoicePushSkipsCommentLinesTest(TestCase):
     def setUp(self):
         self.cat = AccountingCategory.objects.create(code='LAB5', name='Labor', taxable=True, qbo_item_id='55')
         self.contact = Contact.objects.create(
-            first_name='John', last_name='Doe', email='john5@example.com', mobile_number='555-0000',
+            first_name='John', last_name='Doe', email='john5@example.com', phones=[{'number': '555-0000', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(job_number='JOB-CMT-0005', contact=self.contact, name='Cabinet run')
         self.invoice = Invoice.objects.create(job=self.job, invoice_number='INV-CMT-0005')
@@ -448,7 +448,7 @@ class PurchaseOrderCommentLineTest(TestCase):
         AppState.objects.update_or_create(key='po_counter', defaults={'value': '0'})
 
         self.contact = Contact.objects.create(
-            first_name='Pat', last_name='Vendor', email='pat6@acme.com', work_number='555-0100',
+            first_name='Pat', last_name='Vendor', email='pat6@acme.com', phones=[{'number': '555-0100', 'label': 'work'}],
         )
         self.business = Business.objects.create(
             business_name='Vendor Co', default_contact=self.contact, our_reference_code='VND-0001',

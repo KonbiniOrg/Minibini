@@ -11,7 +11,6 @@
     onCancel,
     errors = {},      // field→messages bag (triageError(e).fields), keys match the API payload
     formError = '',   // form-footer message (operation errors / non_field_errors)
-    contextJob = null,
     defaultBusinessId = null,
     defaultContactId = null,
   } = $props();
@@ -98,10 +97,6 @@
 </script>
 
 <form onsubmit={handleSubmit}>
-  {#if contextJob}
-    <p><strong>For job: <a href="#/jobs/{contextJob.job_id}">{contextJob.job_number}</a></strong></p>
-  {/if}
-
   <p>
     <label><strong>Vendor (Business) *</strong></label><br>
     <!-- business is a numeric id on the PO; label resolves via id fetch (no nested object to pass) -->

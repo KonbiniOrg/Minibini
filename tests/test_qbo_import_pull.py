@@ -56,6 +56,13 @@ class SnapshotPullTest(TestCase):
                           SalesTermRef=_ref('3'))]
         vendors = [_obj(Id='81', DisplayName='Moore Newton', CompanyName='Moore Newton',
                         PrimaryEmailAddr=None, PrimaryPhone=None)]
+        inactive_customers = [_obj(Id='72', DisplayName='Old Co', CompanyName='Old Co',
+                                   GivenName='', FamilyName='',
+                                   PrimaryEmailAddr=None, PrimaryPhone=None,
+                                   SalesTermRef=None)]
+        inactive_vendors = [_obj(Id='82', DisplayName='Old Vendor',
+                                 CompanyName='Old Vendor',
+                                 PrimaryEmailAddr=None, PrimaryPhone=None)]
         terms = [_obj(Id='3', Name='Net 30', DueDays=30)]
 
         def paged(pages):
@@ -74,9 +81,9 @@ class SnapshotPullTest(TestCase):
                        else expense if kw.get('AccountType') in ('Expense', 'Cost of Goods Sold')
                        else [])), \
              patch('quickbooks.objects.customer.Customer.filter',
-                   side_effect=paged([customers, []])), \
+                   side_effect=paged([customers, inactive_customers, []])), \
              patch('quickbooks.objects.vendor.Vendor.filter',
-                   side_effect=paged([vendors, []])), \
+                   side_effect=paged([vendors, inactive_vendors, []])), \
              patch('quickbooks.objects.term.Term.filter',
                    side_effect=paged([terms, []])):
             return QBOSnapshotService.pull(MagicMock())
@@ -120,6 +127,13 @@ class SnapshotPullTest(TestCase):
         self.assertEqual(snap['vendors'][0]['display_name'], 'Moore Newton')
         self.assertEqual(snap['terms'][0],
                          {'qbo_id': '3', 'name': 'Net 30', 'due_days': 30})
+
+    def test_customers_and_vendors_carry_active_flag(self):
+        snap = self._run_pull()
+        self.assertEqual({c['qbo_id']: c['active'] for c in snap['customers']},
+                         {'71': True, '72': False})
+        self.assertEqual({v['qbo_id']: v['active'] for v in snap['vendors']},
+                         {'81': True, '82': False})
 
     def test_pagination_loops_until_short_page(self):
         page1 = _items_page_one()  # 4 rows == patched page size → full page

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 
-vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn() } }));
+vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn(), post: vi.fn() }, errorMessage: (e, fallback) => e?.message || fallback }));
 
 import { api } from '@/lib/api.js';
 import { user } from '@/stores/auth.js';
@@ -15,17 +15,17 @@ beforeEach(() => {
 });
 
 describe('JobBoardPage New Job entry point', () => {
-  it('offers a New Job link to the create form', async () => {
-    const { getByRole } = render(JobBoardPage);
-    await waitFor(() => {
-      const link = getByRole('link', { name: 'New Job' });
-      expect(link).toHaveAttribute('href', '#/jobs/new');
-    });
+  it('offers a New Job button that opens the create modal', async () => {
+    const { getByRole, findByRole, queryByRole } = render(JobBoardPage);
+    const btn = await findByRole('button', { name: 'New Job' });
+    expect(queryByRole('link', { name: 'New Job' })).toBeNull();
+    await fireEvent.click(btn);
+    expect(await findByRole('dialog', { name: 'New job' })).toBeInTheDocument();
   });
 
   // It lives in each pillar's header rather than a page-level bar, so it
   // survives switching pillars — whichever one is expanded carries it.
-  it.each(['Pipeline', 'Unpaid', 'Closed'])('keeps the link in the %s pillar header', async (label) => {
+  it.each(['Pipeline', 'Unpaid', 'Closed'])('keeps the button in the %s pillar header', async (label) => {
     const { container, getByRole } = render(JobBoardPage);
     // Default pillar is In Progress, whose header is .approved-header — so a
     // .column-header appearing proves the switch actually happened.
@@ -39,13 +39,13 @@ describe('JobBoardPage New Job entry point', () => {
       return h;
     });
     expect(header).toHaveTextContent(label);
-    expect(header).toContainElement(getByRole('link', { name: 'New Job' }));
+    expect(header).toContainElement(getByRole('button', { name: 'New Job' }));
   });
 
   it('hides New Job without can_manage_jobs', async () => {
     user.set({ username: 'sam', permissions: [] });
     const { queryByRole } = render(JobBoardPage);
     await waitFor(() => expect(api.get).toHaveBeenCalled());
-    expect(queryByRole('link', { name: 'New Job' })).toBeNull();
+    expect(queryByRole('button', { name: 'New Job' })).toBeNull();
   });
 });

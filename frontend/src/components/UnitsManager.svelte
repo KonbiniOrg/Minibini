@@ -1,5 +1,7 @@
 <script>
-  import { api } from '../lib/api.js';
+  import { api, errorMessage } from '../lib/api.js';
+  import LoadState from './LoadState.svelte';
+  import DataTable from './DataTable.svelte';
 
   let units = $state([]);
   let newUnit = $state('');
@@ -13,7 +15,7 @@
     try {
       units = await api.get('/api/settings/units/');
     } catch (e) {
-      error = 'Failed to load units.';
+      error = errorMessage(e, 'Failed to load units.');
     } finally {
       loading = false;
     }
@@ -25,7 +27,7 @@
     try {
       units = await api.patch('/api/settings/units/', units);
     } catch (e) {
-      error = e.data?.detail || e.message || 'Failed to save.';
+      error = errorMessage(e, 'Failed to save.');
     } finally {
       saving = false;
     }
@@ -76,38 +78,16 @@
   <p><strong>Error:</strong> {error}</p>
 {/if}
 
-{#if loading}
-  <p>Loading...</p>
-{:else}
-  <table>
-    <thead>
-      <tr>
-        <th>Unit</th>
-        <th>Order</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each units as unit, i}
-        <tr>
-          <td>{unit}</td>
-          <td>
-            {#if i > 1}
-              <button onclick={() => moveUp(i)} disabled={saving}>↑</button>
-            {/if}
-            {#if i > 0 && i < units.length - 1}
-              <button onclick={() => moveDown(i)} disabled={saving}>↓</button>
-            {/if}
-          </td>
-          <td>
-            {#if !SPECIAL_UNITS.includes(unit)}
-              <button onclick={() => removeUnit(i)} disabled={saving}>Remove</button>
-            {/if}
-          </td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
+<LoadState {loading}>
+  <DataTable
+    rows={units}
+    key={(unit) => unit}
+    columns={[
+      { id: 'unit',   label: 'Unit',  cell: unitCell },
+      { id: 'order',  label: 'Order', cell: orderCell },
+      { id: 'remove', label: '',      cell: removeCell },
+    ]}
+  />
 
   <p>
     <input
@@ -118,4 +98,20 @@
     />
     <button onclick={addUnit} disabled={saving || !newUnit.trim()}>Add</button>
   </p>
-{/if}
+</LoadState>
+
+{#snippet unitCell(unit)}{unit}{/snippet}
+{#snippet orderCell(unit)}
+  {@const i = units.indexOf(unit)}
+  {#if i > 1}
+    <button onclick={() => moveUp(i)} disabled={saving}>↑</button>
+  {/if}
+  {#if i > 0 && i < units.length - 1}
+    <button onclick={() => moveDown(i)} disabled={saving}>↓</button>
+  {/if}
+{/snippet}
+{#snippet removeCell(unit)}
+  {#if !SPECIAL_UNITS.includes(unit)}
+    <button onclick={() => removeUnit(units.indexOf(unit))} disabled={saving}>Remove</button>
+  {/if}
+{/snippet}

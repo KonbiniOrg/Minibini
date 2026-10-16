@@ -4,6 +4,7 @@ from tests.base import BaseTestCase
 from apps.core.models import User
 from apps.inventory.models import InventoryItem
 from apps.core.models import AccountingCategory
+from apps.contacts.models import Business
 
 
 class InventoryItemAPITest(BaseTestCase):
@@ -104,20 +105,29 @@ class InventoryStockOrderAPITest(BaseTestCase):
             code='ORD-1', accounting_category=cat,
             purchase_price=Decimal('10'))
 
+    def _vendor(self):
+        return Business.objects.first().pk
+
     def test_order_creates_po_and_returns_link_fields(self):
-        resp = self.client.post(f'/api/inventory/{self.item.pk}/order/',
-                                {'quantity': '4'}, format='json')
-        self.assertEqual(resp.status_code, 200)
+        resp = self.client.post(
+            f'/api/inventory/{self.item.pk}/order/',
+            {'po': {'business': self._vendor()}, 'line': {'qty': '4'}},
+            format='json')
+        self.assertEqual(resp.status_code, 201)
         self.assertIn('po_id', resp.data)
         self.assertTrue(resp.data['po_number'])
+        self.assertIn('line_item_id', resp.data)
 
     def test_order_appends_to_draft_when_po_id_given(self):
-        first = self.client.post(f'/api/inventory/{self.item.pk}/order/',
-                                 {'quantity': '1'}, format='json')
+        first = self.client.post(
+            f'/api/inventory/{self.item.pk}/order/',
+            {'po': {'business': self._vendor()}, 'line': {'qty': '1'}},
+            format='json')
         po_id = first.data['po_id']
-        resp = self.client.post(f'/api/inventory/{self.item.pk}/order/',
-                                {'quantity': '2', 'po_id': po_id}, format='json')
-        self.assertEqual(resp.status_code, 200)
+        resp = self.client.post(
+            f'/api/inventory/{self.item.pk}/order/',
+            {'po_id': po_id, 'line': {'qty': '2'}}, format='json')
+        self.assertEqual(resp.status_code, 201)
         self.assertEqual(resp.data['po_id'], po_id)
 
     def test_order_requires_financials(self):
@@ -129,7 +139,7 @@ class InventoryStockOrderAPITest(BaseTestCase):
         self.assertEqual(resp.status_code, 403)
 
     def test_order_rejects_config_only_atom(self):
-        # Stock ordering is a purchasing act (financials-only), not covered
+        # Stock ordering is a purchasing act (financials or jobs, not config), not covered
         # by can_manage_config even though config grants full CRUD on the
         # catalog item itself (B7).
         from django.contrib.auth.models import Permission
@@ -143,7 +153,13 @@ class InventoryStockOrderAPITest(BaseTestCase):
         self.assertEqual(resp.status_code, 403)
 
     def test_order_rejects_missing_quantity(self):
-        resp = self.client.post(f'/api/inventory/{self.item.pk}/order/',
-                                {}, format='json')
+        resp = self.client.post(
+            f'/api/inventory/{self.item.pk}/order/',
+            {'po': {'business': self._vendor()}, 'line': {}}, format='json')
         self.assertEqual(resp.status_code, 400)
-        self.assertIn('quantity', resp.data)
+        self.assertIn('qty', resp.data['line'])
+
+    def test_order_rejects_empty_body(self):
+        resp = self.client.post(
+            f'/api/inventory/{self.item.pk}/order/', {}, format='json')
+        self.assertEqual(resp.status_code, 400)

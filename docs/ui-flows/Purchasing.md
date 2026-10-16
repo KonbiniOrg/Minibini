@@ -28,6 +28,7 @@ by status alone, with no atom check).
 - **Financials** — holds `can_manage_financials`. Everything above, plus
   full CRUD on draft POs (including the Task Link picker), issue/send,
   reconcile, and the task-rate prompt.
+- **Jobs** — holds `can_manage_jobs`: may create POs and order materials/stock, and edit any PO (PO order flow §6); reconcile stays Financials-only.
 
 ## Dev notes
 
@@ -304,6 +305,42 @@ rendered by `PurchaseOrderDetailPage.svelte`).
   Cancel PO, Delete, the reconcile form, the rate-prompt dialog) is absent.
 - [ ] **Financials:** all of the above are available, plus the
   Financials-only set.
+
+---
+
+## 11. Ordering through the Order modal (PO order flow, 2026-10-15)
+
+Entry points: a material row's **Order** (job task list / task detail), the
+catalog Inventory and Earmarks tabs' **order**, and the email action panel's
+PO **Create new**. All three open the same `OrderModal`; nothing is created
+until Submit.
+
+- [ ] **Vendor from history:** ordering a material whose item has been
+  bought before preselects the most recent vendor in a **Vendor** select;
+  the option text shows the last date, price and SKU. Contact defaults to
+  that PO's contact; Vendor SKU and Price are seeded from that history row.
+- [ ] **Search escape hatch:** the select's last option **Search all
+  businesses…** turns the field into the business type-ahead; **back to
+  recent vendors** returns.
+- [ ] **Create PO:** Submit creates the PO and its first line in one step and
+  lands on the PO detail; the line shows the SKU in the **SKU** column and
+  the item code in **Code**.
+- [ ] **Append or new is explicit:** ordering again while that PO is still a
+  draft shows **Open drafts for this vendor** with *Start a new PO* /
+  *Add to PO… (n lines)* radios, nothing preselected, Submit disabled until
+  one is picked; picking the draft appends the line.
+- [ ] **No history:** a never-ordered item opens straight in search mode.
+- [ ] **Email → PO:** the PO section's **Create new** opens the modal with
+  the sender-resolution block; a matched sender creates a PO carrying that
+  contact and lands on it.
+- [ ] **Add Line Item → attach to a material:** on a draft PO, picking a Job
+  lists that job's unordered materials as radios plus *Create a new material
+  for this line*; nothing is preselected; attaching links the line to the
+  chosen material and creates **no** duplicate material on the job.
+- [ ] **Guard — permissions:** a Worker (no atom) sees no **Order** / order /
+  Create new controls and `POST /api/materials/{id}/order/` answers 403.
+- [ ] **Jobs atom:** a jobs-only user can create a PO (list page **New
+  Purchase Order** visible) and order a material.
 
 ---
 

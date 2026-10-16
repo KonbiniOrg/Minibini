@@ -27,7 +27,7 @@
 
 {#if model.state === 'active'}
   <a class="summary-block active {accentClass}" href={model.href}>
-    <div class="summary-block-title">{title}</div>
+    <div class="section-title summary-block-title">{title}</div>
     <div class="stat-spread">
       {#each model.stats as stat}
         <div class="stat">
@@ -55,12 +55,12 @@
   </a>
 {:else if model.state === 'frozen'}
   <a class="summary-block frozen {accentClass}" href={model.href}>
-    <span class="summary-block-title">{title}</span>
+    <span class="section-title summary-block-title">{title}</span>
     <span>{model.frozenText}</span>
   </a>
 {:else}
   <a class="summary-block dormant {accentClass}" href={model.href}>
-    <span class="summary-block-title">{title}</span>
+    <span class="section-title summary-block-title">{title}</span>
     <span>{model.dormantText}</span>
   </a>
 {/if}

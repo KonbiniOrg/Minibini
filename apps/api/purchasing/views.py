@@ -18,7 +18,9 @@ from apps.core.services import ServiceError, NotFoundError
 from apps.core.models import PurchasingHistory
 from apps.core.history import record_history
 from apps.api.mixins import StatusTransitionMixin, LineItemMixin, JSONDestroyMixin
-from apps.api.permissions import CanManageFinancials
+from apps.api.permissions import (
+    CanManageFinancials, CanManageJobsOrFinancials, CanManageFinancialsOrJobsOrLinkedPM,
+)
 from apps.api.history.serializers import HistoryEntrySerializer
 from .serializers import (
     PurchaseOrderSerializer, POLineItemSerializer,
@@ -54,7 +56,23 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
             return [IsAuthenticated()]
         if self.action == 'line_items' and self.request.method == 'GET':
             return [IsAuthenticated()]
-        return [IsAuthenticated(), CanManageFinancials()]
+        if self.action == 'create':
+            # No PO to be linked to yet: atoms only (PO order flow §6).
+            return [IsAuthenticated(), CanManageJobsOrFinancials()]
+        if self.action == 'reconcile':
+            # The bookkeeping half of the vendor bill stays with financials.
+            return [IsAuthenticated(), CanManageFinancials()]
+        return [IsAuthenticated(), CanManageFinancialsOrJobsOrLinkedPM()]
+
+    def get_permission_target_po(self, request):
+        """The PO the URL names, for CanManageFinancialsOrJobsOrLinkedPM."""
+        pk = self.kwargs.get(self.lookup_url_kwarg or self.lookup_field)
+        if pk is None:
+            return None
+        try:
+            return PurchaseOrder.objects.filter(pk=pk).first()
+        except (ValueError, TypeError):
+            return None   # a malformed pk denies; it must not 500
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -149,6 +167,7 @@ class PurchaseOrderViewSet(StatusTransitionMixin, LineItemMixin, viewsets.ModelV
                 task = data.pop('task', None)
                 item = service.add_line_item_from_pli(
                     parent.pk, pli_id, qty, job=job, material_id=material_id, task=task,
+                    vendor_sku=data.get('vendor_sku', ''),
                 )
             else:
                 if job is not None:

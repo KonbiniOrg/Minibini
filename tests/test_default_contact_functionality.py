@@ -22,7 +22,7 @@ class DefaultContactAutomaticAssignmentTest(TestCase):
             first_name='John',
             last_name='Doe',
             email='john@test.com',
-            work_number='555-0001'
+            phones=[{'number': '555-0001', 'label': 'work'}]
         )
 
         # Create business with contact as default
@@ -45,7 +45,7 @@ class DefaultContactAutomaticAssignmentTest(TestCase):
             first_name='John',
             last_name='Doe',
             email='john@test.com',
-            work_number='555-0001'
+            phones=[{'number': '555-0001', 'label': 'work'}]
         )
 
         # Create business with first contact as default
@@ -66,7 +66,7 @@ class DefaultContactAutomaticAssignmentTest(TestCase):
             first_name='Jane',
             last_name='Smith',
             email='jane@test.com',
-            work_number='555-0002',
+            phones=[{'number': '555-0002', 'label': 'work'}],
             business=business
         )
         business.refresh_from_db()
@@ -87,7 +87,7 @@ class DefaultContactReassignmentTest(TestCase):
             first_name='John',
             last_name='Doe',
             email='john@test.com',
-            work_number='555-0001'
+            phones=[{'number': '555-0001', 'label': 'work'}]
         )
 
         # Create business with first contact as default
@@ -103,7 +103,7 @@ class DefaultContactReassignmentTest(TestCase):
             first_name='Jane',
             last_name='Smith',
             email='jane@test.com',
-            work_number='555-0002',
+            phones=[{'number': '555-0002', 'label': 'work'}],
             business=business
         )
 
@@ -135,7 +135,7 @@ class DefaultContactMultipleContactsTest(TestCase):
             first_name='Alice',
             last_name='Alpha',
             email='alice@test.com',
-            work_number='555-0001'
+            phones=[{'number': '555-0001', 'label': 'work'}]
         )
 
         # Create business with first contact as default
@@ -151,7 +151,7 @@ class DefaultContactMultipleContactsTest(TestCase):
             first_name='Bob',
             last_name='Beta',
             email='bob@test.com',
-            work_number='555-0002',
+            phones=[{'number': '555-0002', 'label': 'work'}],
             business=business
         )
 
@@ -159,7 +159,7 @@ class DefaultContactMultipleContactsTest(TestCase):
             first_name='Charlie',
             last_name='Gamma',
             email='charlie@test.com',
-            work_number='555-0003',
+            phones=[{'number': '555-0003', 'label': 'work'}],
             business=business
         )
 
@@ -177,7 +177,7 @@ class DefaultContactMultipleContactsTest(TestCase):
             first_name='David',
             last_name='Delta',
             email='david@test.com',
-            work_number='555-0004',
+            phones=[{'number': '555-0004', 'label': 'work'}],
             business=business
         )
 
@@ -193,7 +193,7 @@ class DefaultContactMultipleContactsTest(TestCase):
             first_name='John',
             last_name='Doe',
             email='john@test.com',
-            work_number='555-0001'
+            phones=[{'number': '555-0001', 'label': 'work'}]
         )
 
         # Create business with first contact as default
@@ -209,7 +209,7 @@ class DefaultContactMultipleContactsTest(TestCase):
             first_name='Jane',
             last_name='Smith',
             email='jane@test.com',
-            work_number='555-0002',
+            phones=[{'number': '555-0002', 'label': 'work'}],
             business=business
         )
 
@@ -217,7 +217,7 @@ class DefaultContactMultipleContactsTest(TestCase):
         original_default = business.default_contact
 
         # Modify and save business
-        business.business_phone = '555-9999'
+        business.phones=[{'number': '555-9999', 'label': ''}]
         business.save()
 
         business.refresh_from_db()

@@ -268,6 +268,26 @@ Status coupling, transitions, and what a job may do at each stage.
   start-and-bundle path shows, and the Start Estimate button disables
   while its POST is in flight.
 
+- **`WorkTemplate` has no frontend authoring surface.** — _added 2026-08-04_
+  _Carried over from `feature/fees` 2026-10-01 — written against the pre-better-fees code (Aug 2026); CHECK FOR STALENESS before acting: file/line refs, helper names, and whether main's re-implementation already closed the gap._
+  Task-owned-money Phase 4 added `WorkTemplate.is_product_structure`
+  (the flag that makes template-apply mint a parent + per-unit subtasks
+  in one call, `jobs-and-tasks.md` §4a.4) but it's settable only via
+  `PATCH /api/work-templates/{id}/` — no SPA UI and no Django admin
+  registration create/edit a `WorkTemplate`, toggle the flag, or manage
+  its `TemplateTaskAssociation` items at all. This predates Phase 4 (a
+  `WorkTemplate` has always been admin/script-seeded convenience data),
+  but Phase 4 made the gap more visible by adding a second flag nobody
+  can flip from the UI. Also blocking: `TemplateAssociationSerializer`
+  is currently read-only, so even a hypothetical manager couldn't
+  populate a new template's items through the existing API. Needs a
+  brainstorming session, not a quick fix — real design work (what does
+  authoring a product-structure template look like, item ordering,
+  quantity defaults) before any code.
+  _Done when:_ either a `WorkTemplate` CRUD surface ships (with its own
+  design pass), or the team explicitly decides templates stay
+  admin/script-authored and this entry is closed as "won't do."
+
 ## Change orders
 
 The CO surface and its estimate-parallel code.
@@ -290,7 +310,7 @@ The CO surface and its estimate-parallel code.
   stamps (or fails to stamp) the wrong task. The badge logic is
   correct; fix the converter (claim at most one plausible task per line, or drop
   the pass and accept sourceless converted lines). MUST run
-  `tests.test_neals_builders`; `nealsmall.json` is RM-managed — never regenerate.
+  `tests.test_neals_builders`; `nealseed.json` is RM-managed — never regenerate.
   Separately, RM hand-repairs the existing dev rows (job 61: source_ids 327,
   331, 335, 339 at minimum — Claude drafts the SQL, RM runs it).
   **Progress 2026-08-10:** a second corruption mode fixed — the pass also
@@ -466,6 +486,26 @@ The CO surface and its estimate-parallel code.
   (spec §10, RM-gated) — either a lifecycle link is added or the gap is
   explicitly re-ruled acceptable.
 
+- **`validate_data` has no AC-nullability check for `ChangeOrderLineItem` bare-add lines.** — _added 2026-08-03 (task-owned-money Phase 3, Task 7 carry-note)_
+  _Carried over from `feature/fees` 2026-10-01 — written against the pre-better-fees code (Aug 2026); CHECK FOR STALENESS before acting: file/line refs, helper names, and whether main's re-implementation already closed the gap._
+  Task 7 added `validate_data.check_estimate_hand_line_categorization` and
+  `check_invoice_line_categorization` — WARN on a `draft` document, ERROR
+  once past draft — mirroring the real send-time gates
+  (`EstimateService.assert_all_hand_lines_have_ac`,
+  `InvoiceEmailService._assert_all_lines_categorized`). The CO side has
+  the analogous send-time gate
+  (`ChangeOrderService.assert_all_bare_add_lines_have_ac`,
+  `apps/estimates/change_order_service.py`, wired into both
+  `ChangeOrder.clean()`'s draft-exit guard and
+  `ChangeOrderEmailService._validate_send`) but **no** `validate_data`
+  mirror was added for it — a pre-existing gap, not a regression; a bare
+  `add` `ChangeOrderLineItem` with no `accounting_category` is invisible
+  to `validate_data` regardless of the CO's status.
+  _Done when:_ `validate_data` gains a
+  `check_co_bare_add_line_categorization` (or similarly named) check with
+  the same WARN(draft)/ERROR(past-draft) split as its estimate/invoice
+  siblings, and a test pins it.
+
 ## Invoicing, expenses & payments
 
 - **Partially-backed agreement lines skip seeding entirely — per-unit
@@ -509,7 +549,7 @@ The CO surface and its estimate-parallel code.
   refs for its invoice lines (same spirit as `build_synthetic_estimate_
   sources`, with the same fuzzy-correspondence caveat), and/or a dev-DB
   repair pass (Claude drafts SQL, RM runs). `tests.test_neals_builders`
-  mandatory; nealseed/nealsmall untouched.
+  mandatory; nealseed untouched.
   _Converter half DONE 2026-08-12_ (`build_invoice_agreement_refs`:
   description-matched to the latest accepted estimate, one live invoice
   per line, cancelled invoices skipped; builders 132 OK + fixture suite).
@@ -649,6 +689,70 @@ Billing mechanics and money-record lifecycle.
   `adjustment_target_categories` N+1, verified with `assertNumQueries` or
   equivalent.
 
+- **Freeform invoice line-item POST accepts a null accounting_category — frontend-validated only.** — _added 2026-08-03_
+  _Carried over from `feature/fees` 2026-10-01 — written against the pre-better-fees code (Aug 2026); CHECK FOR STALENESS before acting: file/line refs, helper names, and whether main's re-implementation already closed the gap._
+  `InvoiceService.add_line_item` (`apps/invoicing/services.py`) builds the
+  `InvoiceLineItem` from raw kwargs and calls `full_clean()`/`save_line_item()`
+  with no AC-required check of its own — unlike `EstimateService.add_line_item`,
+  which 400s a hand-line with no `accounting_category` at entry. A client that
+  skips the SPA's own validation (or a stale/future non-SPA client) can POST a
+  freeform invoice line with `accounting_category: null` and it persists. This
+  is benign defense-in-depth today: `EstimateAddLineForm`/wizard composition
+  already require a category to reach this endpoint in the normal flow, the
+  invoice's "needs category" styling flags a null-AC line in the UI, and
+  `allLinesHaveCategory` gates the Send action before the line could ever
+  reach a customer uncategorized. Noted here rather than fixed now — decide
+  whether `add_line_item` should gain the same entry-time requiredness
+  `EstimateService` has, or whether the send-time gate is judged sufficient
+  API-side coverage.
+  _Done when:_ either `InvoiceService.add_line_item` gets an entry-time
+  AC-required guard (mirroring the estimate side), or a recorded decision that
+  the frontend validation + send gate is the intended (sufficient) coverage.
+
+- **Fallback-AC settings/display polish (final review of task-owned-money Phase 3).** — _added 2026-08-03_
+  _Carried over from `feature/fees` 2026-10-01 — written against the pre-better-fees code (Aug 2026); CHECK FOR STALENESS before acting: file/line refs, helper names, and whether main's re-implementation already closed the gap._
+  Four small gaps found alongside the final-review fix wave (Findings 1–3 fixed
+  same session — settings management list now fetches `include_fallback=true`;
+  `_resolve_fallback_category` now rechecks `is_active`/`is_deposit`):
+  1. **`update_accounting_category` (`apps/core/services.py`) has no
+     designation-aware guard.** PATCHing the currently-designated fallback AC's
+     `is_active` to `false`, or `is_deposit` to `true`, silently leaves the
+     `fallback_accounting_category` Configuration key pointing at a category
+     that no longer qualifies — the dangling pointer is now caught at
+     invoice-compose time (via the `_resolve_fallback_category` recheck) but
+     not at edit time. `ConfigurationService.update_rate_scheme` has the
+     analogous precedent for `default_rate_scheme` (`apps/core/services.py`:
+     `was_active`/`is_active` check + `_raise_if_default_rate_scheme` rejects
+     the PATCH outright when it would flip the designated default inactive,
+     rather than silently clearing the Configuration key — RM browser-testing
+     fix, 2026-08-04) — `update_accounting_category` wants the same
+     reject-don't-silently-clear shape for the fallback (and arguably
+     deposit) designation.
+  2. **`TaskDetailPage.svelte:228` and `TasksPanel.svelte:170`
+     (`WorkItemForm`'s categories source) fetch `/api/accounting-categories/`
+     without `include_fallback=true`.** If a Task's `accounting_category`
+     is ever the designated fallback, the categories list used for
+     name-lookup (`categories.find(...)`) won't contain it, so the UI renders
+     the bare `#id` instead of the category's name — same display-bug shape
+     Finding 1 fixed for the settings management table, on a different
+     surface (a lookup-for-display, not a picker, so no exclusion logic
+     needed — just the fetch param).
+  3. **`FallbackAccountingCategorySetting.svelte` fetches with no `page_size`**
+     (`api.get('/api/accounting-categories/?include_fallback=true')`), so its
+     dropdown silently truncates at the default page size (25) once a shop
+     has more categories than that — the invoice/estimate panels already pass
+     `page_size=100` alongside `include_fallback=true` for the same endpoint;
+     this setting picker should match.
+  4. **No in-use hint when designating an already-referenced AC as the
+     fallback.** Nothing in `FallbackAccountingCategorySetting.svelte` or its
+     backend warns the user if the category they're about to designate is
+     already referenced by existing lines/materials/services — not incorrect,
+     just a missed opportunity to flag a potentially confusing choice (a
+     heavily-referenced "real" category doing double duty as the universal
+     fallback).
+  _Done when:_ all four are addressed (or explicitly deferred further with a
+  recorded reason per item).
+
 ## Purchasing & inventory
 
 (The procurement-machinery items moved into the freeform-materials plan
@@ -738,15 +842,47 @@ Billing mechanics and money-record lifecycle.
   decided drops get an unbacked lane, lightweight lots, or the status quo, and the
   materials doc records it.
 
-- **Show a material's earmarks on the PO when ordering it.** — _added 2026-07-05_
-  Certain items are needed by more than one job at once. When adding/receiving a PO
-  line for such an item, the buyer can't see the total demand — the per-job earmarks
-  against the line's inventory item — so they can't easily decide to order for
-  several jobs in one purchase. Surface the item's earmark list (job + quantity)
-  on the PO line (and/or in the order-from-material flow) so multi-job demand is
-  visible at order time. _Done when:_ ordering an item with earmarks from multiple
-  jobs shows those earmarks on the PO surface, and the buyer can size the line
-  accordingly.
+- **"On Hand" chip is gross item QOH ≥ quantity — ignores other jobs'
+  earmarks.** — _added 2026-10-14_
+  `materialStatus` (`frontend/src/lib/materialStatus.js`) decides On Hand
+  from `qty_on_hand < quantity` where `qty_on_hand` is the item's raw QOH.
+  Two committed jobs each needing 3 sheets of a 3-sheet item both read
+  On Hand; only the avail badge goes red (−3). The chip should respect
+  reservations — a row is covered when its own earmark (or the item's
+  uncommitted stock) covers its quantity, not when the shelf happens to
+  hold that many sheets for everyone. Needs a decision on who is "short"
+  when the item is over-committed (first-earmarked wins? everyone short?).
+  _Done when:_ an over-committed item's material rows don't all claim On
+  Hand, with a stated tie rule, and the Order button reappears on the short
+  rows.
+
+- **Material row "(x avail)" subtracts the row's own earmark, so a covered
+  material reads "(0 avail)" beside "On Hand".** — _added 2026-10-14 (RM
+  sighting on job 08157)_
+  `qty_available` on both `MaterialSerializer`s is item on-hand minus
+  **every** committed earmark, including this material's own reservation.
+  A fully reserved material therefore shows "(0 avail)" next to a green
+  "On Hand" chip — true ("zero spare"), but it reads as a contradiction,
+  and a 7-on-hand / 4-earmarked row reads "(3 avail)" as if only 3 were
+  usable. Decide the row's semantic: "spare after all commitments" (rename
+  the badge, e.g. "3 spare"), or hide the badge when the row is covered
+  and only show it when short / when other jobs compete for the stock.
+  _Done when:_ a covered row never shows a badge that contradicts its chip,
+  and the badge's number is labelled with what it actually measures.
+
+- **"On Hand" chip is gross item QOH ≥ quantity — ignores other jobs'
+  earmarks.** — _added 2026-10-14_
+  `materialStatus` (`frontend/src/lib/materialStatus.js`) decides On Hand
+  from `qty_on_hand < quantity` where `qty_on_hand` is the item's raw QOH.
+  Two committed jobs each needing 3 sheets of a 3-sheet item both read
+  On Hand; only the avail badge goes red (−3). The chip should respect
+  reservations — a row is covered when its own earmark (or the item's
+  uncommitted stock) covers its quantity, not when the shelf happens to
+  hold that many sheets for everyone. Needs a decision on who is "short"
+  when the item is over-committed (first-earmarked wins? everyone short?).
+  _Done when:_ an over-committed item's material rows don't all claim On
+  Hand, with a stated tie rule, and the Order button reappears on the short
+  rows.
 
 - **PO/Bill vendor field: let users search by contact name but resolve to the business.** — _added 2026-06-21_
   The PO and Bill forms pick a vendor with `BusinessPicker` (searches businesses, returns a
@@ -935,16 +1071,6 @@ Billing mechanics and money-record lifecycle.
   _Done when:_ RM picks a placement and adding an expense no longer
   reads as a sibling of Add Work.
 
-- **Service Item edit should be a modal.** — _added 2026-08-17 (RM)_
-  `ServiceItemManager.svelte` still uses the old top-of-page inline
-  `<fieldset>` form (the `{#if editingId !== null}` block replaces the
-  list) — the same pattern the inventory merge entry flags. Sibling
-  managers already moved on: `RateSchemeManager` puts its form in the
-  `Modal` shell. Convert the create/edit form to a `Modal` like its
-  sibling.
-  _Done when:_ adding/editing a Service Item happens in a modal over the
-  list, matching RateSchemeManager.
-
 - **Modals' first field should have focus** - _added 2026_08_16_
   It's an extra click to select the field you want to type in when a modal pops
   up, and it's nearly always obvious which field needs entry.
@@ -962,10 +1088,11 @@ Cross-cutting UI/API conventions and shared components.
 
 - **`#/jobs` (JobListPage) has no nav link.** — _added 2026-07-31_
   The tabular job list is a destination RM uses and wants kept (2026-07-31)
-  — `JobFormPage`'s Cancel lands there deliberately — but nothing in the SPA
-  navigates to it: the sidebar's "Jobs" goes to `#/jobs/board`, and the only
-  other links in are the PM-filtered `#/jobs?pm=N` ones. So it's reachable by
-  URL or by cancelling out of the new-job form, and not otherwise.
+  but nothing in the SPA navigates to it: the sidebar's "Jobs" goes to
+  `#/jobs/board`, and the only other links in are the PM-filtered
+  `#/jobs?pm=N` ones. (Until 2026-10-10 the new-job page's Cancel landed
+  there too; the create form is a modal now, so that path is gone.) So it's
+  reachable by URL and not otherwise.
   _Done when:_ the plain list is reachable from the nav (or from the board).
 
 - **JobCard's `.doc-pill-*` should join the global `.status-badge` family.** — _added 2026-07-08 (CSS review pass); narrowed 2026-07-09_
@@ -1103,6 +1230,24 @@ Cross-cutting UI/API conventions and shared components.
   _Done when:_ the shape-hunt builds its own job via the API (like
   `change-orders/amend-in-place.spec.js` does) instead of hunting the
   shared seed, and the batch passes.
+
+- **Three e2e specs fail in every full-suite run (2026-10-06, both before and
+  after the migration consolidation — identical results on the old and new
+  graphs, 111 passed / 3 failed / 6 skipped).**
+  - `per-unit-lines/mint-first.spec.js` and
+    `task-view-bundling/start-estimate-offer.spec.js` "State C": both pass in
+    isolation; in the full run the freshly created plain hand line is treated
+    as answered (job goes `in_progress` instead of parking on `approved`, no
+    checklist banner). `EstimateService.unanswered_lines` only counts a line
+    answered when it has source rows or sits in an `is_deposit` category, so
+    an earlier spec is leaking state (category flags or a Configuration key)
+    that makes new hand lines look answered. Same order-dependent family as
+    the entries below.
+  - `production-lifecycle/completion.spec.js` §6 "open session closes": fails
+    in isolation too — after Complete, "Working on:" is still rendered.
+    Real regression or stale expectation; needs a look.
+  _Done when:_ a full `npx playwright test` is green, with the leak identified
+  (not papered over by reordering).
 
 - **Two more intermittently-flaky e2e specs, catalogued 2026-08-08 (skeleton-phase final verification).**
   `production-lifecycle/completion.spec.js` §6 (a timing flake around the
@@ -1310,7 +1455,8 @@ Cross-cutting UI/API conventions and shared components.
   references (contacts deletion checks, inventory merge/has_document_line_refs
   clauses) go with them.
 
-  link-email-to-PO (and ideally create-PO-from-email).
+  The email↔PO flows that remain are link-email-to-PO and create-PO-from-email
+  (the latter now exists, as `OrderModal`'s `email` source).
 
 - **Email password change should re-authenticate via a modal.** — _added 2026-07-23_
   Settings → Email currently lets any config admin overwrite the stored mail
@@ -1432,30 +1578,6 @@ Cross-cutting UI/API conventions and shared components.
   _Done when:_ list pages share one race-free reset idiom and a filter
   change from a deep page never issues a stale-page request.
 
-- **Migration cleanup must preserve the hand-written operations.** — _added 2026-07-26_
-  28 migrations carry `RunSQL`/`RunPython`. Two buckets for the planned
-  squash/regeneration: (a) MUST survive into any new initial migrations —
-  `invoicing/0008_unique_draft_invoice_per_job` (MySQL stored generated
-  column `draft_job_id` + unique index = the only DB-level
-  one-draft-per-job enforcement; invisible in models.py) and
-  `core/0027_seed_setup_defaults` (baseline Configuration rows for fresh
-  installs); check `core/0005`/`0007` (default-groups create+cleanup —
-  Groups are unused, the pair may net to nothing and can likely be
-  dropped outright). (b) Safe to lose on from-scratch regeneration — all
-  one-time data backfills (`backfill_*`, `migrate_*`, `rewrite_*`,
-  `copy_*`, `normalize_*`, `cleanup_*`, phase-A), which no empty DB
-  needs; they only matter if some environment must still migrate forward
-  from an old schema. Also: `jobs/migrations/_phase_a_backfill_helper.py`
-  is a plain module imported by `0034`, not a migration — prune
-  accordingly. `squashmigrations` preserves these blocks but fragments
-  around them; regeneration re-authors bucket (a) by hand. After any
-  cleanup, run the full suite WITHOUT --keepdb (fresh from-scratch
-  build) per house rule.
-  _Done when:_ the cleanup lands with bucket (a) re-authored, fresh
-  `migrate` + full suite green from an empty DB, and the e2e seed still
-  loads.
-
-
 - **Unstyled `<select>` elements read as "greyed out / disabled" on
   Chrome-on-macOS (and likely other browser/OS combos).** — _added
   2026-08-04_
@@ -1489,20 +1611,6 @@ Cross-cutting UI/API conventions and shared components.
   Scope card link land on the latest accepted CO's page (jobOverview
   unit tests updated), falling back to the estimate when no CO exists.
 
-
-- **PO line items should show the inventory item's code.** — _added
-  2026-08-10 (RM)_
-  A purchase-order line for a catalog item gives the vendor/shop no
-  `InventoryItem.code` (the unique catalog code, inventory/models.py).
-  Note the link is indirect: `PurchaseOrderLineItem` has no
-  `inventory_item` FK — the route is the line's `linked_material`
-  property (`Material.po_line_item` reverse) → `Material.inventory_item`
-  → `.code`, so freeform/non-catalog lines simply have none. Surfaces:
-  the PO page's line table and probably the PO PDF
-  (`templates/purchasing/purchase_order_pdf.html`) where a code column
-  is arguably most valuable (it's what the vendor keys on).
-  _Done when:_ catalog-backed PO lines display the code on the PO page
-  (and PDF if RM wants it there), blank for freeform lines.
 
 - **`linked_po_variances` (job costing, outsourced-work port Task 4) is
   API-only — no frontend display yet.** — _added 2026-09-21_
@@ -1596,3 +1704,33 @@ Cross-cutting UI/API conventions and shared components.
   _Done when:_ comment rows render informationally on the three edit
   views + customer views, the needs-category marker exempts `is_comment`,
   and `unanswered_lines` excludes comments.
+
+- **SchedulePage shows "Loading schedule…" forever on a failed fetch.** — _added 2026-10-09 (code review, feature/lite-view)_
+  `stores/schedule.js` only `console.error`s on failure and leaves
+  `$schedule` null, so the page's `LoadState` never leaves loading.
+  _Done when:_ the store exposes an error (or rejects) and `SchedulePage`
+  passes it to `LoadState`.
+
+- **Audit `JobScopedPermissionMixin` coverage; revisit where the inactive-contact
+  freeze lives.** — _added 2026-10-11 (RM, feature/contacts-refine design)_
+  Only five viewsets mix in `JobScopedPermissionMixin` (jobs, tasks, estimates,
+  change orders, deliverables). Invoice, shipment, and blep viewsets write to
+  job-owned state without it, which smells like a `CanManageJobOrPM` coverage
+  gap for PM-scoped users. Separately, the inactive-contact/business freeze
+  (`JobService.assert_mutable` / `PurchaseOrderService.assert_mutable`) was put
+  in the service layer partly *because* the mixin isn't a complete chokepoint;
+  if the audit makes it one, decide whether "frozen" is really a permission
+  check and move the guard accordingly.
+  _Done when:_ every job-owned write viewset either mixes in the mixin or has a
+  written reason not to, and the freeze-placement decision is recorded in
+  `docs/designs/contacts-and-businesses.md`.
+
+- **`PATCH /api/contacts/{id}/ {business_id: null}` is silently ignored.** — _added 2026-10-11 (found writing the default-contact e2e)_
+  `ContactViewSet.perform_update` pops `business` and only forwards it as
+  `business_pk` when non-None, so an explicit null never reaches
+  `ContactService.update_contact(business_pk=None)` — the API cannot unlink a
+  contact from its business (the service can). Pre-existing; the new
+  "move the default needs an active sibling" guard therefore only fires on
+  moves between businesses via the API.
+  _Done when:_ a null `business_id` is forwarded as `business_pk=None` (with
+  the same default-contact guard) and a test covers the unlink.

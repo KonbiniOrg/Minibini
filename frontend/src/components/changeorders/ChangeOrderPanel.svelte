@@ -7,10 +7,13 @@
   // server-composed amended-agreement — Tasks 5-8). Extracted from the old
   // ChangeOrderDetailPage route (2026-07-19); COEditView replaced the old
   // flat line-item diff table (COLineItemsSection) 2026-08-09.
-  import { link } from 'svelte-spa-router';
+  import { untrack } from 'svelte';
   import { api, errorMessage } from '../../lib/api.js';
+  import { deliverablesVersion } from '../../stores/deliverables.js';
   import { showError } from '../../stores/messages.js';
   import CODeliverablesSection from './CODeliverablesSection.svelte';
+  import DeliverablesEditModal from '../jobs/DeliverablesEditModal.svelte';
+  import DocumentSendModal from '../email/DocumentSendModal.svelte';
   import COEditView from './COEditView.svelte';
   import COCustomerView from './COCustomerView.svelte';
   import DocModeBar from '../docsurface/DocModeBar.svelte';
@@ -20,6 +23,7 @@
   import { buildEstimateDocItems, changeOrderDisplayStatus } from '../../lib/estimateDocs.js';
   import { buildDeliverableRows } from '../../lib/changeOrderDiff.js';
   import { getJobWs, rememberMode } from '../../stores/jobWorkspace.js';
+  import LoadState from '../LoadState.svelte';
 
   let {
     job,
@@ -36,7 +40,7 @@
   let error = $state('');
 
   // Deliverables diff state
-  let liveDeliverables = $state([]);
+  let liveDeliverables = $state(null); // null = not loaded yet
   let delivBaseline = $state([]);
   let deliverablesDiff = $state([]); // server-composed kind rows (Customer mode)
 
@@ -187,7 +191,7 @@
       if (silent) {
         showError(errorMessage(e, 'Could not refresh the change order.'));
       } else {
-        error = e.message || 'Could not load change order.';
+        error = errorMessage(e, 'Could not load change order.');
       }
     } finally {
       if (!silent) loading = false;
@@ -237,6 +241,57 @@
   async function handleEditChanged() {
     await loadCO({ silent: true });
   }
+
+  // Send gate — the CO sibling of EstimatePanel's. The server refuses to
+  // open a CO whose job has no deliverables (ChangeOrderService.
+  // assert_job_has_deliverables), so "Send to customer" on such a job opens
+  // the deliverables editor with a notice instead of the send form. Send
+  // affordances are buttons in every state (RM 2026-09-29); the email step
+  // is DocumentSendModal over this panel (2026-10-10).
+  let deliverablesModalOpen = $state(false);
+  const needsDeliverables = $derived(
+    liveDeliverables !== null && liveDeliverables.length === 0);
+
+  let sendOpen = $state(false);
+  function goToSend() {
+    sendOpen = true;
+  }
+
+  async function handleSent() {
+    sendOpen = false;
+    await loadCO({ silent: true });
+    onJobChange();
+  }
+
+  function handleSend() {
+    if (needsDeliverables) {
+      deliverablesModalOpen = true;
+    } else {
+      goToSend();
+    }
+  }
+
+  async function handleDeliverablesModalClose(changed) {
+    deliverablesModalOpen = false;
+    if (!changed) return;
+    await loadCO({ silent: true });
+    onJobChange();
+    // The user was on their way to send; carry on once the job has a
+    // deliverable. Cancel (or an empty save) stays here.
+    if (!needsDeliverables) goToSend();
+  }
+
+  // The live deliverables list (diff rows, send gate) is a copy of the job's
+  // list — refetch when any view mutates it (the context band's modal, this
+  // panel's own deliverables section). Skips the initial value.
+  let lastDeliverablesVersion = $state(0);
+  $effect(() => {
+    const v = $deliverablesVersion;
+    if (v !== lastDeliverablesVersion) {
+      lastDeliverablesVersion = v;
+      if (co) untrack(() => loadCO({ silent: true }));
+    }
+  });
 
   // --------------------------------------------------------------------------
 
@@ -320,11 +375,8 @@
   );
 </script>
 
-{#if loading}
-  <p>Loading...</p>
-{:else if error}
-  <p class="error">{error}</p>
-{:else if co}
+<LoadState {loading} {error}>
+{#if co}
   {#if subnavItems.length > 0}
     <DocSubnav items={subnavItems} section="estimate" />
   {/if}
@@ -339,17 +391,17 @@
         <button type="button" onclick={handleSaveButton} disabled={actionBusy}>
           {saveLabel}
         </button>
-        <a href={`/change-orders/${co.change_order_id}/send`} use:link class="send-link">
+        <button type="button" class="send-link" onclick={handleSend}>
           Send to customer
-        </a>
+        </button>
         <span class="toolbar-spacer"></span>
         <button type="button" class="btn-danger" onclick={discard} disabled={actionBusy}>
           Discard
         </button>
       {:else if isOpen}
-        <a href={`/change-orders/${co.change_order_id}/send`} use:link class="send-link">
+        <button type="button" class="send-link" onclick={goToSend}>
           Resend to customer
-        </a>
+        </button>
         <button type="button" class="btn-accept" onclick={() => handleStatusChange('accepted')} disabled={actionBusy}>
           {actionBusy ? 'Saving…' : 'Record Accepted'}
         </button>
@@ -422,6 +474,7 @@
   {/if}
   </div>
 {/if}
+</LoadState>
 
 <Modal open={startNewDialogOpen} onCancel={() => { startNewDialogOpen = false; }} label="Start new change order">
   <h3>Start new change order</h3>
@@ -436,6 +489,23 @@
     <button type="button" onclick={() => { startNewDialogOpen = false; }}>Cancel</button>
   </div>
 </Modal>
+
+{#if deliverablesModalOpen && co}
+  <DeliverablesEditModal
+    jobId={co.job}
+    notice="Deliverables are required before this change order can be sent."
+    onClose={handleDeliverablesModalClose}
+  />
+{/if}
+
+{#if co}
+  <DocumentSendModal open={sendOpen} label="Send change order" title="Send change order to customer"
+    defaultsUrl={`/api/change-orders/${co.change_order_id}/send-defaults/`}
+    sendUrl={`/api/change-orders/${co.change_order_id}/send/`}
+    submitLabel="Send Email"
+    onSent={handleSent}
+    onClose={() => { sendOpen = false; }} />
+{/if}
 
 <style>
   .error { color: #a8071a; padding: 16px; }

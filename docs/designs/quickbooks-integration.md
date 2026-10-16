@@ -162,8 +162,43 @@ endpoints in `apps/api/qbo_import/views.py`.
   `{'name', 'reason'}` and the panel renders "N contacts couldn't be
   imported:" with per-row reasons. Skipped rows stay importable after
   the user resolves the conflict. Blank QBO emails never overwrite a
-  konbini email on update. A dedupe/merge flow for skipped rows is
-  LATER.
+  konbini email on update.
+  **Phones (2026-10-11):** QBO carries one `PrimaryPhone`; konbini holds a
+  `phones` list. New contacts/businesses/vendor-created pairs are created
+  with `[{number, label: 'qbo'}]` (nothing when QBO has no phone). For a
+  matched (update) customer, `_merge_qbo_phone` **appends** the QBO number
+  labeled `qbo` to the business and/or contact unless an existing entry
+  strips to the same digits (`strip_phone`) — QBO never reorders or
+  replaces konbini's phones, so the primary stays whatever the user set.
+  The vendor *update* branch now merges the QBO phone through the same
+  `_merge_qbo_phone`, so a QBO-side vendor phone reaches konbini like a
+  customer's (the earlier gap is closed). A dedupe/merge flow for skipped
+  rows is LATER.
+  **Inactive pull (2026-10-11):** the snapshot fetches customers and
+  vendors with `Active=True` **and** `Active=False` and stores `'active'`
+  per row (a row without `active` is treated as active). For rows matched
+  to a konbini business/contact, two suggestion states join `new` /
+  `imported` / `changed`: `qbo_inactive` (QBO inactive, local active,
+  action word **deactivate**) and `qbo_active` (QBO active, local
+  inactive, action **reactivate**). **Unmatched inactive rows are
+  dropped** (never offered as `new`) and are excluded from the pull
+  summary counts. Commit rows carrying `action: 'deactivate'|'reactivate'`
+  call `ContactService`'s status services with `push_to_qbo=False` (QBO
+  already agrees, so there is no push and no sync-log row), each inside a
+  per-row savepoint. A service refusal (open job, open PO, ...) does not
+  abort the batch: the row lands in `counts[kind]['skipped']` with the
+  blocker sentence, the panel warns "N contacts couldn't be applied:", and
+  the row stays in the panel. Counts gain `deactivated` / `reactivated`.
+  A business that is both customer and vendor shows both rows; applying
+  both flips it once and the second is a counted no-op. If only one role
+  changed in QBO, the other role's row then reads as the opposite state on
+  the next pull (e.g. vendor inactivated in QBO -> B deactivated locally ->
+  the still-active customer row shows **reactivate**); whether this needs a
+  both-roles rule is open (hand-test #18). The panel
+  (`ContactsImportPanel.svelte`) leaves `qbo_inactive` rows **unchecked by
+  default** with a hint line, since deactivating is the destructive
+  direction. The reverse direction (konbini -> QBO) is in "Customer sync"
+  below.
 - **SPA**: shared `SuggestionPanel.svelte` + per-kind wrappers embedded in
   Settings → Accounting (categories), Settings → pricing/RateSchemeManager
   (schemes), Catalog → Inventory tab (`InventoryImportPanel`), Catalog →
@@ -255,6 +290,49 @@ re-raises. Accepted trade-off: a same-named-but-genuinely-different customer
 binds silently. (Vendors never gained the adopt path — the vendor push was
 retired with bills, 2026-07-23.)
 
+### Active-flag push (2026-10-11)
+
+Deactivating/reactivating a Business or business-less Contact pushes QBO's
+`Active` flag. `QBOCustomerSyncService.set_active(obj, active)` fetches the
+Customer by `obj.qbo_customer_id`, sets `Active`, and saves via
+`save_and_log` with `action='deactivate'|'reactivate'` and
+`entity_type='customer'` (Business) or `'contact_customer'` (business-less
+Contact). Contacts that belong to a business have no QBO entity, so they
+never push. See "Vendor sync" below for the vendor counterpart.
+
+The orchestration is `_push_status_to_qbo(obj, active)` in
+`apps/contacts/services.py`, called by all four flip methods
+(`deactivate_/reactivate_` x contact/business) when `push_to_qbo` is true:
+
+- **Skip**: no `qbo_customer_id`/`qbo_vendor_id`, or no active
+  `QBOConnection` -> nothing is pushed and the local flip proceeds
+  (disconnected flips leave QBO stale; the next contacts pull surfaces the
+  difference as a `qbo_active`/`qbo_inactive` suggestion).
+- **Push**: customer and/or vendor, per the ids the business carries.
+- **Failure policy**: any exception (QBO refusal, network, token) becomes
+  `ValidationError('QuickBooks refused to <deactivate|reactivate> <obj>: <e>')`
+  and the local record is **not** flipped. The SPA shows it as the action's
+  error.
+- **Ordering**: the push runs after the local blockers pass and **before**
+  the local flip, deliberately *outside* `transaction.atomic()`, so a failed
+  push's `QBOSyncLog` row (status `failed`) survives instead of rolling back.
+- **Cascade**: contacts flipped by a business cascade never push.
+- **Known limitation**: a business with both a customer and a vendor id is
+  pushed customer-then-vendor; if the vendor push fails after the customer
+  push succeeded, QBO's customer is inactive while the local business is
+  still active (no all-or-nothing pre-check). The user sees the refusal
+  and can retry; the next pull would also show it.
+
+### Customer/Vendor Active flag — sandbox findings (2026-10-11)
+
+Status: **PENDING — RM runs the probe.** Contact/Business deactivation (status push/pull) maps onto QBO's `Active` flag on Customers. Three behaviours are unverified against a real QBO company; the disposable probe `docs/plans/2026-10-11-qbo-active-probe.py` answers them (RM runs it via `manage.py shell` against the **sandbox** company only, then does two manual sandbox steps: an unpaid invoice for the probe customer and an unpaid bill for the probe vendor, re-running just the deactivate lines).
+
+- **(a) " (deleted)" suffix.** Does inactivating a Customer/Vendor append " (deleted)" to its `DisplayName`, and does reactivation strip it? **PENDING — RM runs the probe.**
+- **(b) Refusal with open balances.** Does the API refuse to inactivate a Customer with a balance (unpaid invoice) or a Vendor with open bills, and with what exact message? **PENDING — RM runs the probe.**
+- **(c) `_adopt_id_by_name` inactive fallback.** Needed if (a) is "yes, and reactivation strips it": a push whose name collides with an inactive record should adopt-and-reactivate via an `Active=False` fallback query. Decision: **PENDING — RM runs the probe.**
+
+Tasks 17-18 (status push/pull) ship without waiting on these answers: the answers only affect this doc and the optional adopt fallback. The sandbox hand-test checklist is `docs/ui-flows/QuickBooks-Sync.md` § Customer/Vendor status sync; its "per finding" cells are recorded here.
+
 ### DisplayName collision logic — `QBODisplayNameService`
 
 QBO requires unique `DisplayName` per entity type. The same Minibini `Business` may be both a customer (the company issues them invoices) and a vendor (the company also buys from them). Rules:
@@ -272,14 +350,16 @@ The current logic only inspects Minibini's own QBO IDs. A pre-existing QBO custo
 | `CompanyName` (business) | `business.business_name` |
 | `DisplayName` | per the rules above |
 | `GivenName` / `FamilyName` (contact) | `contact.first_name`, `contact.last_name` |
-| `PrimaryPhone` | `business.business_phone` or `contact.phone()` |
+| `PrimaryPhone` | `business.phone()` or `contact.phone()` — the first (primary) entry of the record's `phones` list; empty list → not sent (was `business.business_phone` until 2026-10-11) |
 | `PrimaryEmailAddr` | `default_contact.email` (business) or `contact.email` |
 
 Billing address, shipping address, payment terms, tax exemption, and notes are not pushed.
 
-## Vendor sync — retired 2026-07-23
+## Vendor sync — Active flag only (2026-10-11)
 
-`QBOVendorSyncService` (`push_vendor`) was deleted with the bill retirement — its only caller was the bill push. `Business.qbo_vendor_id` is **kept**: `QBODisplayNameService` still reads it for the suffix rule, and a future setup-time QBO pull may repopulate it. `QBOSyncLog` rows with `entity_type='vendor'` remain as history.
+History: the full vendor push (`push_vendor`) was deleted 2026-07-23 with the bill retirement — its only caller was the bill push. `Business.qbo_vendor_id` was **kept**: `QBODisplayNameService` reads it for the suffix rule, and the setup-time import repopulates it (a vendor matching an existing Business adopts its id). `QBOSyncLog` rows with `entity_type='vendor'` remain as history.
+
+Since 2026-10-11 a new, deliberately narrow `QBOVendorSyncService.set_active(business, active)` exists: it fetches the Vendor by `qbo_vendor_id`, sets `Active`, and saves via `save_and_log` (`entity_type='vendor'`, `action='deactivate'|'reactivate'`). It is the **only** vendor write — konbini never creates or edits QBO Vendors. Called from `_push_status_to_qbo` right after the customer push; failure policy, ordering, and the half-push limitation are under "Active-flag push" above.
 
 ## Invoice push — `InvoiceEmailService.send_invoice`
 
@@ -489,7 +569,7 @@ Settings page — `frontend/src/routes/SettingsPage.svelte`:
 
 Invoice detail — `frontend/src/routes/invoices/InvoiceDetailPage.svelte`:
 
-- A "Send Invoice" link (relabelled "Resend Invoice" once `invoice.qbo_id` is set) navigates to the invoice send page (`#/invoices/{id}/send`). That page posts to `POST /api/invoices/{id}/send`, which performs the QBO push (first send only) and the customer email together. There is no separate "Send to QuickBooks" button or `SendToQBODialog`. Once `qbo_id` is set, the detail page also shows read-only QBO ID / payment-status / amount-paid rows.
+- A "Send Invoice" button (relabelled "Resend Invoice" once `invoice.qbo_id` is set) opens the send modal (`DocumentSendModal`, architecture doc §7.12; the `#/invoices/{id}/send` page is a redirect stub since 2026-10-10). The modal posts to `POST /api/invoices/{id}/send`, which performs the QBO push (first send only) and the customer email together. There is no separate "Send to QuickBooks" button or `SendToQBODialog`. Once `qbo_id` is set, the detail page also shows read-only QBO ID / payment-status / amount-paid rows.
 
 The send flow on the Minibini side is documented in `invoicing-and-expenses.md`.
 

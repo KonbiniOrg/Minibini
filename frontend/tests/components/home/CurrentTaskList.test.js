@@ -8,6 +8,7 @@ vi.mock('svelte-spa-router', () => ({ link: () => ({}), push: vi.fn() }));
 import { api } from '@/lib/api.js';
 import { push } from 'svelte-spa-router';
 import CurrentTaskList from '@/components/home/CurrentTaskList.svelte';
+import { viewMode } from '@/stores/viewMode.js';
 
 const t = (id, name, extra = {}) => ({
   id, name, job: { id: 3, job_number: 'JOB-3', name: 'W' },
@@ -95,5 +96,20 @@ describe('CurrentTaskList', () => {
     expect(push).not.toHaveBeenCalled();
     const flagged = api.post.mock.calls.filter(([, body]) => body?.prior_qty_handled);
     expect(flagged).toHaveLength(0);
+  });
+});
+
+describe('CurrentTaskList — DataTable', () => {
+  const headersOf = (t) => Array.from(t.querySelectorAll('thead th')).map((th) => th.textContent.trim());
+  it('renders Task / Job / Status / Start / Reorder in both densities with data-col', () => {
+    viewMode.set('lite');
+    const { container } = render(CurrentTaskList, { props: { tasks: [t(1, 'A'), t(2, 'B')] } });
+    const table = container.querySelector('table.data-table');
+    expect(headersOf(table)).toEqual(['Task', 'Job', 'Status', 'Start', 'Reorder']);
+    expect(table.querySelector('td[data-col="task"] a')).toHaveAttribute('href', '/jobs/3/tasks/1');
+    expect(table.querySelectorAll('td[data-col="reorder"] button')).toHaveLength(4);
+    viewMode.set('full');
+    const { container: c2 } = render(CurrentTaskList, { props: { tasks: [t(1, 'A')] } });
+    expect(headersOf(c2.querySelector('table.data-table'))).toEqual(['Task', 'Job', 'Status', 'Start', 'Reorder']);
   });
 });

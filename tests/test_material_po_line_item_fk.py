@@ -11,7 +11,7 @@ class MaterialPOLineItemFKTest(TestCase):
     def setUp(self):
         Configuration.objects.get_or_create(key='po_number_sequence', defaults={'value': 'PO-{counter:04d}'})
         AppState.objects.get_or_create(key='po_counter', defaults={'value': '0'})
-        self.contact = Contact.objects.create(first_name='V', last_name='Vendor', work_number='555')
+        self.contact = Contact.objects.create(first_name='V', last_name='Vendor', phones=[{'number': '555', 'label': 'work'}])
         self.business = Business.objects.create(business_name='Vendor Inc', default_contact=self.contact)
         self.contact.business = self.business
         self.contact.save()

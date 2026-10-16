@@ -83,7 +83,7 @@ If Neal renames a stage on the board, update `_STAGE_TO_JOB_STATUS` in
 ## 2. Running it
 
 ```bash
-python nealsdata/convert_neals_data.py [--limit N] [--verbose]
+python nealsdata/convert_neals_data.py [--limit N] [--all-vendors] [--verbose]
 ```
 
 The default `--limit 100` caps how many Jobs are built from the most recent
@@ -93,6 +93,11 @@ board work must never silently age out; the 2026-07-13 Barbara Freeman
 regression). Actives consume limit slots; the total exceeds the limit only
 when the actives alone do. The output is `nealsdata/datasets/converted.json`
 (the file is git-ignored — regenerate it whenever inputs change).
+
+`--all-vendors` also imports the newest `--limit` vendor orgs from the Bills
+sheet (§7a). Without it, a vendor Business appears in the output only because
+one of its Bills synthesized a PO (§4a) — so no vendor is left with neither a
+job nor a PO.
 
 Loading the result into Minibini is the user's job — the script never writes
 to a database, and it always emits **one** self-contained dataset file.
@@ -172,7 +177,9 @@ loaded after the dataset; they are not the converter's concern.)
    Accent color is round-robined through `JOB_ACCENT_COLOR_PALETTE` (mirrored
    from `apps.jobs.models`) so loaddata-emitted jobs render with the colored
    bars the SPA board expects.
-7a. **`build_vendors`**: emits Businesses/Contacts for **vendors**, drawn
+7a. **`build_vendors`** (only with `--all-vendors`; otherwise skipped, and
+    vendors enter the output solely through PO synthesis in §4a): emits
+    Businesses/Contacts for **vendors**, drawn
     *wholly* from the FreeAgent `Bills` sheet (the Kanban source has no
     concept of bills or vendors). Groups bill container rows by
     `Contact Organisation` (rows with a blank organisation — line items and
@@ -208,8 +215,13 @@ loaded after the dataset; they are not the converter's concern.)
 9b. **`assign_est_quantities`**: fills `est_qty` on every Task by its own
     `qty_source` (hourly = worker hours; entered_qty = piece count tied to
     worker time) — §4.
-10. **`build_invoices`**: emits Invoices + line items via the
-    Project-name link. Stashes each emitted line's classification (`task`,
+10. **`build_invoices`**: emits Invoices + line items. An Invoice joins a
+    Job through the **Estimates sheet's `Invoice Reference` column**: each
+    spine job's estimate rows contribute their `Invoice Reference` values,
+    and an Invoices-sheet row whose `Reference` matches one of them belongs
+    to that job. Invoices no spine estimate points at are skipped. (The
+    FreeAgent `Project` column is not used here — it only feeds vendor
+    discovery in `build_contacts_and_businesses`.) Stashes each emitted line's classification (`task`,
     `material`, `lineitem`, `skip`) on `c.invoice_line_kinds` for the
     next phase. Sets `sent_date` on `open`/`paid` invoices (= the FreeAgent
     invoice Date) and `qbo_amount_paid` on `paid` invoices (= that invoice's
@@ -294,8 +306,7 @@ Tasks come from two sources:
    Checklist is present.
 
 Every task resolves a RateScheme and **stamps its money block from it**
-(`_stamp_money_block`, mirroring `Task.stamp_from_scheme` /
-`apps.jobs.task_money_backfill.backfill_task_money`): the scheme's `pk`
+(`_stamp_money_block`, mirroring `Task.stamp_from_scheme`): the scheme's `pk`
 lands on `source_scheme` (provenance only — never read for money math), and
 `qty_source` (= the scheme's `algorithm`), `rate`, `unit_label` and
 `accounting_category` are copied onto the task as its own permanent values.
@@ -432,9 +443,13 @@ model and synthesizes Purchase Orders + Bills. See
   First matched bill/vendor wins per Job. The match emits a `received_in_full`
   `PurchaseOrder` to that Bill's vendor carrying **all** the Job's Materials
   (`PurchaseOrderLineItem` per Material, `qty_received = quantity`,
-  `Material.po_line_item` set), plus a `received` `Bill` linked to the PO (with
-  copied `BillLineItem`s). The vendor business is created on the spot if it
-  wasn't among the imported top-N vendors. PO numbers are `PO{n:04d}` and the
+  `Material.po_line_item` set). (No konbini `Bill` rows — bills live in QBO.)
+  The vendor business is created on the spot if it wasn't among the imported
+  top-N vendors (and without `--all-vendors` this is the *only* way a vendor is
+  emitted). The PO's `contact` is the Bill's **`Contact Name`**, resolved
+  against the vendor's existing Contacts by normalized name and attached as a
+  further Contact when missing — the business default is used only when the
+  Bill names nobody. PO numbers are `PO{n:04d}` and the
   `po_counter` AppState is advanced past them. Coverage is partial by design —
   most Materials have no surviving purchase record, which is expected.
 
@@ -465,7 +480,12 @@ thickness (`P.match_pli`). On a match the `inventory_item` FK is set and
 `unit_cost` is the PLI's `purchase_price`; on a miss the FK stays null and
 `unit_cost = sell_price × _COST_RATIO` (0.8333, the same factor PLIs use). The
 match is precision-first — prose with no thickness, or a material family absent
-from the price list, is an acceptable miss. As noted above, a miss then mints a
+from the price list, is an acceptable miss. Date tokens (`*price as of
+7/31/25*`, `10/13/2023`) are stripped before the fraction scan
+(`_DATE_RE`): left in, 7/31 read as a 0.226" thickness shared by every
+same-family item carrying the same suffix, and the shortest-code tie-break
+linked 3/4" MDF to `MDF.5` (33 of 56 dev materials mislinked, found
+2026-10-14). As noted above, a miss then mints a
 transient lot in `derive_atoms`, so by the time the `inventory.material`
 fixture is emitted the FK is never actually null — every Material is
 item-backed.
@@ -507,7 +527,10 @@ two trigger paths:
 
 The shipment's `picked_up_date` comes from the Job's `completed_date`,
 falling back to the latest invoice date, then the Job's `created_date`.
-Pickup-marker checklist lines never become Tasks.
+Pickup-marker checklist lines never become Tasks. The marker test itself
+(`parsing.is_pickup_marker` / `parsing.has_pickup_done`) is shared with
+reconcile pass 6.5, which uses it as the "all deliverables shipped" half
+of the completion gate.
 
 ### Units mapping
 
@@ -559,6 +582,29 @@ Deliverables default to `units='ea'` (canon form of `each`).
    `work_complete` and clears `completed_date`. Must run before
    `build_shipments` so the synthesis branch doesn't fake-ship the
    downgraded job.
+6.5. **Promote `work_complete` Jobs the app would have closed** — the
+   mirror image of pass 6. Live, `JobService.maybe_complete_if_resolved`
+   walks a `work_complete` Job to `completed` when every Invoice is
+   resolved and every Deliverable is picked up; the converter writes those
+   end states without replaying the cascade, which stranded paid-and-
+   collected jobs in the board's Unpaid lane (job 07699, RM 2026-10-14).
+   A `work_complete` Job that is not on hold, has **at least one `paid`**
+   Invoice and no Invoice outside `{paid, cancelled}`, and whose card has
+   a checked `Picked up/Delivered` marker (every Job has ≥1 Deliverable,
+   and a `work_complete` Job's Shipment only comes from the marker, so
+   marker ⇔ all shipped) is promoted to `completed`, with
+   `completed_date` = the latest paid Invoice's `closed_date` (payment
+   follows pickup in this data), falling back to the latest Invoice's
+   `created_date`. Deliberate departure from the gate: no Invoices, or
+   only cancelled ones, does **not** promote — the Kanban `Invoice` stage
+   means billing is pending, so those stay visible as Needs Invoice.
+   Paid but **no** marker stays `work_complete` too; the board files it
+   under Needs Pickup. `build_history` keys "Job closed out" off the final
+   status, so the transition entry follows; `build_shipments` ships the
+   job via its marker path as before. Consequence: a promoted job is a
+   *finished* job for the blep horizon (§4), so one completed more than
+   three weeks ago loses its synthetic bleps like any other old completed
+   job.
 7. **Task status from job** — cancel ALL tasks on cancelled/rejected jobs;
    cancel still-PENDING tasks on work_complete/completed jobs (the app's
    work-complete gate forbids a non-terminal task on a closed job; checked
@@ -568,7 +614,7 @@ Deliverables default to `units='ea'` (canon form of `each`).
    worked jobs, keeping closed jobs free of pending materials.
    Otherwise the per-checklist `[X]`/`[ ]` state is preserved.
 8. **Document counters** — the **AppState** counters for jobs/invoices/POs
-   (machine state since core migration 0018, not Configuration) are set to
+   (machine state in AppState, not Configuration) are set to
    the number of emitted records so the next number generated by the
    running app doesn't collide. `po_counter` honestly counts zero here
    (build_purchasing runs later and advances it past the POs it

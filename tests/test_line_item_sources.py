@@ -31,7 +31,7 @@ class EstimateLineItemSourceAtomTest(TestCase):
         self.cat = AccountingCategory.objects.create(name='Labor', is_active=True)
         self.contact = Contact.objects.create(
             first_name='Ann', last_name='Test',
-            email='ann@example.com', mobile_number='555-0100',
+            email='ann@example.com', phones=[{'number': '555-0100', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(
             contact=self.contact, status=Job.STATUS_DRAFT, job_number='JOB-2026-0001',
@@ -137,7 +137,7 @@ class InvoiceLineItemSourceMaterialTest(TestCase):
         self.cat = AccountingCategory.objects.create(name='Services', is_active=True)
         self.contact = Contact.objects.create(
             first_name='Bob', last_name='Test',
-            email='bob@example.com', mobile_number='555-0200',
+            email='bob@example.com', phones=[{'number': '555-0200', 'label': 'mobile'}],
         )
         self.job = Job.objects.create(
             contact=self.contact, status=Job.STATUS_APPROVED, job_number='JOB-2026-0001',

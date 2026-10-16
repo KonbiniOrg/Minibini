@@ -1,10 +1,17 @@
 <script>
+  import ContactFormModal from '../../components/contacts/ContactFormModal.svelte';
+  import BusinessFormModal from '../../components/contacts/BusinessFormModal.svelte';
   import { api, errorMessage } from '../../lib/api.js';
   import { push } from 'svelte-spa-router';
   import ContactsImportPanel from '../../components/qboimport/ContactsImportPanel.svelte';
   import QboPullButton from '../../components/qboimport/QboPullButton.svelte';
   import { canManageJobs } from '../../stores/permissions.js';
   import { showError, showSuccess } from '../../stores/messages.js';
+  import LoadState from '../../components/LoadState.svelte';
+  import Pager from '../../components/Pager.svelte';
+  import DataTable from '../../components/DataTable.svelte';
+  let newContactOpen = $state(false);
+  let newBusinessOpen = $state(false);
 
   let pullEpoch = $state(0);
 
@@ -14,6 +21,7 @@
   let loading = $state(true);
   let error = $state(null);
   let letterFilter = $state('');
+  let statusFilter = $state('active');
   let searchQuery = $state('');
   let showContacts = $state(true);
   let showBusinesses = $state(true);
@@ -29,7 +37,6 @@
     (item._type === 'business' && showBusinesses)
   ));
   let pageItems = $derived(filteredItems.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE));
-  let totalPages = $derived(Math.ceil(filteredItems.length / PAGE_SIZE));
 
   $effect(() => {
     api.get('/api/tags/?page_size=200')
@@ -42,6 +49,7 @@
     error = null;
     try {
       const params = new URLSearchParams({ page_size: FETCH_SIZE });
+      params.set('status', statusFilter);
       if (letterFilter) params.set('starts_with', letterFilter);
       if (searchQuery.trim()) params.set('search', searchQuery.trim());
       for (const id of selectedTagIds) params.append('tag', id);
@@ -59,7 +67,8 @@
         business_name: c.business?.business_name || '',
         business_id: c.business?.business_id || null,
         email: c.email,
-        phone: c.work_number || c.mobile_number || c.home_number || '',
+        phone: c.phone || '',
+        is_active: c.is_active,
         tags: c.tags || [],
         href: `#/contacts/${c.contact_id}`,
       }));
@@ -70,7 +79,8 @@
         _name: b.business_name,
         name: b.business_name,
         email: '',
-        phone: b.business_phone || '',
+        phone: b.phone || '',
+        is_active: b.is_active,
         tags: b.tags || [],
         href: `#/businesses/${b.business_id}`,
       }));
@@ -80,7 +90,7 @@
       );
       count = contactData.count + businessData.count;
     } catch (e) {
-      error = e.message;
+      error = errorMessage(e, 'Could not load contacts.');
     } finally {
       loading = false;
     }
@@ -131,6 +141,7 @@
 
   $effect(() => {
     void letterFilter;
+    void statusFilter;
     void searchQuery;
     void selectedTagIds;
     loadAll();
@@ -145,7 +156,15 @@
   <ContactsImportPanel onCommitted={loadAll} />
 {/key}
 
-<p><a href="#/contacts/new">New Contact</a> &nbsp; <a href="#/businesses/new">New Business</a></p>
+<p>
+  {#if $canManageJobs}
+    <button type="button" onclick={() => { newContactOpen = true; }}>New Contact</button>
+    &nbsp;
+    <button type="button" onclick={() => { newBusinessOpen = true; }}>New Business</button>
+  {/if}
+</p>
+<ContactFormModal open={newContactOpen} onClose={() => { newContactOpen = false; }} />
+<BusinessFormModal open={newBusinessOpen} onClose={() => { newBusinessOpen = false; }} />
 
 <div class="index-bar">
   <button class:active={letterFilter === ''} onclick={() => selectLetter('')}>All</button>
@@ -158,6 +177,13 @@
 <div class="type-filter">
   <label><input type="checkbox" bind:checked={showContacts}> Contacts</label>
   <label><input type="checkbox" bind:checked={showBusinesses}> Businesses</label>
+</div>
+
+<div class="status-filter" role="group" aria-label="Status">
+  {#each [['active', 'Active'], ['inactive', 'Inactive'], ['all', 'All statuses']] as [value, label]}
+    <button type="button" class:active={statusFilter === value}
+      onclick={() => { statusFilter = value; page = 1; }}>{label}</button>
+  {/each}
 </div>
 
 {#if allTags.length > 0}
@@ -209,58 +235,46 @@
   />
 </p>
 
-{#if loading}
-  <p>Loading...</p>
-{:else if error}
-  <p>Error: {error}</p>
-{:else if filteredItems.length === 0}
-  <p>No results found.</p>
-{:else}
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>Name</th>
-        <th>Type</th>
-        <th>Business</th>
-        <th>Email</th>
-        <th>Phone</th>
-        <th>Tags</th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each pageItems as item}
-        <tr>
-          <td><a href={item.href}>{item.name}</a></td>
-          <td>{item._type === 'contact' ? 'Contact' : 'Business'}</td>
-          <td>{#if item.business_name}<a href="#/businesses/{item.business_id}">{item.business_name}</a>{:else}—{/if}</td>
-          <td>{item.email}</td>
-          <td>{item.phone}</td>
-          <td>
-            {#each item.tags.slice(0, 3) as tag (tag.tag_id)}
-              <span class="row-tag">{tag.name}</span>
-            {/each}
-            {#if item.tags.length > 3}
-              <span class="row-tag-more">+{item.tags.length - 3} more</span>
-            {/if}
-          </td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
+<LoadState {loading} {error}>
+  <DataTable
+    rows={pageItems}
+    key={(item) => `${item._type}-${item._id}`}
+    emptyText="No results found."
+    columns={[
+      { id: 'name',     label: 'Name',     cell: nameCell },
+      { id: 'type',     label: 'Type',     cell: typeCell },
+      { id: 'business', label: 'Business', cell: businessCell },
+      { id: 'email',    label: 'Email',    field: 'email' },
+      { id: 'phone',    label: 'Phone',    field: 'phone' },
+      { id: 'tags',     label: 'Tags',     cell: tagsCell },
+    ]}
+  />
 
-  {#if totalPages > 1}
-    <p>
-      {#if page > 1}
-        <button onclick={() => { page--; }}>Previous</button>
-      {/if}
-      Page {page} of {totalPages}
-      {#if page < totalPages}
-        <button onclick={() => { page++; }}>Next</button>
-      {/if}
-    </p>
-  {/if}
-{/if}
+  <Pager {page} count={filteredItems.length} pageSize={PAGE_SIZE} onPage={(n) => { page = n; }} />
+</LoadState>
 </div>
+
+{#snippet nameCell(item)}
+  <a href={item.href}>{item.name}</a>
+  {#if item.is_active === false}<span class="status-badge status-inactive">inactive</span>{/if}
+{/snippet}
+
+{#snippet typeCell(item)}
+  {item._type === 'contact' ? 'Contact' : 'Business'}
+{/snippet}
+
+{#snippet businessCell(item)}
+  {#if item.business_name}<a href="#/businesses/{item.business_id}">{item.business_name}</a>{:else}—{/if}
+{/snippet}
+
+{#snippet tagsCell(item)}
+  {#each item.tags.slice(0, 3) as tag (tag.tag_id)}
+    <span class="row-tag">{tag.name}</span>
+  {/each}
+  {#if item.tags.length > 3}
+    <span class="row-tag-more">+{item.tags.length - 3} more</span>
+  {/if}
+{/snippet}
 
 <style>
   .index-bar {
@@ -287,6 +301,14 @@
     color: #fff;
     border-color: #1a3344;
   }
+
+  .status-filter { display: flex; gap: 3px; margin-bottom: 0.75rem; }
+  .status-filter button {
+    padding: 3px 9px; font-size: 13px; cursor: pointer; border: 1px solid #ccc;
+    background: #f5f5f5; border-radius: 3px; font-family: inherit;
+  }
+  .status-filter button:hover { background: #e0e0e0; }
+  .status-filter button.active { background: #1a3344; color: #fff; border-color: #1a3344; }
 
   .type-filter {
     display: flex;

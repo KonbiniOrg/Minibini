@@ -7,6 +7,8 @@
   import FieldError from './FieldError.svelte';
   import FormMessage from './FormMessage.svelte';
   import Modal from './Modal.svelte';
+  import LoadState from './LoadState.svelte';
+  import DataTable from './DataTable.svelte';
 
   let pullEpoch = $state(0);
 
@@ -63,7 +65,7 @@
       unitsList = unitsResp;
       defaultSchemeId = settingsResp.default_rate_scheme || '';
     } catch (e) {
-      error = e.message || 'Could not load services.';
+      error = errorMessage(e, 'Could not load services.');
     } finally {
       loading = false;
     }
@@ -253,10 +255,7 @@
   <SchemesImportPanel onCommitted={load} {unitsList} />
 {/key}
 
-{#if error}<p><em>{error}</em></p>{/if}
-{#if loading}<p>Loading...</p>{/if}
-
-{#if !loading}
+<LoadState {loading} {error}>
   <p>
     <label>
       <input type="checkbox" bind:checked={showInactive} onchange={load} />
@@ -282,48 +281,24 @@
       {defaultSaving ? 'Saving...' : 'Save default Rate Scheme'}
     </button>
   </p>
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>Name</th><th>Type</th><th>Rate</th><th>Unit</th>
-        <th>Category</th><th>Modifiers</th><th>Active</th><th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each schemes as s (s.rate_scheme_id)}
-        <tr>
-          <td>{s.name}</td>
-          <td>{ALGORITHM_LABELS[s.algorithm] || s.algorithm}</td>
-          <td>${s.rate}/{s.unit_label}</td>
-          <td>{s.unit_label}</td>
-          <td>{categoryLabel(s.accounting_category)}</td>
-          <td>{(s.modifiers || []).length}</td>
-          <td>{s.is_active ? 'Yes' : 'No'}</td>
-          <td>
-            <button type="button" onclick={() => startEdit(s)}>Edit</button>
-            {#if String(s.rate_scheme_id) === defaultSchemeId && defaultSchemeId !== ''}
-              <!-- The default preset can't be retired or deleted without
-                   first pointing default_rate_scheme elsewhere — the server
-                   rejects both (ValidationError: "change the default
-                   first"). Don't even offer the buttons; say why instead. -->
-              <span class="rs-default-note">default</span>
-            {:else}
-              <button type="button" onclick={() => remove(s)}>Delete</button>
-              {#if s.is_active}
-                <button type="button" onclick={() => retire(s)}>Retire</button>
-              {:else}
-                <button type="button" onclick={() => reactivate(s)}>Reactivate</button>
-              {/if}
-            {/if}
-          </td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
+  <DataTable
+    rows={schemes}
+    key={(s) => s.rate_scheme_id}
+    columns={[
+      { id: 'name',      label: 'Name',      field: 'name' },
+      { id: 'type',      label: 'Type',      cell: typeCell },
+      { id: 'rate',      label: 'Rate',      cell: rateCell },
+      { id: 'unit',      label: 'Unit',      field: 'unit_label' },
+      { id: 'category',  label: 'Category',  cell: categoryCell },
+      { id: 'modifiers', label: 'Modifiers', cell: modifiersCell },
+      { id: 'active',    label: 'Active',    cell: activeCell },
+      { id: 'actions',   label: '',          cell: actionsCell },
+    ]}
+  />
   {#if editingId === null}
     <p><button type="button" onclick={startCreate}>Add Rate Scheme</button></p>
   {/if}
-{/if}
+</LoadState>
 
 <!-- Button-driven content (no native <form>), so the shell takes onSave and
      owns Enter; `busy` suppresses a double-Enter mid-save. -->
@@ -426,6 +401,30 @@
     </p>
     <FormMessage error={formError} />
 </Modal>
+
+
+{#snippet typeCell(s)}{ALGORITHM_LABELS[s.algorithm] || s.algorithm}{/snippet}
+{#snippet rateCell(s)}${s.rate}/{s.unit_label}{/snippet}
+{#snippet categoryCell(s)}{categoryLabel(s.accounting_category)}{/snippet}
+{#snippet modifiersCell(s)}{(s.modifiers || []).length}{/snippet}
+{#snippet activeCell(s)}{s.is_active ? 'Yes' : 'No'}{/snippet}
+{#snippet actionsCell(s)}
+  <button type="button" onclick={() => startEdit(s)}>Edit</button>
+  {#if String(s.rate_scheme_id) === defaultSchemeId && defaultSchemeId !== ''}
+    <!-- The default preset can't be retired or deleted without first pointing
+         default_rate_scheme elsewhere — the server rejects both
+         (ValidationError: "change the default first"). Don't even offer the
+         buttons; say why instead. -->
+    <span class="rs-default-note">default</span>
+  {:else}
+    <button type="button" onclick={() => remove(s)}>Delete</button>
+    {#if s.is_active}
+      <button type="button" onclick={() => retire(s)}>Retire</button>
+    {:else}
+      <button type="button" onclick={() => reactivate(s)}>Reactivate</button>
+    {/if}
+  {/if}
+{/snippet}
 
 <style>
   /* Matches JobEditModal's title treatment. */

@@ -1,13 +1,15 @@
 <script>
-  import { parseDurationToISO } from '../../lib/format.js';
+  import { parseDurationToISO, formatQtyUnits } from '../../lib/format.js';
   import Modal from '../Modal.svelte';
 
   // Interrupting prompt shown when a task with no estimated worker time is
   // dragged onto a worker. Assigned work has to be schedulable, which needs
   // a duration. onSubmit receives an ISO 8601 duration string ("PT1H30M").
+  // `task` is the board task dict (name, est_qty, unit_label), shown for
+  // reference so the user can size the duration against the estimated qty.
   let {
     open = false,
-    taskName = '',
+    task = null,
     onSubmit = () => {},
     onCancel = () => {},
   } = $props();
@@ -39,6 +41,15 @@
 
 <Modal {open} onCancel={onCancel} maxWidth="600px">
 <form onsubmit={(e) => { e.preventDefault(); submit(); }}>
+      <h3>Assign Task</h3>
+      <p class="reference">
+        <strong>Task</strong><br>
+        <span>{task?.name ?? ''}</span>
+      </p>
+      <p class="reference">
+        <strong>Estimated quantity</strong><br>
+        <span>{formatQtyUnits(task?.est_qty, task?.unit_label)}</span>
+      </p>
       <p>
         <label><strong>Estimated worker time *</strong><br>
           <input
@@ -59,4 +70,5 @@
 <style>
   .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
   .error { color: #a8071a; }
+  .reference { color: #555; }
 </style>

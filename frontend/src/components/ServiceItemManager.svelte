@@ -4,6 +4,9 @@
   import { showError } from '../stores/messages.js';
   import FieldError from './FieldError.svelte';
   import FormMessage from './FormMessage.svelte';
+  import LoadState from './LoadState.svelte';
+  import DataTable from './DataTable.svelte';
+  import Modal from './Modal.svelte';
 
   let { canEdit = true } = $props();
 
@@ -44,7 +47,7 @@
       schemes = schemeResp.results || schemeResp;
       allSchemes = allSchemeResp.results || allSchemeResp;
     } catch (e) {
-      error = e.message || 'Could not load.';
+      error = errorMessage(e, 'Could not load service items.');
     } finally {
       loading = false;
     }
@@ -206,47 +209,30 @@
 
 <h3>Service Items</h3>
 
-{#if error}<p><em>{error}</em></p>{/if}
-{#if loading}<p>Loading...</p>{/if}
-
-{#if !loading && editingId === null}
-  <table class="data-table">
-    <thead>
-      <tr><th>Name</th><th>Rate Scheme</th><th>Active</th><th></th></tr>
-    </thead>
-    <tbody>
-      {#each templates as t (t.template_id)}
-        {@const scheme = schemeFor(t.rate_scheme)}
-        <tr>
-          <td>{t.template_name}</td>
-          <td>
-            {scheme ? scheme.name : '—'}
-            {#if priceNote(t, scheme)}
-              <br><small>{priceNote(t, scheme)}</small>
-            {/if}
-            {#if isInactiveScheme(t)}
-              <br><strong style="color:#a8071a">WARNING: Rate Scheme is inactive — update before next use</strong>
-            {/if}
-          </td>
-          <td>{t.is_active ? 'Yes' : 'No'}</td>
-          <td>
-            {#if canEdit}
-              <button type="button" onclick={() => startEdit(t)}>Edit</button>
-              <button type="button" onclick={() => remove(t)}>Delete</button>
-            {/if}
-          </td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
+<LoadState {loading} {error}>
+{#if editingId === null}
+  <DataTable
+    rows={templates}
+    key={(t) => t.template_id}
+    columns={[
+      { id: 'name',    label: 'Name',        field: 'template_name' },
+      { id: 'scheme',  label: 'Rate Scheme', cell: schemeCell },
+      { id: 'active',  label: 'Active',      cell: activeCell },
+      { id: 'actions', label: '',            cell: actionsCell },
+    ]}
+  />
   {#if canEdit}
     <p><button type="button" onclick={startCreate}>Add Service Item</button></p>
   {/if}
 {/if}
 
-{#if editingId !== null}
-  <fieldset>
-    <legend><strong>{editingId === 'new' ? 'New Service Item' : 'Edit Service Item'}</strong></legend>
+<!-- Create/edit in the Modal shell (2026-10-10; was a top-of-page inline
+     fieldset — LATER.md "Service Item edit should be a modal"). Button-driven
+     content (no native <form>, Save is type=button like RateSchemeManager),
+     so the shell takes onSave + busy. -->
+<Modal open={editingId !== null} onSave={save} onCancel={cancelEdit} busy={saving} maxWidth="640px"
+  label={editingId === 'new' ? 'New service item' : 'Edit service item'}>
+  <h3 class="modal-title">{editingId === 'new' ? 'New Service Item' : 'Edit Service Item'}</h3>
     <p><label><strong>Name *</strong><br>
       <input type="text" bind:value={form.template_name} style="width:100%;box-sizing:border-box;">
     </label>
@@ -303,5 +289,27 @@
       <button type="button" onclick={cancelEdit} disabled={saving}>Cancel</button>
     </p>
     <FormMessage error={formError} />
-  </fieldset>
-{/if}
+</Modal>
+</LoadState>
+
+{#snippet schemeCell(t)}
+  {@const scheme = schemeFor(t.rate_scheme)}
+  {scheme ? scheme.name : '—'}
+  {#if priceNote(t, scheme)}
+    <br><small>{priceNote(t, scheme)}</small>
+  {/if}
+  {#if isInactiveScheme(t)}
+    <br><strong style="color:#a8071a">WARNING: Rate Scheme is inactive — update before next use</strong>
+  {/if}
+{/snippet}
+{#snippet activeCell(t)}{t.is_active ? 'Yes' : 'No'}{/snippet}
+{#snippet actionsCell(t)}
+  {#if canEdit}
+    <button type="button" onclick={() => startEdit(t)}>Edit</button>
+    <button type="button" onclick={() => remove(t)}>Delete</button>
+  {/if}
+{/snippet}
+
+<style>
+  .modal-title { margin: 0 0 12px; font-size: 16px; }
+</style>
