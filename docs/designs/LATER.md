@@ -840,20 +840,6 @@ Billing mechanics and money-record lifecycle.
   decided drops get an unbacked lane, lightweight lots, or the status quo, and the
   materials doc records it.
 
-- **Material row "(x avail)" subtracts the row's own earmark, so a covered
-  material reads "(0 avail)" beside "On Hand".** — _added 2026-10-14 (RM
-  sighting on job 08157)_
-  `qty_available` on both `MaterialSerializer`s is item on-hand minus
-  **every** committed earmark, including this material's own reservation.
-  A fully reserved material therefore shows "(0 avail)" next to a green
-  "On Hand" chip — true ("zero spare"), but it reads as a contradiction,
-  and a 7-on-hand / 4-earmarked row reads "(3 avail)" as if only 3 were
-  usable. Decide the row's semantic: "spare after all commitments" (rename
-  the badge, e.g. "3 spare"), or hide the badge when the row is covered
-  and only show it when short / when other jobs compete for the stock.
-  _Done when:_ a covered row never shows a badge that contradicts its chip,
-  and the badge's number is labelled with what it actually measures.
-
 - **"On Hand" chip is gross item QOH ≥ quantity — ignores other jobs'
   earmarks.** — _added 2026-10-14_
   `materialStatus` (`frontend/src/lib/materialStatus.js`) decides On Hand

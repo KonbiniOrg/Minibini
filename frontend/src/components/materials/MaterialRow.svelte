@@ -93,9 +93,15 @@
     return code;
   }
 
-  function matQtyAvail(mat) {
-    if (!mat.inventory_item || mat.qty_available === null || mat.qty_available === undefined) return null;
-    return Number(mat.qty_available);
+  // Stock badge: the item's raw on-hand quantity, ignoring earmarks (RM
+  // 2026-10-15 — "(0 avail)" beside an "On Hand" chip read as a
+  // contradiction). Colour follows the chip's own rule (qty_on_hand vs
+  // quantity) so the two can never disagree. Hidden for freeform rows (no
+  // item) and consumed rows (stock already drawn down, nothing to report).
+  function matQtyInStock(mat) {
+    if (!mat.inventory_item || mat.consumption_state === 'consumed') return null;
+    if (mat.qty_on_hand === null || mat.qty_on_hand === undefined) return null;
+    return Number(mat.qty_on_hand);
   }
 
   const actionable = $derived(
@@ -121,9 +127,9 @@
   }
 </script>
 
-{#snippet availBadge(mat)}
-  {#if matQtyAvail(mat) !== null}
-    <span class={matQtyAvail(mat) >= 0 ? 'avail-ok' : 'avail-short'}>({mat.qty_available} avail)</span>
+{#snippet stockBadge(mat)}
+  {#if matQtyInStock(mat) !== null}
+    <span class={matQtyInStock(mat) >= Number(mat.quantity) ? 'avail-ok' : 'avail-short'}>({mat.qty_on_hand} in stock)</span>
   {/if}
 {/snippet}
 
@@ -172,7 +178,7 @@
     <td class="move-cell">{#if onMoveMaterial && isMaterialPending(material) && !isMaterialFinalized(material) && selectedTaskId != null}<button type="button" class="small-btn" onclick={() => onMoveMaterial(material, selectedTaskId)}>Move</button>{/if}</td>
   {/if}
   <td class={indentClass}>
-    <span class="material-marker">&#9679;</span> {#if itemCode(material)}<code class="mat-code">{itemCode(material)}</code> {/if}{material.description || '(no description)'} {@render availBadge(material)}
+    <span class="material-marker">&#9679;</span> {#if itemCode(material)}<code class="mat-code">{itemCode(material)}</code> {/if}{material.description || '(no description)'} {@render stockBadge(material)}
     {#if !showStatus}{@render matStatusChip(material)}{/if}
   </td>
   {#if taskAligned && showAssignee}<td></td>{/if}

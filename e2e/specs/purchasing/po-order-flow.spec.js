@@ -67,6 +67,8 @@ test('§11 order a material with history → Create PO → order again → Add t
       });
       await page.goto('/#/jobs/19/tasks');
       const row = page.locator('tr.material-row', { hasText: `${stamp} second sheet` });
+      // Stock badge reads raw QOH ("in stock"), never earmark-adjusted "avail"; short of 500, so red.
+      await expect(row.locator('.avail-short')).toHaveText(/^\(\d+(\.\d+)? in stock\)$/);
       await row.getByRole('button', { name: 'Order' }).click();
       const dialog = page.getByRole('dialog', { name: 'Order' });
       const addTo = dialog.getByRole('radio', { name: new RegExp(`Add to ${poNumber}`) });
