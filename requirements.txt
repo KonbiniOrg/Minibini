@@ -28,3 +28,5 @@ python-quickbooks==0.9.8
 
 # PDF generation
 weasyprint==63.1
+# Settings-page preview: renders PDF pages to images
+pypdfium2==5.14.0

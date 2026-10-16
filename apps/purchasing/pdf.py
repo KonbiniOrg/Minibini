@@ -6,13 +6,11 @@ from weasyprint import HTML
 
 from apps.core.pdf_branding import render_document_html
 
-from apps.core.pdf_branding import render_document_html
-
 
 def render_purchase_order_html(po):
     """The purchase order document as an HTML string (what WeasyPrint
     renders)."""
-    line_items = po.purchaseorderlineitem_set.select_related(
+    line_items = list(po.purchaseorderlineitem_set.select_related(
         'accounting_category', 'inventory_item'
     ).order_by('line_number'))
     # Code column: the catalog code, blank for freeform lines and for minted
@@ -56,16 +54,18 @@ def generate_purchase_order_pdf(po):
     return HTML(string=render_purchase_order_html(po)).write_pdf()
 
 
-def preview_purchase_order_pdf():
-    """A sample purchase order PDF using the saved branding, for the settings
-    preview. Touches no real PurchaseOrder. Returns bytes."""
+def preview_purchase_order_html(drafts=None):
+    """A sample purchase order as an HTML string for the settings preview,
+    branded with the saved settings overlaid by `drafts` (the form's unsaved
+    values). Touches no real PurchaseOrder."""
     today = date.today()
     lines = [
         SimpleNamespace(line_number=1, description='Sample material line',
+                        display_code='SAMPLE-01', vendor_sku='V-1000',
                         qty=Decimal('10'), units='ea', price=Decimal('4.25'),
                         total_amount=Decimal('42.50')),
     ]
-    html = render_document_html('purchasing/purchase_order_pdf.html', 'po', {
+    return render_document_html('purchasing/purchase_order_pdf.html', 'po', {
         'po': SimpleNamespace(
             po_number='PO-0000', issued_date=today, created_date=today,
             requested_date=None),
@@ -80,5 +80,4 @@ def preview_purchase_order_pdf():
         'document_number': 'PO-0000',
         'po_number': 'PO-0000',
         'vendor_name': 'Sample Vendor Inc.',
-    })
-    return HTML(string=html).write_pdf()
+    }, drafts)

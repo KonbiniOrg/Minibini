@@ -39,7 +39,7 @@
   load();
 </script>
 
-<fieldset class="block">
+<fieldset class="settings-block">
   <legend><strong>Defaults</strong></legend>
   <p>
     <label><strong>Estimate expiry</strong><br>
@@ -69,7 +69,7 @@
   </p>
 </fieldset>
 
-<fieldset class="block">
+<fieldset class="settings-block">
   <legend><strong>Document numbering</strong></legend>
   <p><small>Format patterns for generated numbers. Placeholders:
     <code>{'{year}'}</code>, <code>{'{month:02d}'}</code>, <code>{'{day:02d}'}</code>,
@@ -100,7 +100,6 @@
 </p>
 
 <style>
-  .block { margin-bottom: 16px; border: 1px solid #d1d5db; padding: 12px; border-radius: 4px; }
   .num { width: 5em; }
   .pattern { width: 100%; max-width: 360px; box-sizing: border-box; font-family: monospace; }
   .err { color: #b91c1c; margin-left: 0.5em; }

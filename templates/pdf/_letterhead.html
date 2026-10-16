@@ -3,10 +3,10 @@
 <div class="letterhead logo-{{ branding.logo_position }}">
     {% if branding.logo %}<img class="logo" src="{{ branding.logo }}" alt="">{% endif %}
     <div class="company">
-        {% if branding.company_name %}<p class="company-name">{{ branding.company_name }}</p>{% endif %}
-        {% if branding.company_address %}<p class="preserve-breaks">{{ branding.company_address }}</p>{% endif %}
-        {% if branding.company_phone %}<p>{{ branding.company_phone }}</p>{% endif %}
-        {% if branding.company_email %}<p>{{ branding.company_email }}</p>{% endif %}
+        {% if branding.company_name %}<div class="company-line company-name">{{ branding.company_name }}</div>{% endif %}
+        {% if branding.company_address %}<div class="company-line">{{ branding.company_address }}</div>{% endif %}
+        {% if branding.company_phone %}<div class="company-line">{{ branding.company_phone }}</div>{% endif %}
+        {% if branding.company_email %}<div class="company-line">{{ branding.company_email }}</div>{% endif %}
     </div>
 </div>
 {% endif %}

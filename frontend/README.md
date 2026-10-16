@@ -333,14 +333,17 @@ Clear `formError`/`errors` at submit start and on open/cancel.
 - **Shared vocabulary (where the classes live):** `.status-badge` +
   `.status-{status}` (one pill palette for document statuses *and* task
   activity keys), `.data-table`, `.badge-invoiced`, `.row-actions` (put it on
-  a cell/container; the small white edit/del buttons inside pick up the
-  look), the feedback overlays; banner-page kit: `.toolbar` (+ its buttons),
+  a cell/container; the small white edit/del buttons — and any `<select>` —
+  inside pick up the look; `aria-pressed="true"` shows a toggle's on state,
+  e.g. the rich-text toolbar), the feedback overlays; banner-page kit: `.toolbar` (+ its buttons),
   `.back-link`, `.page-title`, `.action-link`, `.edit-link` (quiet links in a
   dark banner), `.action-band` (+ `primary`/`quiet` buttons), `.stat-chips` /
   `.stat-chip` (+ `money`), `.panel` / `.panel-head` / `.panel-scroll`,
   `.section-title` (the 13px small-caps title of a section or summary block —
   `.panel-head` is the quieter 10px micro-label for identity panels);
-  plain-page kit: `.page-tabs` (works with `<button>` or `<a>` items). The
+  plain-page kit: `.page-tabs` (works with `<button>` or `<a>` items),
+  `.settings-block` (the bordered `<fieldset>` panel each Settings tab groups
+  its fields into). The
   task detail page is the reference implementation of the banner-page kit.
 - **The categories are stations, not a taxonomy** — pages move III→II as area
   headers land, and out of the generic-sweep pool once they get a bespoke

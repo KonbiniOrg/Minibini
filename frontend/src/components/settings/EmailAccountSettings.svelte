@@ -64,7 +64,7 @@
   load();
 </script>
 
-<fieldset class="block">
+<fieldset class="settings-block">
   <legend><strong>Email account</strong></legend>
   <p><small>The mailbox Minibini fetches from and sends as. One account
     drives both directions.</small></p>
@@ -116,7 +116,6 @@
 </fieldset>
 
 <style>
-  .block { margin-bottom: 16px; border: 1px solid #d1d5db; padding: 12px; border-radius: 4px; }
   .num { width: 6em; }
   input:not(.num) { width: 100%; max-width: 360px; box-sizing: border-box; }
   .err { color: #b91c1c; }

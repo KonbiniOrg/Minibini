@@ -112,7 +112,12 @@ to empty / not printed; see `architecture-and-conventions.md` §7.15): `pdf_logo
 (`left` | `center` | `right`, default `left`), `pdf_company_name`,
 `pdf_company_address`, `pdf_company_phone`, `pdf_company_email`, and the text
 slots `<kind>_pdf_text_<slot>` for kind ∈ {`estimate`, `change_order`, `po`} ×
-slot ∈ {`below_header`, `above_lines`, `below_totals`, `page_footer`}.
+slot ∈ {`below_header`, `above_lines`, `below_totals`, `page_footer`}. The
+four company keys and the twelve slot keys are rich text — the allowlisted
+HTML subset of `apps/core/rich_text.py` (`<p>`, `<br>`, `<ul>`,
+`<ol start="2–9999">`, `<li>`, `<strong>`, `<em>`, `<u>`,
+`<span class="size-small|size-large|size-xlarge">`), sanitized on save and on
+render.
 **Taxation is handled by QuickBooks** —
 there are no app-side tax keys (`default_tax_rate` / `org_tax_multiplier` were
 removed).

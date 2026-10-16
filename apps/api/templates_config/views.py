@@ -1,3 +1,4 @@
+import base64
 import json
 
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -10,12 +11,11 @@ from apps.estimates.services import WorkTemplateService
 from django.core.mail import get_connection
 from imap_tools import MailBox
 
-from django.http import HttpResponse
-
 from apps.core.models import Configuration, AccountingCategory
 from apps.core.pdf_branding import (
-    LOGO_KEY, LOGO_POSITION_KEY, LOGO_POSITIONS, PdfBrandingService,
+    LOGO_KEY, LOGO_POSITION_KEY, LOGO_POSITIONS, RICH_TEXT_KEYS, PdfBrandingService,
 )
+from apps.core.rich_text import sanitize_rich_text
 from apps.core.services import ConfigurationService
 from apps.core.units import HOUR_UNIT
 from apps.jobs.models import RateScheme
@@ -368,6 +368,9 @@ def settings_view(request):
         # serialized (str(dict) would write unparseable Python repr).
         if key == 'schedule_week_envelope' and not isinstance(value, str):
             ConfigurationService.set(key, json.dumps(value))
+        elif key in RICH_TEXT_KEYS:
+            # Document-PDF rich text: store only the allowlisted subset.
+            ConfigurationService.set(key, sanitize_rich_text(str(value)))
         else:
             ConfigurationService.set(key, str(value))
     return Response(_settings_payload())
@@ -387,27 +390,51 @@ def pdf_logo_view(request):
     return Response({'logo': PdfBrandingService.get_logo()})
 
 
-@api_view(['GET'])
+@api_view(['POST'])
 @permission_classes([IsAuthenticated, CanManageConfig])
 def pdf_preview_view(request):
-    """A sample PDF for one document kind, rendered with the saved branding
-    (`?document=estimate|change_order|po`). Opened in a browser tab."""
-    from apps.estimates.pdf import preview_estimate_pdf, preview_change_order_pdf
-    from apps.purchasing.pdf import preview_purchase_order_pdf
+    """A sample document rendered with the settings form's unsaved values.
+
+    Body: `{'document': 'estimate'|'change_order'|'po'|'letterhead',
+    'values': {key: str}}` — `values` are drafts for the letterhead text and
+    (for a document) its text slots, layered over the saved settings and
+    never written. Returns `{'pages': [PNG data URI, ...], 'pdf': PDF data
+    URI}`; for `letterhead`, `pages` is the letterhead band cropped from the
+    top of the page, or [] when nothing would print."""
+    from weasyprint import HTML
+    from apps.core.pdf_branding import (
+        LETTERHEAD, pdf_page_images, preview_draft_keys, preview_letterhead_html,
+    )
+    from apps.estimates.pdf import preview_estimate_html, preview_change_order_html
+    from apps.purchasing.pdf import preview_purchase_order_html
 
     previews = {
-        'estimate': preview_estimate_pdf,
-        'change_order': preview_change_order_pdf,
-        'po': preview_purchase_order_pdf,
+        'estimate': preview_estimate_html,
+        'change_order': preview_change_order_html,
+        'po': preview_purchase_order_html,
+        LETTERHEAD: preview_letterhead_html,
     }
-    kind = request.query_params.get('document', '')
+    kind = request.data.get('document', '')
     if kind not in previews:
         return Response(
-            {'detail': 'Unknown document. Use estimate, change_order, or po.'},
+            {'detail': 'Unknown document. Use estimate, change_order, po, or letterhead.'},
             status=400)
-    response = HttpResponse(previews[kind](), content_type='application/pdf')
-    response['Content-Disposition'] = f'inline; filename="{kind}-preview.pdf"'
-    return response
+    drafts = request.data.get('values') or {}
+    if not isinstance(drafts, dict):
+        return Response({'values': ['Must be an object of setting values.']}, status=400)
+    allowed = preview_draft_keys(kind)
+    unknown = sorted(k for k in drafts if k not in allowed)
+    if unknown:
+        return Response(
+            {'values': [f'Cannot preview: {", ".join(unknown)}.']}, status=400)
+    if not all(isinstance(v, str) for v in drafts.values()):
+        return Response({'values': ['Setting values must be text.']}, status=400)
+
+    pdf = HTML(string=previews[kind](drafts)).write_pdf()
+    return Response({
+        'pages': pdf_page_images(pdf, crop=kind == LETTERHEAD),
+        'pdf': f'data:application/pdf;base64,{base64.b64encode(pdf).decode("ascii")}',
+    })
 
 
 @api_view(['GET', 'PATCH'])

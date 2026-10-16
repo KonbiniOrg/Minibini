@@ -53,13 +53,29 @@ estimate, change order, and purchase order PDFs (invoices use QBO's PDF).
   and appears as the current logo; it persists across a reload.
 - [ ] **Remove logo.** **Remove logo** (no confirm — re-uploading undoes it)
   returns the block to "No logo uploaded."
+- [ ] **Rich text in every letterhead and document box.** Each box has a
+  toolbar — **B**, *I*, U (also Ctrl/Cmd+B/I/U) and a Text size menu (Small /
+  Normal / Large / Extra large) — applying to the selection. Company name,
+  Phone and Email stay one line (Enter does nothing, no list buttons);
+  Address and the document boxes take several lines and also have
+  **Bulleted list** / **Numbered list** buttons (typing `- ` or `1. ` at a
+  line start begins one; Tab / Shift-Tab nest and un-nest an item). Pasting
+  from Word / email keeps bold, italic, underline and lists and drops other
+  formatting. Formatting persists across a save + reload and shows in the
+  live preview.
 - [ ] **Per-document text saves as a group.** Each of Estimate / Change Order
   / Purchase Order has four boxes (Below the header, Above the line items,
   Below the totals, Page footer) and its own **Save … text** button; a save
   on one document leaves the others untouched.
-- [ ] **Preview opens a sample PDF.** **Preview … PDF** opens
-  `/api/settings/pdf-preview/?document=<kind>` in a new tab — a sample
-  document showing the *saved* letterhead and text.
+- [ ] **Live preview beside the letterhead and each document.** The
+  Letterhead box has a preview window on its right showing just the
+  letterhead band from the top of a page (full width, so Left / Center /
+  Right reads); with nothing set it says the letterhead is left off every
+  document. Each document's box has one showing a sample document's pages.
+  Typing in a box re-renders its own preview — the letterhead updates all
+  four — after a short pause, *without saving*; reloading the page
+  shows the saved values again. Clicking the preview opens the full-size
+  PDF of what is shown in a new tab.
 - [ ] **Config-gated.** A user without `can_manage_config` gets 403 from the
   logo and preview endpoints.
 - [ ] **Sent documents carry the branding (not e2e-driven — needs SMTP + PDF

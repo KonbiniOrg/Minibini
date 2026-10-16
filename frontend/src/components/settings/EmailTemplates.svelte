@@ -159,7 +159,7 @@
 
 <section>
   {#if !loading && !loadError}
-    <fieldset class="template-block">
+    <fieldset class="settings-block">
       <legend><strong>Retention</strong></legend>
       <p>
         <label for={RETENTION_KEY}><strong>Purge emails older than</strong></label>
@@ -220,7 +220,7 @@
     Invoice, or Change Order via email.
   </p>
 
-  <fieldset class="template-block">
+  <fieldset class="settings-block">
     <legend><strong>Available variables</strong></legend>
     <dl class="vars">
       {#each COMMON_VARS as [name, desc]}
@@ -248,7 +248,7 @@
 
   <LoadState {loading} error={loadError} loadingText="Loading templates&hellip;">
     {#each TEMPLATES as t (t.label)}
-      <fieldset class="template-block">
+      <fieldset class="settings-block">
         <legend><strong>{t.label}</strong></legend>
 
         <p>
@@ -294,12 +294,6 @@
 </section>
 
 <style>
-  .template-block {
-    margin-bottom: 16px;
-    border: 1px solid #d1d5db;
-    padding: 12px;
-    border-radius: 4px;
-  }
   .template-input,
   .template-textarea {
     width: 100%;

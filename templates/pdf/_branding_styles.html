@@ -6,10 +6,16 @@
         .letterhead .company:first-child { text-align: left; }
         .letterhead.logo-right .company { text-align: left; }
         .letterhead.logo-center .company { text-align: center; margin-top: 8px; }
-        .letterhead .company p { margin: 2px 0; }
-        .letterhead .company-name { font-size: 14px; font-weight: bold; }
-        .doc-text { margin: 14px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-        .page-footer { position: running(page-footer); font-size: 10px; color: #555; text-align: center; white-space: pre-wrap; }
+        .letterhead .company-line { margin: 2px 0; }
+        .doc-text { margin: 14px 0; overflow-wrap: anywhere; }
+        .page-footer { position: running(page-footer); font-size: 10px; color: #555; text-align: center; overflow-wrap: anywhere; }
         .page-number::before { content: counter(page); }
         .page-count::before { content: counter(pages); }
         @page { @bottom-center { content: element(page-footer); width: 100%; } }
+        {# Rich text (apps/core/rich_text.py): paragraphs sit flush like typed lines, an empty one keeps its line, lists indent without extra spacing, and the size steps are relative to the surrounding text. #}
+        .company-line p, .doc-text p, .page-footer p { margin: 0; }
+        .company-line p:empty::before, .doc-text p:empty::before, .page-footer p:empty::before { content: "\00a0"; }
+        .company-line ul, .company-line ol, .doc-text ul, .doc-text ol, .page-footer ul, .page-footer ol { margin: 0; padding-left: 1.4em; }
+        .size-small { font-size: 0.85em; }
+        .size-large { font-size: 1.25em; }
+        .size-xlarge { font-size: 1.5em; }

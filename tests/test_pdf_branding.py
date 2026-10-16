@@ -15,8 +15,8 @@ from tests.base import FixtureTestCase
 from apps.contacts.models import Business, Contact
 from apps.core.models import Configuration, User
 from apps.core.pdf_branding import (
-    LOGO_KEY, MAX_LOGO_BYTES, PdfBrandingService, pdf_branding_context,
-    render_pdf_text, text_key,
+    LOGO_KEY, MAX_LOGO_BYTES, RICH_TEXT_KEYS, PdfBrandingService,
+    pdf_branding_context, pdf_page_images, preview_draft_keys, text_key,
 )
 from apps.estimates.models import Estimate, EstimateLineItem
 from apps.estimates.pdf import (
@@ -41,30 +41,6 @@ def _config_user(username='pdf_admin'):
     user = User.objects.create_user(username=username, password='pass')
     user.user_permissions.add(Permission.objects.get(codename='can_manage_config'))
     return User.objects.get(pk=user.pk)
-
-
-class RenderPdfTextTests(FixtureTestCase):
-    def test_substitutes_known_placeholders(self):
-        self.assertEqual(
-            render_pdf_text('Estimate {document_number} for {job_name}',
-                            {'document_number': 'EST-1', 'job_name': 'Shelf'}),
-            'Estimate EST-1 for Shelf')
-
-    def test_unknown_placeholder_renders_literally(self):
-        self.assertEqual(render_pdf_text('Hi {nobody}', {}), 'Hi {nobody}')
-
-    def test_none_value_renders_empty(self):
-        self.assertEqual(render_pdf_text('[{job_name}]', {'job_name': None}), '[]')
-
-    def test_stray_braces_never_raise(self):
-        """Boilerplate is free text — an unbalanced brace must not block a
-        send (str.format would raise here)."""
-        for text in ('a { b', '50% } off', '{0}', '{a.b}', '{{x}}'):
-            self.assertEqual(render_pdf_text(text, {}), text)
-
-    def test_empty_template(self):
-        self.assertEqual(render_pdf_text('', {'a': 'b'}), '')
-        self.assertEqual(render_pdf_text(None, {'a': 'b'}), '')
 
 
 class BrandingContextTests(FixtureTestCase):
@@ -93,13 +69,170 @@ class BrandingContextTests(FixtureTestCase):
         b = pdf_branding_context('po', {})['branding']
         self.assertEqual(b['logo_position'], 'left')
 
-    def test_page_footer_escapes_and_renders_page_tokens(self):
-        _set(text_key('po', 'page_footer'), 'A <b> & Co — Page {page} of {page_count}')
+    def test_page_footer_keeps_formatting_and_renders_page_tokens(self):
+        _set(text_key('po', 'page_footer'),
+             '<p><strong>A &lt;b&gt; &amp; Co</strong> — Page {page} of {page_count}</p>')
         footer = pdf_branding_context('po', {})['branding']['page_footer']
-        self.assertIn('A &lt;b&gt; &amp; Co', footer)
+        self.assertIn('<strong>A &lt;b&gt; &amp; Co</strong>', footer)
         self.assertIn('<span class="page-number"></span>', footer)
         self.assertIn('<span class="page-count"></span>', footer)
         self.assertNotIn('{page', footer)
+
+    def test_rich_fields_are_sanitized_when_rendered(self):
+        # Rows written before the save-time sanitizer (or by hand) are still
+        # cleaned: WeasyPrint would fetch an <img> / stylesheet reference.
+        _set('pdf_company_name', '<p onclick="x"><b>Neal</b><img src="file:///etc/passwd"></p>')
+        _set(text_key('po', 'below_totals'),
+             '<p><span class="size-large">{po_number}</span><script>x</script></p>')
+        b = pdf_branding_context('po', {'po_number': 'PO-1'})['branding']
+        self.assertEqual(b['company_name'], '<p><strong>Neal</strong></p>')
+        self.assertEqual(b['text']['below_totals'], '<p><span class="size-large">PO-1</span></p>')
+
+    def test_placeholder_values_are_escaped_into_rich_text(self):
+        _set(text_key('estimate', 'below_header'), '<p>For {contact_fname}</p>')
+        b = pdf_branding_context('estimate', {'contact_fname': '<i>Pat</i>'})['branding']
+        self.assertEqual(b['text']['below_header'], '<p>For &lt;i&gt;Pat&lt;/i&gt;</p>')
+
+    def test_blank_rich_fields_print_nothing(self):
+        _set('pdf_company_name', '<p></p>')
+        _set('pdf_company_email', '<p> <strong></strong></p>')
+        _set(text_key('estimate', 'below_totals'), '<p><br></p>')
+        b = pdf_branding_context('estimate', {})['branding']
+        self.assertEqual(b['company_name'], '')
+        self.assertFalse(b['has_letterhead'])
+        self.assertEqual(b['text']['below_totals'], '')
+
+    def test_rich_text_keys_are_the_letterhead_text_and_every_slot(self):
+        self.assertIn('pdf_company_name', RICH_TEXT_KEYS)
+        self.assertIn('pdf_company_address', RICH_TEXT_KEYS)
+        self.assertIn(text_key('change_order', 'page_footer'), RICH_TEXT_KEYS)
+        self.assertNotIn('pdf_logo_position', RICH_TEXT_KEYS)
+        self.assertNotIn(LOGO_KEY, RICH_TEXT_KEYS)
+        self.assertEqual(len(RICH_TEXT_KEYS), 4 + 3 * 4)
+
+    def test_draft_values_override_the_saved_ones(self):
+        _set('pdf_company_name', 'Saved Co')
+        _set('pdf_logo_position', 'left')
+        _set(text_key('estimate', 'below_totals'), 'Saved terms')
+        _set(text_key('estimate', 'page_footer'), 'Saved footer')
+        b = pdf_branding_context('estimate', {'document_number': 'EST-9'}, drafts={
+            'pdf_company_name': 'Draft Co',
+            'pdf_logo_position': 'right',
+            text_key('estimate', 'below_totals'): 'Draft terms {document_number}',
+            text_key('estimate', 'page_footer'): '',
+        })['branding']
+        self.assertEqual(b['company_name'], 'Draft Co')
+        self.assertEqual(b['logo_position'], 'right')
+        self.assertEqual(b['text']['below_totals'], 'Draft terms EST-9')
+        # A blanked draft hides the saved value rather than falling back to it.
+        self.assertEqual(b['page_footer'], '')
+
+    def test_draft_values_are_not_saved(self):
+        _set('pdf_company_name', 'Saved Co')
+        pdf_branding_context('po', {}, drafts={'pdf_company_name': 'Draft Co'})
+        self.assertEqual(
+            Configuration.objects.get(key='pdf_company_name').value, 'Saved Co')
+
+    def test_preview_draft_keys_are_the_letterhead_text_and_own_slots(self):
+        keys = preview_draft_keys('po')
+        self.assertIn('pdf_logo_position', keys)
+        self.assertIn('pdf_company_email', keys)
+        self.assertIn(text_key('po', 'below_header'), keys)
+        self.assertNotIn(text_key('estimate', 'below_header'), keys)
+        # The logo is uploaded deliberately, never previewed from a draft.
+        self.assertNotIn(LOGO_KEY, keys)
+
+
+class LetterheadPreviewTests(FixtureTestCase):
+    def test_letterhead_draft_keys_are_the_letterhead_only(self):
+        keys = preview_draft_keys('letterhead')
+        self.assertIn('pdf_logo_position', keys)
+        self.assertIn('pdf_company_name', keys)
+        self.assertFalse(any('_pdf_text_' in k for k in keys))
+        self.assertNotIn(LOGO_KEY, keys)
+
+    def test_letterhead_preview_is_the_letterhead_alone(self):
+        from apps.core.pdf_branding import preview_letterhead_html
+        _set(text_key('estimate', 'page_footer'), 'Saved footer')
+        html = preview_letterhead_html({
+            'pdf_company_name': '<p><strong>Draft Co</strong></p>',
+            'pdf_logo_position': 'right',
+        })
+        self.assertIn('class="letterhead logo-right"', html)
+        self.assertIn('<p><strong>Draft Co</strong></p>', html)
+        # Same stylesheet as the documents, but no document and no footer.
+        self.assertIn('.letterhead .company:first-child', html)
+        self.assertNotIn('Saved footer', html)
+        self.assertNotIn('<h1>', html)
+
+    def test_letterhead_preview_without_a_letterhead_is_empty(self):
+        from apps.core.pdf_branding import preview_letterhead_html
+        self.assertNotIn('class="letterhead', preview_letterhead_html({}))
+
+
+class PdfPageImagesTests(FixtureTestCase):
+    def _pdf(self, pages):
+        from weasyprint import HTML
+        body = '<div style="page-break-after: always">x</div>' * (pages - 1) + '<div>x</div>'
+        return HTML(string=f'<html><body>{body}</body></html>').write_pdf()
+
+    def test_one_png_data_uri_per_page(self):
+        images = pdf_page_images(self._pdf(2))
+        self.assertEqual(len(images), 2)
+        for uri in images:
+            self.assertTrue(uri.startswith('data:image/png;base64,'))
+            png = base64.b64decode(uri.split(',', 1)[1])
+            self.assertEqual(Image.open(io.BytesIO(png)).format, 'PNG')
+
+    def test_crop_keeps_the_page_width_and_ends_below_the_content(self):
+        from weasyprint import HTML
+        pdf = HTML(string='<html><body style="margin:40px"><p>Top line</p></body></html>').write_pdf()
+        full = Image.open(io.BytesIO(base64.b64decode(pdf_page_images(pdf)[0].split(',', 1)[1])))
+        [uri] = pdf_page_images(pdf, crop=True)
+        cropped = Image.open(io.BytesIO(base64.b64decode(uri.split(',', 1)[1])))
+        self.assertEqual(cropped.width, full.width)
+        self.assertLess(cropped.height, full.height / 4)
+        # The text itself is inside the crop, not cut off.
+        self.assertIsNotNone(cropped.convert('L').point(lambda p: 255 if p < 200 else 0).getbbox())
+
+    def test_crop_of_a_blank_page_is_nothing(self):
+        from weasyprint import HTML
+        pdf = HTML(string='<html><body></body></html>').write_pdf()
+        self.assertEqual(pdf_page_images(pdf, crop=True), [])
+
+    def test_pdfium_is_never_entered_by_two_threads_at_once(self):
+        # PDFium is not thread-safe, and the settings page fires three
+        # previews at once into a threaded server: a concurrent render
+        # crashed the whole process (core dump) in the e2e run.
+        import threading
+        import time
+        from unittest.mock import patch
+
+        state = {'inside': 0, 'peak': 0}
+        guard = threading.Lock()
+
+        class FakeDocument:
+            def __init__(self, data):
+                with guard:
+                    state['inside'] += 1
+                    state['peak'] = max(state['peak'], state['inside'])
+                time.sleep(0.05)
+
+            def __iter__(self):
+                return iter(())
+
+            def close(self):
+                with guard:
+                    state['inside'] -= 1
+
+        with patch('pypdfium2.PdfDocument', FakeDocument):
+            threads = [threading.Thread(target=pdf_page_images, args=(b'%PDF',))
+                       for _ in range(3)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+        self.assertEqual(state['peak'], 1)
 
 
 class LogoServiceTests(FixtureTestCase):
@@ -219,11 +352,22 @@ class DocumentHtmlTests(FixtureTestCase):
         html = render_estimate_html(self.est)
         self.assertIn('Thanks Pat of Acme Fab — EST-BR-1 / Bracket run', html)
 
-    def test_slot_text_is_html_escaped(self):
-        _set(text_key('estimate', 'above_lines'), '<script>x</script>')
+    def test_slot_markup_is_sanitized(self):
+        _set(text_key('estimate', 'above_lines'),
+             '<script>x</script><p>ok <img src="file:///etc/passwd"></p>')
         html = render_estimate_html(self.est)
-        self.assertNotIn('<script>x</script>', html)
-        self.assertIn('&lt;script&gt;', html)
+        self.assertNotIn('<script>x', html)
+        self.assertNotIn('file:///', html)
+        self.assertIn('<div class="doc-text"><p>ok </p></div>', html)
+
+    def test_size_steps_are_styled_and_the_name_is_not_forced_bold(self):
+        _set('pdf_company_name', '<p><em>Neal CNC</em></p>')
+        html = render_estimate_html(self.est)
+        for rule in ('.size-small', '.size-large', '.size-xlarge', '.doc-text ul'):
+            self.assertIn(rule, html)
+        # The company name's look is the user's formatting now.
+        self.assertNotIn('.company-name { font-size: 14px; font-weight: bold; }', html)
+        self.assertIn('<p><em>Neal CNC</em></p>', html)
 
     def test_slots_are_per_document(self):
         self._fill_slots('po')
@@ -287,6 +431,9 @@ class DocumentHtmlTests(FixtureTestCase):
         _set('pdf_company_name', 'Neal CNC')
         self._fill_slots('estimate')
         _set(text_key('estimate', 'page_footer'), 'Page {page} of {page_count}')
+        _set(text_key('estimate', 'below_totals'),
+             '<p><strong>Terms</strong></p><ol start="2"><li><p>Net 30</p>'
+             '<ul><li><p><span class="size-small">fine print</span></p></li></ul></li></ol>')
         pdf = generate_estimate_pdf(self.est)
         self.assertTrue(pdf.startswith(b'%PDF'))
 
@@ -352,19 +499,123 @@ class PdfBrandingApiTests(FixtureTestCase):
         self.assertEqual(resp.status_code, 200, resp.content)
         self.assertNotIn(LOGO_KEY, resp.json())
 
-    def test_preview_returns_a_pdf_for_each_document(self):
+    def _preview(self, document, values=None):
+        payload = {'document': document}
+        if values is not None:
+            payload['values'] = values
+        return self.client.post('/api/settings/pdf-preview/', payload, format='json')
+
+    def test_preview_returns_page_images_and_the_pdf_for_each_document(self):
         _set('pdf_company_name', 'Neal CNC')
         for kind in ('estimate', 'change_order', 'po'):
-            _set(text_key(kind, 'below_totals'), 'Terms for {document_number}')
-            resp = self.client.get(f'/api/settings/pdf-preview/?document={kind}')
-            self.assertEqual(resp.status_code, 200, kind)
-            self.assertEqual(resp['Content-Type'], 'application/pdf')
-            self.assertTrue(resp.content.startswith(b'%PDF'), kind)
+            resp = self._preview(kind, {text_key(kind, 'below_totals'): 'Terms {document_number}'})
+            self.assertEqual(resp.status_code, 200, (kind, resp.content))
+            data = resp.json()
+            self.assertGreaterEqual(len(data['pages']), 1, kind)
+            self.assertTrue(data['pages'][0].startswith('data:image/png;base64,'), kind)
+            self.assertTrue(data['pdf'].startswith('data:application/pdf;base64,'), kind)
+            pdf = base64.b64decode(data['pdf'].split(',', 1)[1])
+            self.assertTrue(pdf.startswith(b'%PDF'), kind)
+
+    def test_preview_renders_the_drafts_without_saving_them(self):
+        from apps.estimates.pdf import preview_estimate_html
+        _set(text_key('estimate', 'below_totals'), 'Saved terms')
+        html = preview_estimate_html(
+            {text_key('estimate', 'below_totals'): 'Draft terms {document_number}'})
+        self.assertIn('Draft terms EST-0000', html)
+        self.assertNotIn('Saved terms', html)
+
+        resp = self._preview('estimate', {text_key('estimate', 'below_totals'): 'Draft terms'})
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(
+            Configuration.objects.get(key=text_key('estimate', 'below_totals')).value,
+            'Saved terms')
+
+    def test_each_preview_passes_its_drafts_to_the_template(self):
+        from apps.estimates.pdf import preview_change_order_html
+        from apps.purchasing.pdf import preview_purchase_order_html
+        co = preview_change_order_html({'pdf_company_name': 'Draft Co',
+                                        text_key('change_order', 'above_lines'): 'CO draft'})
+        self.assertIn('Draft Co', co)
+        self.assertIn('CO draft', co)
+        po = preview_purchase_order_html({text_key('po', 'below_header'): 'PO draft {vendor_name}'})
+        self.assertIn('PO draft Sample Vendor Inc.', po)
+
+    def test_preview_drafts_are_sanitized(self):
+        from apps.estimates.pdf import preview_estimate_html
+        html = preview_estimate_html({
+            'pdf_company_name': '<p>Co<img src="file:///etc/passwd"></p>',
+            text_key('estimate', 'below_totals'): '<p><u>Draft</u><script>x</script></p>',
+        })
+        self.assertNotIn('file:///', html)
+        self.assertNotIn('<script>x', html)
+        self.assertIn('<p><u>Draft</u></p>', html)
+
+    def test_settings_patch_sanitizes_rich_text_keys(self):
+        resp = self.client.patch('/api/settings/', {
+            'pdf_company_name': '<p onclick="x"><b>Neal</b><script>x</script></p>',
+            text_key('po', 'below_totals'): '<p><span class="size-large" style="color:red">T</span></p>',
+        }, format='json')
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(Configuration.objects.get(key='pdf_company_name').value,
+                         '<p><strong>Neal</strong></p>')
+        self.assertEqual(Configuration.objects.get(key=text_key('po', 'below_totals')).value,
+                         '<p><span class="size-large">T</span></p>')
+
+    def test_settings_patch_leaves_other_keys_alone(self):
+        resp = self.client.patch(
+            '/api/settings/', {'email_retention_days': '<b>30</b>'}, format='json')
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(
+            Configuration.objects.get(key='email_retention_days').value, '<b>30</b>')
+
+    def test_preview_values_are_optional(self):
+        resp = self._preview('po')
+        self.assertEqual(resp.status_code, 200, resp.content)
 
     def test_preview_rejects_an_unknown_document(self):
-        resp = self.client.get('/api/settings/pdf-preview/?document=invoice')
+        resp = self._preview('invoice')
         self.assertEqual(resp.status_code, 400)
         self.assertIn('detail', resp.json())
+
+    def test_letterhead_preview_endpoint_returns_the_cropped_band(self):
+        resp = self._preview('letterhead', {'pdf_company_name': '<p>Draft Co</p>'})
+        self.assertEqual(resp.status_code, 200, resp.content)
+        data = resp.json()
+        self.assertEqual(len(data['pages']), 1)
+        band = Image.open(io.BytesIO(base64.b64decode(data['pages'][0].split(',', 1)[1])))
+        self.assertGreater(band.width, band.height)
+        self.assertTrue(data['pdf'].startswith('data:application/pdf;base64,'))
+
+    def test_letterhead_preview_endpoint_with_nothing_set_has_no_pages(self):
+        resp = self._preview('letterhead', {})
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.json()['pages'], [])
+
+    def test_letterhead_preview_rejects_document_text(self):
+        resp = self._preview('letterhead', {text_key('estimate', 'below_header'): 'x'})
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('values', resp.json())
+
+    def test_preview_rejects_keys_it_cannot_preview(self):
+        for key in (LOGO_KEY, text_key('estimate', 'below_header'), 'units_list'):
+            resp = self._preview('po', {key: 'x'})
+            self.assertEqual(resp.status_code, 400, key)
+            self.assertIn('values', resp.json(), key)
+
+    def test_preview_rejects_non_object_values(self):
+        resp = self._preview('po', ['nope'])
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('values', resp.json())
+
+    def test_preview_rejects_non_string_values(self):
+        resp = self._preview('po', {'pdf_company_name': {'nested': 1}})
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('values', resp.json())
+
+    def test_preview_get_is_retired(self):
+        resp = self.client.get('/api/settings/pdf-preview/?document=estimate')
+        self.assertEqual(resp.status_code, 405)
 
     def test_endpoints_require_can_manage_config(self):
         plain = APIClient()
@@ -373,4 +624,5 @@ class PdfBrandingApiTests(FixtureTestCase):
         self.assertEqual(plain.get('/api/settings/pdf-logo/').status_code, 403)
         self.assertEqual(plain.delete('/api/settings/pdf-logo/').status_code, 403)
         self.assertEqual(
-            plain.get('/api/settings/pdf-preview/?document=estimate').status_code, 403)
+            plain.post('/api/settings/pdf-preview/', {'document': 'estimate'},
+                       format='json').status_code, 403)

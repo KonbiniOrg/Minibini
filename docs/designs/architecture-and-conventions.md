@@ -1879,24 +1879,56 @@ in QuickBooks.
 
 Customization is **structured, not free-form**: the templates own the
 layout and the user fills fixed slots. There is no user-editable
-HTML/CSS (a user-authored Django template would be a server-side
-template-injection surface, and a typo would break every send).
+template or CSS (a user-authored Django template would be a server-side
+template-injection surface, and a typo would break every send). The slot
+*contents* are rich text, but only a fixed allowlist of it — see
+**Rich text** below.
 
 `apps/core/pdf_branding.py` is the whole backend:
 
 - **Shared letterhead** — `pdf_logo`, `pdf_logo_position`
   (`left` | `center` | `right`, the only layout choice), and
-  `pdf_company_name` / `_address` / `_phone` / `_email`. Blank parts are
-  not printed; with nothing set the letterhead is omitted entirely.
+  `pdf_company_name` / `_address` / `_phone` / `_email` (rich text; name,
+  phone and email are single-line in the editor). Blank parts are not
+  printed; with nothing set the letterhead is omitted entirely. The
+  template no longer forces the name bold/larger — that is the user's
+  formatting (migration `core.0004` wrapped existing names in bold +
+  Large so they print as before).
 - **Per-document text** — four fixed slots per document kind
   (`estimate`, `change_order`, `po`), keyed
   `<kind>_pdf_text_<slot>`: `below_header` (under the title, above the
   customer/vendor block), `above_lines`, `below_totals`, and
   `page_footer` (a CSS running element repeated on every page). Empty
   slots print nothing.
-- **Placeholders** — slot text goes through `render_pdf_text`, a
-  `{name}` substitution that **never raises**: unknown names and
-  stray/unbalanced braces print as typed. (It is deliberately not
+- **Rich text** — the 16 `RICH_TEXT_KEYS` (four company fields + 3 × 4
+  slots) hold a tiny HTML subset: `<p>`, `<br>`, `<ul>`, `<ol>` (its
+  only attribute a `start` of 2–9999), `<li>`, `<strong>`, `<em>`, `<u>`,
+  and `<span class="size-small|size-large|size-xlarge">` (four
+  size steps with Normal = no span; the PDF stylesheet maps them to
+  0.85× / 1.25× / 1.5× of the surrounding text). WeasyPrint fetches what
+  markup references (`<img src="file:///…">`, stylesheets), so
+  `apps/core/rich_text.py`'s `sanitize_rich_text` — a stdlib-`HTMLParser`
+  allowlist — runs **on save** (the settings PATCH, for `RICH_TEXT_KEYS`
+  only) **and again on render** (every branding value, saved or draft):
+  attributes dropped, `b`/`i` → `strong`/`em`, block tags (and an `<li>`
+  outside any list) → paragraphs,
+  unknown tags unwrapped to their text, script/style/svg/iframe-type
+  elements dropped with their content. The SPA editor is
+  `components/RichTextEditor.svelte` (Tiptap 3: document, paragraph,
+  text, bold, italic, underline, hard break, bullet/ordered list + list
+  item, undo/redo, plus the `TextSize` mark in `lib/richText.js`). Lists
+  and line breaks are multi-line fields only — company name, phone and
+  email are single-line. List nesting (Tab / Shift-Tab) is kept; the
+  sanitizer scopes closes so a paragraph never closes past its list
+  item, nor an item past its list. Tiptap's schema keeps
+  bold/italic/underline from pasted Word/email/web content and drops the
+  rest, lists included. Empty paragraphs keep their line in the PDF
+  (`p:empty::before`); lists indent 1.4em with no extra spacing.
+- **Placeholders** — `render_rich_text` sanitizes, then substitutes
+  `{name}` in the HTML with the value **escaped** (a contact named
+  `<b>Bob` prints literally). It **never raises**: unknown names,
+  stray/unbalanced braces, and a placeholder split by formatting part-way
+  through (`{contact_<strong>fname</strong>}`) print as typed. (It is deliberately not
   `render_email_template`, whose `str.format_map` raises on an
   unbalanced brace.) Values: `contact_fname`, `contact_lname`,
   `contact_business`, `document_number`, plus `job_number` / `job_name`
@@ -1904,7 +1936,8 @@ template-injection surface, and a typo would break every send).
   aliases `estimate_number`, `change_order_number`, `po_number`,
   `vendor_name`. There is no `{my_user_name}` — the generators have no
   sending user. The footer additionally takes `{page}` /
-  `{page_count}`, rendered as spans filled from the CSS page counters.
+  `{page_count}`, inserted as trusted spans (`safe_values`) filled from
+  the CSS page counters.
 - **Logo storage** — the logo is a base64 `data:` URI in the
   `pdf_logo` Configuration row, not a file under `MEDIA_ROOT`: the
   Django container has no persistent volume, so a file would not
@@ -1915,8 +1948,8 @@ template-injection surface, and a typo would break every send).
 
 Each `pdf.py` exposes `render_<doc>_html(obj)` (the HTML string, which
 is what the tests assert on) and `generate_<doc>_pdf(obj)` (bytes), both
-going through `render_document_html(template, kind, context, values)`,
-which merges the `branding` context in. The shared markup lives in two
+going through `render_document_html(template, kind, context, values,
+drafts=None)`, which merges the `branding` context in. The shared markup lives in two
 partials every document template includes —
 `templates/pdf/_branding_styles.html` and `templates/pdf/_letterhead.html`
 — while each template inlines its own three in-flow slots.
@@ -1925,9 +1958,36 @@ Endpoints (all `can_manage_config`):
 
 | Endpoint | Purpose |
 |---|---|
-| `PATCH /api/settings/` | The letterhead and text keys, like any other Configuration key. `pdf_logo_position` is validated; writing `pdf_logo` here is rejected. |
+| `PATCH /api/settings/` | The letterhead and text keys, like any other Configuration key. `RICH_TEXT_KEYS` values are stored sanitized; `pdf_logo_position` is validated; writing `pdf_logo` here is rejected. |
 | `GET` / `POST` / `DELETE /api/settings/pdf-logo/` | Read (`{'logo': '<data URI or empty>'}`), upload (multipart `logo`), remove. `GET /api/settings/` omits the `pdf_logo` blob. |
-| `GET /api/settings/pdf-preview/?document=<kind>` | A sample PDF (`application/pdf`, not JSON) rendered through the real template with the **saved** branding. Built by `preview_*_pdf()` in each `pdf.py` from in-memory sample objects — no real document is read. |
+| `POST /api/settings/pdf-preview/` | The live preview. Body `{document: <kind> \| 'letterhead', values: {key: str}}`; `values` are the form's **unsaved** drafts, limited to `preview_draft_keys(kind)` (the logo position and company keys, plus — for a document — its four text keys; anything else, including `pdf_logo`, is a `values` field error). Returns `{pages: [PNG data URI…], pdf: PDF data URI}`; for `letterhead`, `pages` is one image of the letterhead band, or `[]` when nothing would print. Nothing is written. |
+
+**Live preview.** The Letterhead box and each document's box on Settings →
+Documents have a preview window on their right. After a pause in typing
+(500 ms) the SPA posts that box's drafts — a document's preview also takes
+the letterhead drafts, so a letterhead edit refreshes all four windows while
+a document's edit refreshes only its own — and swaps in the returned page
+images. The letterhead window shows `preview_letterhead_html` (the
+`_letterhead.html` partial alone on a page, `pdf/letterhead_preview.html`,
+same stylesheet and body margins as the documents) cropped by
+`pdf_page_images(…, crop=True)`: first page only, full width so the logo
+position reads, cut 24 pt below the lowest non-white pixel; a blank page
+yields no image and the window says the letterhead is left off. Older replies are dropped by a per-document
+request counter, and a preview error shows in the window, never the global
+overlay (it fires on every pause). Clicking the pages opens the returned PDF
+from a blob URL in a new tab. The Save buttons are unchanged: previewing
+never saves.
+
+The sample document comes from `preview_<doc>_html(drafts)` in each
+`pdf.py` — in-memory sample objects, no real record read — and `drafts`
+overlay the stored rows inside `pdf_branding_context`. The view renders the
+real PDF with WeasyPrint, then `pdf_page_images` rasterizes each page at
+`PREVIEW_SCALE` (1.5 × 72 dpi) with **pypdfium2** (WeasyPrint dropped image
+output in v53). PDFium is not thread-safe and the page fires three previews
+at once into a threaded server — an unguarded concurrent render core-dumped
+the dev server — so every PDFium call runs under `_PDFIUM_LOCK`, and each
+bitmap/page/document is closed inside it so garbage collection never
+finalizes one on another thread.
 
 ---
 
