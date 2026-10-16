@@ -70,3 +70,32 @@ class EmailRecordSerializer(serializers.ModelSerializer):
 
     def get_snippet(self, obj):
         return _build_snippet(getattr(obj, 'temp_data', None))
+
+
+from decimal import Decimal
+from apps.api.inventory.serializers import OrderLineSerializer
+from apps.inventory.models import InventoryItem
+
+
+class EmailPOLineSerializer(OrderLineSerializer):
+    """The email path has no fixed item, so `inventory_item` is allowed
+    (null = freeform line, which then needs a description)."""
+    inventory_item = serializers.PrimaryKeyRelatedField(
+        queryset=InventoryItem.objects.all(), required=False, allow_null=True)
+    qty = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal('0.01'))
+    description = serializers.CharField(required=False, allow_blank=True, default='')
+
+    def validate(self, attrs):
+        if attrs.get('inventory_item') is None and not attrs.get('description'):
+            raise serializers.ValidationError(
+                {'description': ['A freeform line needs a description.']})
+        return attrs
+
+
+class EmailCreatePOSerializer(serializers.Serializer):
+    """POST /api/emails/{id}/create-po/ (PO order flow §4.3). The legacy
+    `{vendor_business_id}` body is a valid subset."""
+    vendor_business_id = serializers.IntegerField()
+    contact_id = serializers.IntegerField(required=False, allow_null=True)
+    requested_date = serializers.DateTimeField(required=False, allow_null=True)
+    line = EmailPOLineSerializer(required=False, allow_null=True)

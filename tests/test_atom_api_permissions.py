@@ -387,8 +387,10 @@ class TestCanManageFinancialsAPI(AtomPermissionTestBase):
         # Note: POST /api/invoices/ (create the job's draft) is intentionally
         # allowed for can_manage_jobs — opening a draft invoice mirrors the
         # estimate/worksheet flow. Other invoice writes remain financials-only.
+        # PO creation moved to jobs-or-financials (PO order flow §6); the
+        # PO bookkeeping action stays financials-only.
         sample = [
-            ('post', '/api/purchase-orders/', {'vendor': 1}),
+            ('post', '/api/purchase-orders/1/reconcile/', {}),
         ]
         for method, url, data in sample:
             with self.subTest(url=url):

@@ -366,6 +366,11 @@ class PurchaseOrderLineItem(BaseLineItem):
     final_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     invoice_only = models.BooleanField(default=False)
 
+    # Vendor's part number for this line (PO order flow, 2026-10-14 §3).
+    # Suggested from the item's vendor history when ordering; a quote's SKU
+    # overrides it. Editable on drafts only, like the other ordering fields.
+    vendor_sku = models.CharField(max_length=100, blank=True, default='')
+
     @property
     def linked_material(self):
         from apps.inventory.models import Material

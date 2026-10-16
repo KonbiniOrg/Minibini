@@ -469,14 +469,15 @@ its form mounted but `hidden`, renders the notice in its place, and its
 `onCancel` backs out one level (notice → form → closed) — the
 `Modal.svelte` sub-state convention (`frontend/README.md` → Modals).
 `DuplicateContactModal.svelte` / `DuplicateBusinessModal.svelte` survive
-only as thin `<Modal>` wrappers for `EmailCreatePOPage.svelte` (PO work is
-parked); they are Esc-only (no `onSave`) since both actions are navigation.
+as thin `<Modal>` wrappers (their former host `EmailCreatePOPage.svelte` was
+deleted 2026-10-15; `OrderModal`'s email source uses the in-modal notices
+instead); they are Esc-only (no `onSave`) since both actions are navigation.
 
 Wired into: `ContactFormModal.svelte`, `BusinessFormModal.svelte` (both
 create-only — see above), and the email-to-Job modal
-(`EmailCreateJobModal.svelte`; `EmailCreatePOPage.svelte` still uses the
-wrappers; `EmailCreateBillPage` was deleted with the 2026-07-23 bill
-retirement), which create a Contact via
+(`EmailCreateJobModal.svelte` and `OrderModal.svelte`'s email source;
+`EmailCreatePOPage` was replaced by it and `EmailCreateBillPage` deleted with
+the 2026-07-23 bill retirement), which create a Contact via
 `resolveSenderToContact` (`frontend/src/lib/email.js`) and need the same
 409 handling since that helper POSTs to `/api/contacts/` directly. All four
 check both `e.data?.code === 'duplicate_email'` and

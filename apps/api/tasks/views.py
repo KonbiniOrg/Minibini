@@ -90,7 +90,8 @@ class TaskViewSet(JobScopedPermissionMixin, RetrieveModelMixin, viewsets.Generic
             ).annotate(_inv_earmarked=_inv_earmarked_subq)
             serializer = MaterialSerializer(
                 materials, many=True,
-                context={'invoice_claims': InvoiceClaimService.claims_for_job(task.job)},
+                context={'request': request,
+                         'invoice_claims': InvoiceClaimService.claims_for_job(task.job)},
             )
             return Response(serializer.data)
 

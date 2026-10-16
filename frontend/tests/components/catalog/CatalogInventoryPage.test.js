@@ -112,21 +112,36 @@ describe('CatalogInventoryPage — manage actions (financials/config)', () => {
     vi.stubGlobal('confirm', vi.fn(() => true));
   });
 
-  it('shows an order button on every row that opens the stock-order dialog', async () => {
-    api.get.mockResolvedValue({ results: ITEMS });  // load(), then the dialog's draft lookup
-    const { findAllByRole, getByLabelText, getByText } = render(CatalogInventoryPage);
+  it('shows an order button on every row that opens the Order modal prefilled with the shortfall', async () => {
+    api.get.mockImplementation((url) => {
+      if (url === '/api/inventory/1/') return Promise.resolve(ITEMS[0]);
+      if (url.startsWith('/api/inventory/1/vendor-history/')) return Promise.resolve({ vendors: [], earmarks: [], open_drafts: [] });
+      if (url.startsWith('/api/accounting-categories/')) return Promise.resolve({ results: [] });
+      if (url.startsWith('/api/units')) return Promise.resolve(['none', 'sheet']);
+      return Promise.resolve({ results: ITEMS });
+    });
+    const { findAllByRole, findByRole, getByLabelText } = render(CatalogInventoryPage);
     const orderBtns = await findAllByRole('button', { name: 'order' });
     expect(orderBtns.length).toBe(2);  // one per ITEMS row
     await fireEvent.click(orderBtns[0]);  // FELT: earmarked 2, on hand 5 -> shortfall 0
-    getByText(/Order — FELT/);
-    expect(getByLabelText(/Quantity/).value).toBe('0');
+    await findByRole('dialog', { name: 'Order' });
+    await vi.waitFor(() => expect(getByLabelText(/^Qty/).value).toBe('0'));
   });
 
-  it('hides the order button for a config-only user (PO creation is financials)', async () => {
+  it('config-only user sees edit / write off but no order (ordering is financials or jobs)', async () => {
     user.set({ username: 'cfg', permissions: ['can_manage_config'] });
-    const { findAllByRole, queryByRole } = render(CatalogInventoryPage);
+    const { findAllByRole, queryByRole, queryAllByRole } = render(CatalogInventoryPage);
     await findAllByRole('button', { name: 'edit' });  // config still manages items
     expect(queryByRole('button', { name: 'order' })).toBeNull();
+    expect(queryAllByRole('button', { name: 'write off' }).length).toBeGreaterThan(0);
+  });
+
+  it('a jobs-only user sees order but neither edit nor write off', async () => {
+    user.set({ username: 'pm', permissions: ['can_manage_jobs'] });
+    const { findAllByRole, queryByRole } = render(CatalogInventoryPage);
+    expect((await findAllByRole('button', { name: 'order' })).length).toBe(2);
+    expect(queryByRole('button', { name: 'edit' })).toBeNull();
+    expect(queryByRole('button', { name: 'write off' })).toBeNull();
   });
 
   it('writes off a partial quantity via the panel', async () => {

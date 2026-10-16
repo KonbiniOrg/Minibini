@@ -2,9 +2,9 @@
   import { canManageJobs as canManageJobsStore, canManageFinancials as canManageFinancialsStore } from '../../stores/permissions.js';
   import { emailApi } from '../../lib/email.js';
 
-  // onAction(name): 'create-job' | 'link-job' | 'link-po' — the host page opens
+  // onAction(name): 'create-job' | 'link-job' | 'create-po' | 'link-po' — the host page opens
   // the matching modal (EmailCreateJobModal / EmailLinkModal, 2026-10-10).
-  // The PO "Create new" stays a page link: PO work is parked.
+  // 'create-po' opens OrderModal (source="email").
   let { emailRecord, onChange = null, onReply = null, onAction = () => {} } = $props();
 
   let canManageJobs = $derived($canManageJobsStore);
@@ -64,23 +64,27 @@
     </section>
   {/if}
 
-  {#if canManageFinancials}
+  {#if canManageJobs || canManageFinancials}
     <section>
       <h4>Purchase Order</h4>
       {#if emailRecord.purchase_order}
         <p>
           Linked: <a href="#/purchase-orders/{emailRecord.purchase_order}">{emailRecord.po_number || `PO #${emailRecord.purchase_order}`}</a>
         </p>
-        <p>
-          <button type="button" class="action-button" onclick={() => disassociate('purchase_order')}>Disassociate</button>
-        </p>
+        {#if canManageFinancials}
+          <p>
+            <button type="button" class="action-button" onclick={() => disassociate('purchase_order')}>Disassociate</button>
+          </p>
+        {/if}
       {:else}
         <p>
-          <a class="action-button" href="#/email/{emailRecord.email_record_id}/create-po">Create new</a>
+          <button type="button" class="action-button" onclick={() => onAction('create-po')}>Create new</button>
         </p>
-        <p>
-          <button type="button" class="action-button" onclick={() => onAction('link-po')}>Link existing</button>
-        </p>
+        {#if canManageFinancials}
+          <p>
+            <button type="button" class="action-button" onclick={() => onAction('link-po')}>Link existing</button>
+          </p>
+        {/if}
       {/if}
     </section>
 

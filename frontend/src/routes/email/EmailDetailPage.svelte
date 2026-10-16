@@ -5,6 +5,7 @@
   import EmailReplyComposer from '../../components/email/EmailReplyComposer.svelte';
   import EmailCreateJobModal from '../../components/email/EmailCreateJobModal.svelte';
   import EmailLinkModal from '../../components/email/EmailLinkModal.svelte';
+  import OrderModal from '../../components/purchaseorders/OrderModal.svelte';
   import LoadState from '../../components/LoadState.svelte';
   import { errorMessage } from '../../lib/api.js';
 
@@ -88,6 +89,10 @@
     onLinked={() => { actionModal = null; load(); }} onClose={() => (actionModal = null)} />
   <EmailLinkModal emailRecordId={email.email_record_id} kind="po" open={actionModal === 'link-po'}
     onLinked={() => { actionModal = null; load(); }} onClose={() => (actionModal = null)} />
+  {#if actionModal === 'create-po'}
+    <OrderModal source="email" emailRecordId={email.email_record_id}
+      onDone={() => { actionModal = null; }} onCancel={() => (actionModal = null)} />
+  {/if}
 {/if}
 </LoadState>
 </div>

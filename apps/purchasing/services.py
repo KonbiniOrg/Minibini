@@ -61,6 +61,31 @@ class PurchaseOrderService:
         return po
 
     @staticmethod
+    def linked_job_ids(po):
+        """Jobs tied to this PO through its lines: a Material whose
+        po_line_item is on the PO, or a task-attributed line's task.job."""
+        from apps.inventory.models import Material
+        via_material = Material.objects.filter(
+            po_line_item__purchase_order=po).values_list('job_id', flat=True)
+        via_task = PurchaseOrderLineItem.objects.filter(
+            purchase_order=po, task__isnull=False).values_list('task__job_id', flat=True)
+        return set(via_material) | set(via_task)
+
+    @staticmethod
+    def user_can_manage(user, po):
+        """May this user write to this PO (PO order flow §6)? financials or
+        jobs atom, else PM of any linked job. Superusers pass via has_perm."""
+        if user is None or not user.is_authenticated:
+            return False
+        if user.has_perm('core.can_manage_financials') or user.has_perm('core.can_manage_jobs'):
+            return True
+        if po is None:
+            return False
+        from apps.jobs.models import Job
+        return Job.objects.filter(
+            pk__in=PurchaseOrderService.linked_job_ids(po), project_manager_id=user.id).exists()
+
+    @staticmethod
     def update_po(pk, **kwargs):
         """Update an existing PurchaseOrder by PK."""
         try:
@@ -597,6 +622,8 @@ class PurchaseOrderService:
         # Pop transient params before they hit the model constructor
         job_id = kwargs.pop('job', None)
         material_id = kwargs.pop('material_id', None)
+        if kwargs.get('is_comment') and (job_id is not None or material_id is not None):
+            raise ValidationError({'job': ['A comment line cannot be attributed to a job.']})
         PurchaseOrderService._reject_task_with_procurement(
             kwargs.get('task'), job_id, material_id)
 
@@ -609,8 +636,12 @@ class PurchaseOrderService:
         return li
 
     @staticmethod
-    def add_line_item_from_pli(po_id, inventory_item_id, qty, job=None, material_id=None, task=None):
-        """Add a line item from a InventoryItem to a draft PO. Accepts optional job, material_id, task.
+    def add_line_item_from_pli(po_id, inventory_item_id, qty, job=None, material_id=None,
+                               task=None, *, price=None, description=None, units=None,
+                               vendor_sku='', accounting_category=None):
+        """Add a line item from a InventoryItem to a draft PO. Accepts optional
+        job, material_id, task, and per-field overrides (PO order flow §4.2):
+        None → the item's own value.
 
         `task` mirrors `add_line_item`'s exclusivity guard (PO Job/Task
         consolidation, RM 2026-09-21): rejected up front alongside
@@ -638,11 +669,13 @@ class PurchaseOrderService:
             li = PurchaseOrderLineItem(
                 purchase_order=po,
                 inventory_item=pli,
-                description=pli.description,
+                description=pli.description if description is None else description,
                 qty=qty,
-                units=pli.units,
-                price=pli.purchase_price,
-                accounting_category=pli.accounting_category,
+                units=pli.units if units is None else units,
+                price=pli.purchase_price if price is None else price,
+                accounting_category=(pli.accounting_category
+                                     if accounting_category is None else accounting_category),
+                vendor_sku=vendor_sku or '',
                 task_id=task,
             )
             li.full_clean()

@@ -5,21 +5,18 @@
   import JobPicker from '../JobPicker.svelte';
   import TaskLinkPicker from '../TaskLinkPicker.svelte';
 
-  const {
-    categories = [],
-    onSubmit,
-    onCancel,
-    defaultJob = null,
-    materialId = null,
-    prefill = null,
-  } = $props();
+  const { categories = [], onSubmit, onCancel } = $props();
 
   let mode = $state('manual'); // 'manual' or 'pli'
   let selectedPLI = $state(null);
-  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
-  let jobId = $state(defaultJob?.job_id ?? null);
-  // svelte-ignore state_referenced_locally -- mount-seed by design (parent remounts via {#if}/{#key}, or a $effect re-syncs)
-  let jobRow = $state(defaultJob ?? null);
+  let jobId = $state(null);
+  let jobRow = $state(null);
+  // Explicit material picker (PO order flow §5.3): once a job is chosen and
+  // no task is picked, list its pending unlinked materials and make the
+  // attach-or-create choice explicit. Null = nothing chosen yet.
+  let jobMaterials = $state(null);   // null = loading / no job
+  let materialChoice = $state(null); // null | material_id | 'new'
+  let itemLocked = $state(false);
 
   // Cost→sell task attribution (outsourced-work port, spec §7 rule 1),
   // cascading from the ONE Job picker above (PO Job/Task consolidation,
@@ -40,32 +37,35 @@
   });
   let isComment = $state(false);
 
-  // Generic prefill when opened via an "order" flow:
-  //   { inventory_item?, qty?, description?, price?, accounting_category? }
-  // An `inventory_item` switches to 'pli' mode and fills from the item; otherwise
-  // the supplied fields seed manual mode. This form knows nothing about Materials
-  // — callers build the prefill (e.g. PO detail derives it from a Material for the
-  // "order this material" flow, or `{inventory_item}` for the inventory "order").
+  function isAttachable(m) {
+    return m.consumption_state === 'pending' && m.po_line_item_id == null
+      && m.cost_source !== 'customer_supplied';
+  }
+
   $effect(() => {
-    if (!prefill) return;
-    if (prefill.qty != null && prefill.qty !== '') form.qty = String(prefill.qty);
-    if (prefill.inventory_item) {
-      mode = 'pli';
-      api.get(`/api/inventory/${prefill.inventory_item}/`)
-        .then(pli => { handlePLISelect(pli); })
-        .catch(() => {
-          // Fall back to manual mode if the item fetch fails
-          mode = 'manual';
-          if (prefill.description != null) form.description = prefill.description;
-          if (prefill.price != null) form.price = String(prefill.price);
-          if (prefill.accounting_category) form.accounting_category = prefill.accounting_category;
-        });
-    } else {
-      if (prefill.description != null) form.description = prefill.description;
-      if (prefill.price != null) form.price = String(prefill.price);
-      if (prefill.accounting_category) form.accounting_category = prefill.accounting_category;
-    }
+    const id = jobId;
+    materialChoice = null;
+    itemLocked = false;
+    jobMaterials = null;
+    if (!id) return;
+    api.get(`/api/jobs/${id}/`)
+      .then((job) => { if (jobId === id) jobMaterials = (job.materials || []).filter(isAttachable); })
+      .catch(() => { if (jobId === id) jobMaterials = []; });
   });
+
+  async function chooseMaterial(value) {
+    materialChoice = value;
+    itemLocked = false;
+    if (value === 'new' || mode !== 'pli') return;
+    const m = jobMaterials.find((x) => x.material_id === value);
+    if (!m?.inventory_item) return;   // provisional: the user still picks the item
+    const item = await api.get(`/api/inventory/${m.inventory_item}/`);
+    handlePLISelect(item);
+    itemLocked = true;
+  }
+
+  const materialChoiceNeeded = $derived(
+    !isComment && !!jobId && !taskId && (jobMaterials === null || jobMaterials.length > 0) && materialChoice == null);
 
   function handlePLISelect(item) {
     selectedPLI = item;
@@ -101,14 +101,13 @@
     }
 
     // Task picked -> pure cost-attribution line: send `task`, withhold
-    // `job`/`material_id` entirely (the task implies its job; no Material
-    // is ever created for this line). Job picked, no task -> exactly
-    // today's material-procurement payload, unchanged.
+    // `job`/`material_id` entirely. Otherwise the explicit material choice
+    // decides: attach (material_id) or create a new material (job).
     if (taskId) {
       data.task = taskId;
-    } else {
-      if (jobId) data.job = jobId;
-      if (materialId) data.material_id = materialId;
+    } else if (jobId && !isComment) {
+      if (materialChoice && materialChoice !== 'new') data.material_id = materialChoice;
+      else data.job = jobId;
     }
 
     onSubmit(data);
@@ -136,6 +135,7 @@
           selectedItem={selectedPLI}
           onSelect={handlePLISelect}
           params={{ is_active: true }}
+          disabled={itemLocked}
         />
       </p>
       <p>
@@ -149,7 +149,8 @@
       </p>
       <p>
         <label>
-          <input type="checkbox" bind:checked={isComment}>
+          <input type="checkbox" bind:checked={isComment}
+            onchange={(e) => { if (e.target.checked) { jobId = null; jobRow = null; taskId = null; } }}>
           Comment line (informational only — no charge)
         </label>
       </p>
@@ -180,7 +181,7 @@
 
     <p>
       <label><strong>Job (optional)</strong></label><br>
-      <JobPicker bind:value={jobId} selectedItem={jobRow} onSelect={(j) => { jobRow = j; }} openOnly />
+      <JobPicker bind:value={jobId} selectedItem={jobRow} onSelect={(j) => { jobRow = j; }} openOnly disabled={isComment} />
     </p>
 
     {#if jobId}
@@ -191,11 +192,38 @@
           <br><small>Cost will be attributed to this task — no material is created.</small>
         {/if}
       </p>
+      {#if !taskId && !isComment}
+        {#if jobMaterials === null}
+          <p><small>Loading materials…</small></p>
+        {:else if jobMaterials.length === 0}
+          <p><small>No unordered materials on this job — a new material will be created.</small></p>
+        {:else}
+          <fieldset class="material-choice">
+            <legend><strong>Attach to a material</strong></legend>
+            {#each jobMaterials as m (m.material_id)}
+              <label>
+                <input type="radio" name="material-choice" value={m.material_id}
+                  checked={materialChoice === m.material_id} onchange={() => chooseMaterial(m.material_id)}>
+                {#if m.item_code && !m.item_code.startsWith('LOT-')}{m.item_code + ' · '}{/if}{String(Number(m.quantity))} {m.units} · {m.description}
+              </label>
+            {/each}
+            <label>
+              <input type="radio" name="material-choice" value="new"
+                checked={materialChoice === 'new'} onchange={() => chooseMaterial('new')}>
+              Create a new material for this line
+            </label>
+          </fieldset>
+        {/if}
+      {/if}
     {/if}
 
     <p>
-      <button type="submit">Add</button>
+      <button type="submit" disabled={materialChoiceNeeded}>Add</button>
       <button type="button" onclick={onCancel}>Cancel</button>
     </p>
   </form>
 </fieldset>
+
+<style>
+  .material-choice label { display: block; }
+</style>

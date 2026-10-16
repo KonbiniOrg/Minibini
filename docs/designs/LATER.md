@@ -840,15 +840,19 @@ Billing mechanics and money-record lifecycle.
   decided drops get an unbacked lane, lightweight lots, or the status quo, and the
   materials doc records it.
 
-- **Show a material's earmarks on the PO when ordering it.** — _added 2026-07-05_
-  Certain items are needed by more than one job at once. When adding/receiving a PO
-  line for such an item, the buyer can't see the total demand — the per-job earmarks
-  against the line's inventory item — so they can't easily decide to order for
-  several jobs in one purchase. Surface the item's earmark list (job + quantity)
-  on the PO line (and/or in the order-from-material flow) so multi-job demand is
-  visible at order time. _Done when:_ ordering an item with earmarks from multiple
-  jobs shows those earmarks on the PO surface, and the buyer can size the line
-  accordingly.
+- **"On Hand" chip is gross item QOH ≥ quantity — ignores other jobs'
+  earmarks.** — _added 2026-10-14_
+  `materialStatus` (`frontend/src/lib/materialStatus.js`) decides On Hand
+  from `qty_on_hand < quantity` where `qty_on_hand` is the item's raw QOH.
+  Two committed jobs each needing 3 sheets of a 3-sheet item both read
+  On Hand; only the avail badge goes red (−3). The chip should respect
+  reservations — a row is covered when its own earmark (or the item's
+  uncommitted stock) covers its quantity, not when the shelf happens to
+  hold that many sheets for everyone. Needs a decision on who is "short"
+  when the item is over-committed (first-earmarked wins? everyone short?).
+  _Done when:_ an over-committed item's material rows don't all claim On
+  Hand, with a stated tie rule, and the Order button reappears on the short
+  rows.
 
 - **Material row "(x avail)" subtracts the row's own earmark, so a covered
   material reads "(0 avail)" beside "On Hand".** — _added 2026-10-14 (RM
@@ -1449,7 +1453,8 @@ Cross-cutting UI/API conventions and shared components.
   references (contacts deletion checks, inventory merge/has_document_line_refs
   clauses) go with them.
 
-  link-email-to-PO (and ideally create-PO-from-email).
+  The email↔PO flows that remain are link-email-to-PO and create-PO-from-email
+  (the latter now exists, as `OrderModal`'s `email` source).
 
 - **Email password change should re-authenticate via a modal.** — _added 2026-07-23_
   Settings → Email currently lets any config admin overwrite the stored mail
@@ -1604,20 +1609,6 @@ Cross-cutting UI/API conventions and shared components.
   Scope card link land on the latest accepted CO's page (jobOverview
   unit tests updated), falling back to the estimate when no CO exists.
 
-
-- **PO line items should show the inventory item's code.** — _added
-  2026-08-10 (RM)_
-  A purchase-order line for a catalog item gives the vendor/shop no
-  `InventoryItem.code` (the unique catalog code, inventory/models.py).
-  Note the link is indirect: `PurchaseOrderLineItem` has no
-  `inventory_item` FK — the route is the line's `linked_material`
-  property (`Material.po_line_item` reverse) → `Material.inventory_item`
-  → `.code`, so freeform/non-catalog lines simply have none. Surfaces:
-  the PO page's line table and probably the PO PDF
-  (`templates/purchasing/purchase_order_pdf.html`) where a code column
-  is arguably most valuable (it's what the vendor keys on).
-  _Done when:_ catalog-backed PO lines display the code on the PO page
-  (and PDF if RM wants it there), blank for freeform lines.
 
 - **`linked_po_variances` (job costing, outsourced-work port Task 4) is
   API-only — no frontend display yet.** — _added 2026-09-21_

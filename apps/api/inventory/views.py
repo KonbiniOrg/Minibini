@@ -4,11 +4,14 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from apps.inventory.models import Earmark, InventoryItem, Material
 from apps.inventory.services import InventoryService, MaterialService
-from apps.api.permissions import CanManageFinancials, CanManageFinancialsOrConfig
-from apps.api.mixins import JSONDestroyMixin
+from apps.api.permissions import (
+    CanManageFinancialsOrConfig, CanManageJobsOrFinancials, CanManageFinancialsOrJobOrPM,
+)
+from apps.api.mixins import JSONDestroyMixin, JobScopedPermissionMixin
 from .serializers import (
     InventoryItemSerializer, MaterialSerializer, MaterialOpSerializer,
-    MaterialAssignTaskSerializer, StockOrderSerializer, EarmarkSerializer,
+    MaterialAssignTaskSerializer, OrderRequestSerializer,
+    StockOrderRequestSerializer, EarmarkSerializer,
 )
 
 
@@ -48,12 +51,12 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
     def get_permissions(self):
         # B7: inventory items are owned by both the money role (financials) and
         # the admin role (config) — either atom grants full CRUD + write-off/merge.
-        if self.action in ('list', 'retrieve'):
+        if self.action in ('list', 'retrieve', 'vendor_history'):
             return [IsAuthenticated()]
         if self.action == 'order':
-            # Stock ordering is a purchasing act: financials only (matches
-            # the material order action), NOT the config atom.
-            return [IsAuthenticated(), CanManageFinancials()]
+            # Stock ordering is a purchasing act: financials or jobs, NOT
+            # the config atom.
+            return [IsAuthenticated(), CanManageJobsOrFinancials()]
         return [IsAuthenticated(), CanManageFinancialsOrConfig()]
 
     def destroy(self, request, *args, **kwargs):
@@ -108,25 +111,44 @@ class InventoryItemViewSet(JSONDestroyMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def order(self, request, pk=None):
-        """Order this item to stock — plain PO line, no material link.
-        Optional body po_id appends to that draft (same contract as the
-        material order action)."""
+        """Order this item to stock (PO order flow §4.2): `{po_id}` appends to
+        that draft, `{po: {business, contact?, requested_date?}}` creates; `line`
+        overrides the item's defaults (qty required — nothing to default from)."""
         from django.shortcuts import get_object_or_404
         from apps.purchasing.models import PurchaseOrder
-        s = StockOrderSerializer(data=request.data)
+        s = StockOrderRequestSerializer(data=request.data)
         s.is_valid(raise_exception=True)
+        v = s.validated_data
         item = self.get_object()
-        po = None
-        if s.validated_data.get('po_id'):
-            po = get_object_or_404(PurchaseOrder, pk=s.validated_data['po_id'])
-        po, _li = InventoryService.order_stock(
-            item, s.validated_data['quantity'], po=po)
-        data = self.get_serializer(item).data
-        data['po_id'], data['po_number'] = po.pk, po.po_number
-        return Response(data)
+        po = get_object_or_404(PurchaseOrder, pk=v['po_id']) if v.get('po_id') is not None else None
+        # po_id mode is a write on an existing PO: the linked-PM rule applies (review ruling 2026-10-15)
+        from rest_framework.exceptions import PermissionDenied
+        from apps.purchasing.services import PurchaseOrderService
+        if po is not None and not PurchaseOrderService.user_can_manage(request.user, po):
+            raise PermissionDenied('You cannot add lines to that purchase order.')
+        po, li = InventoryService.order_stock(
+            item, po=po, po_fields=v.get('po'), line=v.get('line'))
+        return Response({'po_id': po.pk, 'po_number': po.po_number, 'line_item_id': li.pk},
+                        status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['get'], url_path='vendor-history')
+    def vendor_history(self, request, pk=None):
+        """Who carries this item, its earmarks by job, and the open drafts —
+        the Order modal's one read (PO order flow §4.1)."""
+        item = self.get_object()
+        raw = request.query_params.get('exclude_job')
+        exclude_job = None
+        if raw not in (None, ''):
+            try:
+                exclude_job = int(raw)
+            except ValueError:
+                return Response({'exclude_job': ['Must be an integer.']},
+                                status=status.HTTP_400_BAD_REQUEST)
+        return Response(InventoryService.vendor_history(item, exclude_job=exclude_job))
 
 
-class MaterialViewSet(viewsets.ModelViewSet):
+class MaterialViewSet(JobScopedPermissionMixin, viewsets.ModelViewSet):
+    job_object_path = 'job'
     queryset = Material.objects.select_related('inventory_item').all()
     serializer_class = MaterialSerializer
     permission_classes = [IsAuthenticated]
@@ -149,14 +171,14 @@ class MaterialViewSet(viewsets.ModelViewSet):
         propagate = fields.pop('propagate_to_pli', False)
         instance = MaterialService.update_fields(
             instance, propagate_to_pli=propagate, **fields)
-        return Response(MaterialSerializer(instance).data)
+        return Response(MaterialSerializer(instance, context={'request': request}).data)
 
     @action(detail=True, methods=['post'])
     def consume(self, request, pk=None):
         m = self.get_object()
         MaterialService.consume(m)
         m.refresh_from_db()
-        return Response(MaterialSerializer(m).data)
+        return Response(MaterialSerializer(m, context={'request': request}).data)
 
     @action(detail=True, methods=['post'])
     def restock(self, request, pk=None):
@@ -166,7 +188,7 @@ class MaterialViewSet(viewsets.ModelViewSet):
         MaterialService.restock(m, s.validated_data['quantity'])
         try:
             m.refresh_from_db()
-            return Response(MaterialSerializer(m).data)
+            return Response(MaterialSerializer(m, context={'request': request}).data)
         except Material.DoesNotExist:
             return Response({'deleted': True})
 
@@ -177,7 +199,7 @@ class MaterialViewSet(viewsets.ModelViewSet):
         m = self.get_object()
         MaterialService.draw_more(m, s.validated_data['quantity'])
         m.refresh_from_db()
-        return Response(MaterialSerializer(m).data)
+        return Response(MaterialSerializer(m, context={'request': request}).data)
 
     @action(detail=True, methods=['post'], url_path='mark-on-hand')
     def mark_on_hand(self, request, pk=None):
@@ -190,7 +212,7 @@ class MaterialViewSet(viewsets.ModelViewSet):
         MaterialService.mark_on_hand(
             m, s.validated_data['quantity'], user=request.user)
         m.refresh_from_db()
-        return Response(MaterialSerializer(m).data)
+        return Response(MaterialSerializer(m, context={'request': request}).data)
 
     @action(detail=True, methods=['post'], url_path='assign-task')
     def assign_task(self, request, pk=None):
@@ -199,25 +221,28 @@ class MaterialViewSet(viewsets.ModelViewSet):
         m = self.get_object()
         MaterialService.assign_task(m, s.validated_data['task'])
         m.refresh_from_db()
-        return Response(MaterialSerializer(m).data)
+        return Response(MaterialSerializer(m, context={'request': request}).data)
 
     @action(detail=True, methods=['post'],
-            permission_classes=[IsAuthenticated, CanManageFinancials])
+            permission_classes=[IsAuthenticated, CanManageFinancialsOrJobOrPM])
     def order(self, request, pk=None):
-        """Start (or append to) a draft PO with a line linked to this material
-        (spec Path 1). Optional body {"po_id": <int>} appends to that draft."""
+        """Start a PO (po) or append to a draft (po_id) with a line linked to
+        this material — PO order flow §4.2. The item is the material's."""
         from django.shortcuts import get_object_or_404
         from apps.purchasing.models import PurchaseOrder
+        s = OrderRequestSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        v = s.validated_data
         m = self.get_object()
-        po = None
-        po_id = request.data.get('po_id')
-        if po_id:
-            po = get_object_or_404(PurchaseOrder, pk=po_id)
-        po, _li = MaterialService.order(m, po=po)
-        m.refresh_from_db()
-        data = MaterialSerializer(m).data
-        data['po_id'], data['po_number'] = po.pk, po.po_number
-        return Response(data)
+        po = get_object_or_404(PurchaseOrder, pk=v['po_id']) if v.get('po_id') is not None else None
+        # po_id mode is a write on an existing PO: the linked-PM rule applies (review ruling 2026-10-15)
+        from rest_framework.exceptions import PermissionDenied
+        from apps.purchasing.services import PurchaseOrderService
+        if po is not None and not PurchaseOrderService.user_can_manage(request.user, po):
+            raise PermissionDenied('You cannot add lines to that purchase order.')
+        po, li = MaterialService.order(m, po=po, po_fields=v.get('po'), line=v.get('line'))
+        return Response({'po_id': po.pk, 'po_number': po.po_number, 'line_item_id': li.pk},
+                        status=status.HTTP_201_CREATED)
 
 
 class EarmarkViewSet(viewsets.ReadOnlyModelViewSet):

@@ -215,8 +215,13 @@ loaded after the dataset; they are not the converter's concern.)
 9b. **`assign_est_quantities`**: fills `est_qty` on every Task by its own
     `qty_source` (hourly = worker hours; entered_qty = piece count tied to
     worker time) — §4.
-10. **`build_invoices`**: emits Invoices + line items via the
-    Project-name link. Stashes each emitted line's classification (`task`,
+10. **`build_invoices`**: emits Invoices + line items. An Invoice joins a
+    Job through the **Estimates sheet's `Invoice Reference` column**: each
+    spine job's estimate rows contribute their `Invoice Reference` values,
+    and an Invoices-sheet row whose `Reference` matches one of them belongs
+    to that job. Invoices no spine estimate points at are skipped. (The
+    FreeAgent `Project` column is not used here — it only feeds vendor
+    discovery in `build_contacts_and_businesses`.) Stashes each emitted line's classification (`task`,
     `material`, `lineitem`, `skip`) on `c.invoice_line_kinds` for the
     next phase. Sets `sent_date` on `open`/`paid` invoices (= the FreeAgent
     invoice Date) and `qbo_amount_paid` on `paid` invoices (= that invoice's

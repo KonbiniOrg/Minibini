@@ -1850,6 +1850,7 @@ neither.
     cannot have both task and inventory_item."* A task-outsourcing line
     is therefore always manual/freeform, never catalog/PLI-sourced.
 - **inventory_item** (optional FK → InventoryItem, PROTECT)
+- **vendor_sku** (`CharField(100)`, blank, default `''`; `purchasing.0002`): the vendor's part number for this line. Line-only (no copy on InventoryItem/Business). Editable on draft lines; read-only once issued; not a reconciliation field
 - **line_number**: auto-generated sequentially per PO if null
 - **price**: decimal, no current validation (negative values are legitimate for discount/credit lines; a sanity-check warning is tracked in `architecture-and-conventions.md` unfinished work)
 - **qty_received**: decimal, default 0 (populated by receive actions)

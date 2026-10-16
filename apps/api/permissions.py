@@ -74,3 +74,44 @@ class CanManageJobOrPM(BasePermission):
             return True
         job = view.get_object_job(obj)
         return JobService.user_can_manage(request.user, job)
+
+
+class CanManageJobsOrFinancials(BasePermission):
+    """Purchasing acts that start a PO (create, order a material or stock, PO
+    from email) belong to the money role and the plan-builders alike — NOT
+    config: purchasing is not an admin act (PO order flow §6)."""
+    def has_permission(self, request, view):
+        return (request.user.has_perm('core.can_manage_jobs')
+                or request.user.has_perm('core.can_manage_financials'))
+
+
+class CanManageFinancialsOrJobOrPM(BasePermission):
+    """The financials atom, else CanManageJobOrPM (jobs atom, or PM of the
+    request's target job via view.get_permission_target_job). Gates ordering
+    a material: its job's PM may buy for that job."""
+    def has_permission(self, request, view):
+        if request.user.has_perm('core.can_manage_financials'):
+            return True
+        return CanManageJobOrPM().has_permission(request, view)
+
+    def has_object_permission(self, request, view, obj):
+        if request.user.has_perm('core.can_manage_financials'):
+            return True
+        return CanManageJobOrPM().has_object_permission(request, view, obj)
+
+
+class CanManageFinancialsOrJobsOrLinkedPM(BasePermission):
+    """PO-level writes (RM 2026-10-15): the financials atom, the jobs atom, or
+    the project_manager of ANY job linked to a line on the PO the URL names
+    (a Material whose po_line_item is on it, or a task-attributed line whose
+    task is on the job). Resolved per request from view.get_permission_target_po
+    — no stored flag, so the access lasts exactly as long as the link."""
+    def has_permission(self, request, view):
+        from apps.purchasing.services import PurchaseOrderService
+        if request.method in SAFE_METHODS:
+            return True
+        user = request.user
+        if user.has_perm('core.can_manage_financials') or user.has_perm('core.can_manage_jobs'):
+            return True
+        po = view.get_permission_target_po(request)
+        return po is not None and PurchaseOrderService.user_can_manage(user, po)

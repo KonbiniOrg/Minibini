@@ -50,7 +50,6 @@
   import ReimbursementDetailPage from './routes/reimbursements/ReimbursementDetailPage.svelte';
   import EmailInboxPage from './routes/email/EmailInboxPage.svelte';
   import EmailDetailPage from './routes/email/EmailDetailPage.svelte';
-  import EmailCreatePOPage from './routes/email/EmailCreatePOPage.svelte';
   import ActivityPage from './routes/ActivityPage.svelte';
   import JobChangeOrderPage from './routes/jobs/JobChangeOrderPage.svelte';
   import ChangeOrderRedirect from './routes/change-orders/ChangeOrderRedirect.svelte';
@@ -111,7 +110,7 @@
     '/reimbursements/:id': ReimbursementDetailPage,
     '/email': EmailInboxPage,
     '/email/:id/create-job': wrap({ component: RedirectTo, props: { to: '/email/:id' } }),
-    '/email/:id/create-po': EmailCreatePOPage,
+    '/email/:id/create-po': wrap({ component: RedirectTo, props: { to: '/email/:id' } }),
     '/email/:id/associate': wrap({ component: RedirectTo, props: { to: '/email/:id' } }),
     '/email/:id/associate-po': wrap({ component: RedirectTo, props: { to: '/email/:id' } }),
     '/email/:id': EmailDetailPage,

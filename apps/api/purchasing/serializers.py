@@ -18,12 +18,17 @@ class POLineItemSerializer(serializers.ModelSerializer):
     effective_job_number = serializers.SerializerMethodField()
     material = serializers.SerializerMethodField()
     task_detail = serializers.SerializerMethodField()
+    # Catalog code of the line's item (None for freeform). The PO table and
+    # PDF print it beside the vendor SKU.
+    item_code = serializers.CharField(
+        source='inventory_item.code', read_only=True, default=None)
 
     class Meta:
         model = PurchaseOrderLineItem
         fields = [
             'line_item_id', 'line_number', 'task', 'task_detail', 'inventory_item',
             'qty', 'units', 'description', 'price', 'is_comment',
+            'vendor_sku', 'item_code',
             'effective_job_id', 'effective_job_number', 'material',
             'accounting_category',
             'qty_received', 'received_by', 'received_by_name',
@@ -31,7 +36,7 @@ class POLineItemSerializer(serializers.ModelSerializer):
             'final_price', 'invoice_only',
         ]
         read_only_fields = [
-            'line_item_id', 'qty_received', 'received_by', 'received_by_name',
+            'line_item_id', 'item_code', 'qty_received', 'received_by', 'received_by_name',
             'received_date', 'receipt_note', 'qty_cancelled',
             'effective_job_id', 'effective_job_number', 'material', 'task_detail',
             # `final_price` and `invoice_only` are reconciliation-owned
@@ -99,6 +104,7 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
     variance = serializers.SerializerMethodField()
     business_is_active = serializers.SerializerMethodField()
     contact_is_active = serializers.SerializerMethodField()
+    can_manage = serializers.SerializerMethodField()
 
     class Meta:
         model = PurchaseOrder
@@ -109,7 +115,7 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
             'received_date', 'cancel_date', 'line_items', 'po_total',
             'bill_total', 'vendor_invoice_ref', 'reconciled', 'reconciled_date',
             'awaiting_reconciliation', 'variance',
-            'business_is_active', 'contact_is_active',
+            'business_is_active', 'contact_is_active', 'can_manage',
         ]
         read_only_fields = [
             'po_id', 'po_number', 'created_date',
@@ -117,6 +123,13 @@ class PurchaseOrderSerializer(serializers.ModelSerializer):
             # action (PurchaseOrderService.reconcile) — not a bare PATCH.
             'bill_total', 'vendor_invoice_ref', 'reconciled', 'reconciled_date',
         ]
+
+    def get_can_manage(self, obj):
+        request = self.context.get('request')
+        if request is None:
+            return False
+        from apps.purchasing.services import PurchaseOrderService
+        return PurchaseOrderService.user_can_manage(request.user, obj)
 
     def get_business_is_active(self, obj):
         return obj.business.is_active if obj.business_id else None

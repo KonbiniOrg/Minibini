@@ -7,9 +7,14 @@ def generate_purchase_order_pdf(po):
     Generate a PDF for a purchase order.
     Returns bytes containing the PDF.
     """
-    line_items = po.purchaseorderlineitem_set.select_related(
+    line_items = list(po.purchaseorderlineitem_set.select_related(
         'accounting_category', 'inventory_item'
-    ).order_by('line_number')
+    ).order_by('line_number'))
+    # Code column: the catalog code, blank for freeform lines and for minted
+    # LOT-* lots (a lot id means nothing to the vendor).
+    for li in line_items:
+        code = li.inventory_item.code if li.inventory_item_id else ''
+        li.display_code = '' if code.startswith('LOT-') else code
 
     total = sum(item.total_amount for item in line_items)
 

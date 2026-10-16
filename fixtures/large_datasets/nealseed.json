@@ -8,10 +8,18 @@
   }
 },
 {
+  "model": "sessions.session",
+  "pk": "yj5k4y8rhajfes5jznhxn18d2jac9c5c",
+  "fields": {
+    "session_data": ".eJxVjDsOwjAQBe_iGlnr4C8lfc5grddeHECOFCcV4u4QKQW0b2beS0Tc1hq3XpY4ZXERSpx-t4T0KG0H-Y7tNkua27pMSe6KPGiX45zL83q4fwcVe_3WxpmMZFAPgLYYY9l7lTOnoGw6ByanB2QHlAgKMijHSutQtErggbx4fwDyUDgq:1xHaTK:2_zAykFUv2r62LlHu8GzRq1B2xHGPXJCa6SsvXlLbe4",
+    "expire_date": "2026-10-17T05:27:14.561Z"
+  }
+},
+{
   "model": "core.user",
   "fields": {
     "password": "pbkdf2_sha256$1000000$XCygBxLdqKriveVwf6oOFi$kFfwgkMzohWCBVJdzfhFmnMW9HRWXsshWwcvn9k6zdY=",
-    "last_login": "2026-10-16T01:03:36.391Z",
+    "last_login": "2026-10-16T05:27:14.545Z",
     "is_superuser": true,
     "username": "dev_user",
     "first_name": "Fake",
@@ -2795,7 +2803,7 @@
       "dev_user"
     ],
     "start_time": "2026-10-15T23:11:00Z",
-    "end_time": null
+    "end_time": "2026-10-16T05:33:00Z"
   }
 },
 {
@@ -2859,6 +2867,13 @@
   "pk": "email_address",
   "fields": {
     "value": "minibini.test@gmail.com"
+  }
+},
+{
+  "model": "core.configuration",
+  "pk": "email_display_limit",
+  "fields": {
+    "value": "30"
   }
 },
 {
@@ -2989,9 +3004,141 @@
 },
 {
   "model": "core.appstate",
+  "pk": "latest_email_date",
+  "fields": {
+    "value": "2026-10-10T20:35:02-07:00"
+  }
+},
+{
+  "model": "core.appstate",
   "pk": "po_counter",
   "fields": {
     "value": "225"
+  }
+},
+{
+  "model": "core.emailrecord",
+  "pk": 1,
+  "fields": {
+    "message_id": "<b7019d7673774545b1b19ed839cbc3ce@2332625>",
+    "direction": "inbound",
+    "sent_at": null,
+    "last_send_error": "",
+    "job": null,
+    "purchase_order": null,
+    "bill": null,
+    "created_at": "2026-10-16T05:27:35.710Z"
+  }
+},
+{
+  "model": "core.emailrecord",
+  "pk": 2,
+  "fields": {
+    "message_id": "<23fbaa06-bd53-46bc-ba65-632a3ed9d145@app.fastmail.com>",
+    "direction": "inbound",
+    "sent_at": null,
+    "last_send_error": "",
+    "job": null,
+    "purchase_order": null,
+    "bill": null,
+    "created_at": "2026-10-16T05:27:35.902Z"
+  }
+},
+{
+  "model": "core.emailrecord",
+  "pk": 3,
+  "fields": {
+    "message_id": "<2cfbd059-efde-4edf-ac46-be50238f36ef@app.fastmail.com>",
+    "direction": "inbound",
+    "sent_at": null,
+    "last_send_error": "",
+    "job": null,
+    "purchase_order": null,
+    "bill": null,
+    "created_at": "2026-10-16T05:27:36.249Z"
+  }
+},
+{
+  "model": "core.tempemail",
+  "pk": 1,
+  "fields": {
+    "email_record": 1,
+    "uid": "120",
+    "subject": "Intuit Developer News: September 2026",
+    "from_email": "IntuitPartners@dp.intuit.com",
+    "to_email": "minibini.test@gmail.com",
+    "cc_email": "",
+    "bcc_email": "",
+    "date_sent": "2026-09-30T15:08:57Z",
+    "in_reply_to": "",
+    "references": "",
+    "text_body": "\"Intuit Quickbooks logo\"                                                                \r\n\r\nView on web <https://app.dp.intuit.com/e/es?s=2332625&e=3705&elqTrackId=29e34d2b03344f83a95e372f6bb3c5fa&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqak=8AF57E1EA942A33DFBC3002D08D9C404E635EBD512E6767E92CA241D54CD8E806768>                                                                \r\n\r\nSEPTEMBER 2026                                             \r\nIntuit App Partner News                                             \r\n\r\n\"\"                                             \r\n\r\n\"\"                           \r\n\r\nDeveloper Tools                                             \r\nDeveloper Portal                                             \r\n\r\n\"\" <https://developer.intuit.com/solutioncenter/overview?elqTrackId=bca9184dedf34efdbeee7367a4a0a7a9&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF582F771A9026641B8FC15B41A98FADA87EBD512E6767E92CA241D54CD8E806768>                                                   \r\n\r\nBuild the whole workflow faster, not one endpoint at a time                                                                                                             \r\nThe Solution Center is now live on the Intuit Developer Portal. Ten solution accelerators walk you through complete QuickBooks Online workflows — receivables, payables, expenses, sales tax, and more. Each solution accelerator gives you a guided path, ready-to-use code samples, and sandbox testing. They follow Intuit platform best practices throughout the build to help you accelerate your development.                                                         \r\n\r\nExplore Solution Center <https://developer.intuit.com/solutioncenter/overview?elqTrackId=55e73ababc604653a9fb2a7665fbb92c&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF53DDC2D811B5B75A959812C284DB0C95EEBD512E6767E92CA241D54CD8E806768>                                                               \r\n\r\nReaching Your Audience                                 \r\n\r\nDeveloper Portal                                                                                                             \r\nTurn recommendations into revenue                                                                                                             \r\nYou already point people toward tools that work. Join the Intuit Product Referrals program, share your link, and collect up to $300 for every qualified customer in your network who subscribes to QuickBooks Online. They get 50% off for three months. Terms apply.                                                                                                             \r\n\r\nExplore how it works <https://quickbooks.intuit.com/partners/referrals/?elqTrackId=0777076904354a5484b8c9b17e50f90c&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF56194F22E9FD3CABA83414589FE537C42EBD512E6767E92CA241D54CD8E806768>                                                                                                                         \r\n\r\n\"\" <https://quickbooks.intuit.com/partners/referrals/?elqTrackId=1d4033006a5541c893162400c1bc6f3d&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF5877165E076CE3845CBC94E740A263DF7EBD512E6767E92CA241D54CD8E806768>                                                                                                 \r\n\r\nDeveloper Tools                                             \r\n\r\nTechnical Tips                                                                                                 \r\n\r\nSubscribe to our status page                                                                                                                         \r\nWhen there's an outage, you shouldn't have to file a support ticket to find out what's wrong. Subscribe to our status page to get notified the moment we detect an issue, and follow along as we post updates through resolution.                                                                                                                         \r\n\r\nSubscribe now <https://status.developer.intuit.com/?elqTrackId=67eb8723f2044fb592be47879cdd95c8&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF5024D2B3316B36180CF4F15E7300D1A12EBD512E6767E92CA241D54CD8E806768>                                                                                                                                     \r\n\r\n\"\" <https://medium.com/intuitdev/retrying-the-right-way-4xx-vs-5xx-9f4e2a61d5c4?elqTrackId=e7bab3e9e5504f5381b77e7520a8caac&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF5EE0722C2AFF6A77A3A5B38BED934ECC9EBD512E6767E92CA241D54CD8E806768>                                                   \r\n\r\nTechnical Tips                                                                                                             \r\nBest practices for retrying API errors                                                                                                             \r\nRetrying a failed API call isn't always the right move. This post breaks down when retries help and when they just make things worse, plus practical safeguards to build in either way.                                                         \r\n\r\nLearn more <https://medium.com/intuitdev/retrying-the-right-way-4xx-vs-5xx-9f4e2a61d5c4?elqTrackId=853581716298455591dad3335b31b912&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF51B99BDED64FCC446ED9255947B8EA1CEEBD512E6767E92CA241D54CD8E806768>                                                               \r\n\r\nTechnical Tips                                                                                                             \r\nFrom invoice to payment: A step-by-step walkthrough                                                                                                             \r\nProcessing a payment end to end touches two APIs and a lot of moving pieces — invoice, card token, charge, and reconciliation. This refreshed tutorial walks through each step with working request and response examples so you can wire it up correctly the first time.                                                         \r\n\r\nLearn more <https://medium.com/intuitdev/from-invoice-to-payment-a-step-by-step-receive-payment-walkthrough-42befe253f96?elqTrackId=46192906ba634ccbb10305363ac4ddc8&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF5B0EF48207017B586EFF4197C05B2A5A0EBD512E6767E92CA241D54CD8E806768>                                                               \r\n\r\n\"\" <https://medium.com/intuitdev/from-invoice-to-payment-a-step-by-step-receive-payment-walkthrough-42befe253f96?elqTrackId=482fcf50e27841ae9bbb95d8b229a194&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF5CD04A943DEEB0D47583785EE3F7DCC55EBD512E6767E92CA241D54CD8E806768>                                                   \r\n\r\nDeveloper portal <https://developer.intuit.com?elqTrackId=c7c9e5c647fe4e10bc5ccfb92de13487&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF59D59E099671CF371D026872907389301EBD512E6767E92CA241D54CD8E806768> | Intuit developer blog <https://blogs.intuit.com?elqTrackId=e7e9732b4d894d8f85a4ca0abb411a66&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF5E3B4141920334DDF2794750B0B5D5B8AEBD512E6767E92CA241D54CD8E806768> | Contact support <https://help.developer.intuit.com?elqTrackId=676fcd85313a416da8031bc6026bf285&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF5E97BB854BED0FE38100EB2ECED1AB44EEBD512E6767E92CA241D54CD8E806768>                                                                         \r\n\r\n\"\"                           \r\n\r\nUnsubscribe <https://app.dp.intuit.com/e/er?s=2332625&lid=28&elqTrackId=723947f68b6747e09b329f9d5552eba5&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqak=8AF574C421792C6D2DFFA5B2AEB8D54D3261EBD512E6767E92CA241D54CD8E806768>                                             \r\nIntuit respects your privacy. To learn more, read our Privacy Statement <https://www.intuit.com/privacy/?elqTrackId=4c7d767df89544d9a45b32a4fd4e4f7a&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF5067C47764D809F6B4042D23F33E62443EBD512E6767E92CA241D54CD8E806768>.\r\nIf you receive a suspicious email, please Report It <https://security.intuit.com/contact-us?elqTrackId=2e4d6b09c84440118cf004f83d2efb6f&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF567C0A5C817086D2DF3B104ECE91559FFEBD512E6767E92CA241D54CD8E806768>. Visit Security <https://security.intuit.com/?elqTrackId=7f4e00d7f90648febe85d6d5a137f15d&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF5D7E0577163A66B76362597DC7194AF69EBD512E6767E92CA241D54CD8E806768> to find out more.\r\n© 2026 Intuit Inc., All rights reserved. Trademarks <https://www.intuit.com/legal/trademark/?elqTrackId=5894d90fee18401d8a2d143ae14f3516&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF59EED8DFBB7C0E88A58B4A299F7849B9DEBD512E6767E92CA241D54CD8E806768>.                                                                                           \r\n\r\n\"Intuit\"                                 \r\n\r\n</html",
+    "html_body": "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">\r\n<html xmlns=\"http://www.w3.org/1999/xhtml\" xmlns:v=\"urn:schemas-microsoft-com:vml\" xmlns:o=\"urn:schemas-microsoft-com:office:office\">\r\n<head>\r\n    <!--[if gte mso 9]>\r\n    <xml>\r\n        <o:OfficeDocumentSettings>\r\n            <o:AllowPNG/>\r\n            <o:PixelsPerInch>96</o:PixelsPerInch>\r\n        </o:OfficeDocumentSettings>\r\n    </xml>\r\n    <![endif]-->\r\n    <meta http-equiv=\"Content-type\" content=\"text/html; charset=utf-8\" />\r\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1, maximum-scale=1\" />\r\n    <meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\" />\r\n    <meta name=\"format-detection\" content=\"date=no\" />\r\n    <meta name=\"format-detection\" content=\"address=no\" />\r\n    <meta name=\"format-detection\" content=\"telephone=no\" />\r\n    <meta name=\"x-apple-disable-message-reformatting\" />\r\n    <!--[if !mso]><!-->\r\n    <link href=\"https://quickbooks.intuit.com/qbmds-components/styles/sbseg/fonts.css\" rel=\"stylesheet\" />\r\n    <link href=\"https://fonts.googleapis.com/css?family=Helvetica:400,400i,700,700i\" rel=\"stylesheet\" />\r\n    <!--<![endif]-->\r\n    <title>Intuit Quickbooks</title>\r\n    <!--[if gte mso 9]>\r\n    <style type=\"text/css\" media=\"all\">\r\n        sup { font-size: 100% !important; }\r\n        .column-mso { display: table-cell !important; }\r\n        .mso-block { display: block !important; }\r\n    </style>\r\n    <![endif]-->\r\n\r\n    <style type=\"text/css\" media=\"screen\">\r\n        /* Linked Styles */\r\n        body {\r\n            padding: 0 !important;\r\n            margin: 0 !important;\r\n            display: block !important;\r\n            min-width: 100% !important;\r\n            width: 100% !important;\r\n            background: #5e8f5a;\r\n            -webkit-text-size-adjust: none;\r\n        }\r\n        a {\r\n            color: #236CFF;\r\n            text-decoration: underline;\r\n        }\r\n        p {\r\n            padding: 0 !important;\r\n            margin: 0 !important\r\n        }\r\n        img {\r\n            -ms-interpolation-mode: bicubic;\r\n        }\r\n        .mcnPreviewText {\r\n            display: none !important;\r\n        }\r\n\r\n        /* Mobile styles */\r\n        @media only screen and (max-width: 480px) {\r\n            .mobile-shell {\r\n                width: 100% !important;\r\n                min-width: 100% !important;\r\n            }\r\n            .container {\r\n                padding: 10px 10px 10px 10px !important;\r\n            }\r\n            .td {\r\n                width: 100% !important;\r\n                min-width: 100% !important;\r\n            }\r\n            .p40 {\r\n                padding: 20px !important;\r\n            }\r\n            .p40-10 {\r\n                padding: 20px 10px !important;\r\n            }\r\n            .p40-20 {\r\n                padding: 0px 20px 20px 20px !important;\r\n            }\r\n            .p30-15 {\r\n                padding: 30px 15px !important;\r\n            }\r\n            .m-left {\r\n                text-align: left !important;\r\n            }\r\n            .m-center {\r\n                text-align: center !important;\r\n            }\r\n\r\n            /* FIX: all fluid images stretch full width */\r\n            .fluid-img img {\r\n                width: 100% !important;\r\n                max-width: 100% !important;\r\n                height: auto !important;\r\n                display: block !important;\r\n            }\r\n\r\n            /* Stack columns vertically */\r\n            td.column,\r\n            td.column-top,\r\n            td.column-dir,\r\n            td.column-dir-top {\r\n                display: block !important;\r\n                width: 100% !important;\r\n                text-align: left !important;\r\n                padding-left: 0 !important;\r\n                padding-right: 0 !important;\r\n            }\r\n            th.column,\r\n            th.column-top,\r\n            th.column-dir,\r\n            th.column-dir-top {\r\n                display: block !important;\r\n                width: 100% !important;\r\n                text-align: left !important;\r\n                padding-left: 0 !important;\r\n                padding-right: 0 !important;\r\n            }\r\n            /* Hide spacer columns */\r\n            td.column-empty,\r\n            th.column-empty {\r\n                display: none !important;\r\n                width: 0 !important;\r\n                height: 0 !important;\r\n                font-size: 0 !important;\r\n                line-height: 0 !important;\r\n            }\r\n            /* Adjust button text */\r\n            .btn td {\r\n                display: block !important;\r\n                text-align: center !important;\r\n            }\r\n\r\n            /* Section 1 images (article-lg-1, article-lg-3) */\r\n            .sec1-img img {\r\n                width: 100% !important;\r\n                max-width: 100% !important;\r\n                height: auto !important;\r\n                display: block !important;\r\n            }\r\n            /* Section 1 text block */\r\n            .sec1-text {\r\n                display: block !important;\r\n                width: 100% !important;\r\n                padding-left: 0 !important;\r\n                padding-right: 0 !important;\r\n            }\r\n\r\n            .mobile-hide {\r\n                display: none !important;\r\n                width: 0 !important;\r\n                height: 0 !important;\r\n                overflow: hidden !important;\r\n                max-height: 0 !important;\r\n                line-height: 0 !important;\r\n            }\r\n        }\r\n    </style>\r\n</head>\r\n<body class=\"body\" style=\"padding:0 !important; margin:0 !important; display:block !important; min-width:100% !important; width:100% !important; background:#E2E9ED; -webkit-text-size-adjust:none;\"><div style=\"display:none;font-size:1px;color:#333333;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;\">\r\n    The latest platform news and updates for QuickBooks developers\r\n</div>\r\n\r\n\r\n\r\n\r\n    <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\" bgcolor=\"#E2E9ED\">\r\n        <tr>\r\n            <td align=\"center\" valign=\"top\">\r\n                <table width=\"650\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\" class=\"mobile-shell\">\r\n                    <tr>\r\n                        <td class=\"td container\" style=\"width:650px; min-width:650px; font-size:0pt; line-height:0pt; margin:0; font-weight:normal; padding:50px 0px 40px 0px;\">\r\n                            <!-- Header -->\r\n                            <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                <tr>\r\n                                    <td class=\"p40\" style=\"padding: 10px 40px 10px 40px; border-radius:10px 10px 0px 0px;\" bgcolor=\"#000000\">\r\n                                        <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                            <tr>\r\n                                                <td class=\"column-top\" width=\"auto\" style=\"vertical-align:top;\">\r\n                                                    <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                                        <tr>\r\n                                                            <td style=\"color:#000000; font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; font-size:12px; line-height:16px; text-transform:uppercase; text-align:left; padding: 20px 0px\">\r\n                                                                <img src=\"https://digitalasset.intuit.com/content/dam/intuit/qb-design/brand/brand-foundations/logo/qb-logo-preferred.svg\" width=\"143\" alt=\"Intuit Quickbooks logo\" style=\"max-width: 100%; height: auto;\" />\r\n                                                            </td>\r\n                                                        </tr>\r\n                                                    </table>\r\n                                                </td>\r\n                                                <td class=\"m-left\" align=\"right\" style=\"vertical-align:middle; white-space:nowrap;\">\r\n                                                    <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                                        <tr>\r\n                                                            <td style=\"font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; font-size:11px; line-height:16px; text-align:right; text-transform:uppercase;\">\r\n                                                                <a href=\"https://app.dp.intuit.com/e/es?s=2332625&e=3705&elqTrackId=29e34d2b03344f83a95e372f6bb3c5fa&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqak=8AF57E1EA942A33DFBC3002D08D9C404E635EBD512E6767E92CA241D54CD8E806768\" target=\"_blank\" style=\"color:#3BD85E; text-decoration:none;\"><span style=\"color:#C2F5FF;\">View on web</span></a>\r\n                                                            </td>\r\n                                                        </tr>\r\n                                                    </table>\r\n                                                </td>\r\n                                            </tr>\r\n                                        </table>\r\n                                    </td>\r\n                                </tr>\r\n                            </table>\r\n                            <!-- END Header -->\r\n\r\n                            <!-- Hero -->\r\n                            <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                <tr>\r\n                                    <td>\r\n                                        <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                            <tr>\r\n                                                <td class=\"p40\" style=\"padding: 15px 40px 0px 40px;\" bgcolor=\"#000000\">\r\n                                                    <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                                        <tr>\r\n                                                            <td bgcolor=\"\">\r\n                                                                <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                                                    <tr>\r\n                                                                        <td class=\"column-top\" style=\"vertical-align:middle;\">\r\n                                                                            <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                                                                <tr>\r\n                                                                                    <td style=\"color:#EAF6F7; font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; font-size:12px; line-height:normal; text-align:left; padding-bottom:20px; font-weight:500\">SEPTEMBER 2026</td>\r\n                                                                                </tr>\r\n                                                                                <tr>\r\n                                                                                    <td style=\"color:#5BEF76; font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; font-size:36px; line-height:44px; text-align:left; padding-bottom: 20px\">Intuit App Partner News</td>\r\n                                                                                </tr>\r\n                                                                            </table>\r\n                                                                        </td>\r\n                                                                        <td class=\"column-empty\" width=\"30\" style=\"font-size:0pt; line-height:0pt;\">&nbsp;</td>\r\n                                                                        <td class=\"column-top\" width=\"320\" style=\"vertical-align:top;\">\r\n                                                                            <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                                                                <tr>\r\n                                                                                    <td class=\"fluid-img\" style=\"font-size:0pt; line-height:0pt; text-align:left;\"><img src=\"https://www.intuit.com/blog/wp-content/uploads/2026/08/shutterstock_2585507241-1-header.jpg?w=600&h=338&crop=1\" width=\"\" height=\"\" border=\"0\" alt=\"\" style=\"border-radius:3px; width:100%; max-width:320px; height:auto;\" /></td>\r\n                                                                                </tr>\r\n                                                                            </table>\r\n                                                                        </td>\r\n                                                                    </tr>\r\n                                                                </table>\r\n                                                            </td>\r\n                                                        </tr>\r\n                                                    </table>\r\n                                                </td>\r\n                                            </tr>\r\n                                        </table>\r\n                                    </td>\r\n                                </tr>\r\n                            </table>\r\n                            <!-- END Hero -->\r\n\r\n                            <!-- Gradient Image -->\r\n                            <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\" bgcolor=\"#000000\">\r\n                                <tr>\r\n                                    <td>\r\n                                        <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                            <tr>\r\n                                                <td class=\"fluid-img\" style=\"font-size:0pt; line-height:0pt; text-align:left;\"><img src=\"https://image.dp.intuit.com/EloquaImages/clients/IntuitPartners/%7Bd0f4c421-da0d-4b5c-b391-caf5c74b8eb2%7D_septembergradient-dark_%282%29.png\" width=\"650\" height=\"65\" border=\"0\" alt=\"\" style=\"width:100%; max-width:650px; height:auto;\" /></td>\r\n                                            </tr>\r\n                                        </table>\r\n                                    </td>\r\n                                </tr>\r\n                            </table>\r\n                            <!-- END Gradient Image -->\r\n\r\n                           \r\n\r\n                            <!-- ============================================================ -->\r\n                            <!-- SECTION 1: Reaching Your Audience (QBO Discount)              -->\r\n                            <!-- ============================================================ -->\r\n                            <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                <tr>\r\n                                    <td>\r\n                                        <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                            <tr>\r\n                                                <td class=\"p40\" style=\"padding:30px 40px 40px 40px;\" bgcolor=\"#FFFFFF\">\r\n                                                    <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                                        \r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr>\r\n                                                            <td>\r\n                                                                <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                                                    <tr>\r\n                                                                        <td style=\"vertical-align:top;\">\r\n                                                                            <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                                                                <tr>\r\n                                                                                    <td class=\"m-left\" style=\"color:#000000; font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; font-size:28px; line-height:34px; text-align:left; font-weight:500; padding-bottom:20px\">Developer Tools</td>\r\n                                                                                </tr>\r\n                                                                                <tr>\r\n                                                                                    <td style=\"color:#00892E; font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; font-size:11px; line-height:10px; text-align:left; padding-bottom:3px;\">Developer Portal</td>\r\n                                                                                </tr>\r\n                                                                            </table>\r\n                                                                        </td>\r\n                                                                    </tr>\r\n                                                                    <tr>\r\n                                                                        <td>\r\n                                                                            <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                                                                <tr>\r\n                                                                                    <td class=\"column-top\" width=\"250\" style=\"vertical-align:top; padding-top:10px;\">\r\n                                                                                        <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                                                                            <tr>\r\n                                                                                                <td class=\"fluid-img\" style=\"font-size:0pt; line-height:0pt; text-align:left;\"><a href=\"https://developer.intuit.com/solutioncenter/overview?elqTrackId=bca9184dedf34efdbeee7367a4a0a7a9&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF582F771A9026641B8FC15B41A98FADA87EBD512E6767E92CA241D54CD8E806768\" target=\"_blank\"><img src=\"https://www.intuit.com/blog/wp-content/uploads/2024/09/file-4-5.jpg?crop=1&w=250&h=293\" width=\"250\" height=\"293\" border=\"0\" alt=\"\" style=\"border-radius:3px; width:100%; max-width:250px; height:293;\" /></a></td>\r\n                                                                                            </tr>\r\n                                                                                        </table>\r\n                                                                                    </td>\r\n                                                                                    <td class=\"column-empty\" width=\"30\" style=\"font-size:0pt; line-height:0pt;\">&nbsp;</td>\r\n                                                                                    <td class=\"column-top\" style=\"vertical-align:top;\">\r\n                                                                                        <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                                                                            <tr>\r\n                                                                                                <td>\r\n                                                                                                    <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                                                                                        <tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<td style=\"color:#000000; font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; font-size:22px; line-height:normal; text-align:left; padding-top:5px; padding-right: 20px; font-weight:300;\">Build the whole workflow faster, not one endpoint at a time</td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr>\r\n                                                                                                            <td style=\"color:#000000; font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; font-size:12px; line-height:18px; text-align:left; padding-bottom:5px; padding-top:10px;\">The Solution Center is now live on the Intuit Developer Portal. Ten solution accelerators walk you through complete QuickBooks Online workflows — receivables, payables, expenses, sales tax, and more. Each solution accelerator gives you a guided path, ready-to-use code samples, and sandbox testing. They follow Intuit platform best practices throughout the build to help you accelerate your development.</td>\r\n                                                                                                        </tr>\r\n                                                                                                        <tr>\r\n                                                                                                            <td align=\"left\">\r\n                                                                                                                <table border=\"0\" cellspacing=\"0\" cellpadding=\"0\" style=\"padding:20px 0px 0px 0px;\">\r\n                                                                                                                    <tr>\r\n                                                                                                                        <td class=\"btn\" style=\"font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; font-size:11.5px; padding:19px 20px; text-align:center; border-radius:3px; background:#5BEF76;\"><a href=\"https://developer.intuit.com/solutioncenter/overview?elqTrackId=55e73ababc604653a9fb2a7665fbb92c&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF53DDC2D811B5B75A959812C284DB0C95EEBD512E6767E92CA241D54CD8E806768\" target=\"_blank\" style=\"text-decoration:none;\"><span style=\"color:#000000; font-weight:600;\">Explore Solution Center</span></a></td>\r\n                                                                                                                    </tr>\r\n                                                                                                                </table>\r\n                                                                                                            </td>\r\n                                                                                                        </tr>\r\n                                                                                                    </table>\r\n                                                                                                </td>\r\n                                                                                            </tr>\r\n                                                                                        </table>\r\n                                                                                    </td>\r\n                                                                                </tr>\r\n                                                                            </table>\r\n                                                                        </td>\r\n                                                                    </tr>\r\n                                                                </table>\r\n                                                            </td>\r\n                                                        </tr>\r\n                                                    </table>\r\n                                                </td>\r\n                                            </tr>\r\n                                        </table>\r\n                                    </td>\r\n                                </tr>\r\n                            </table>\r\n                            <!-- END SECTION 1 -->\r\n\r\n\t\t\t\t\t\t\t\r\n\t\t\t\t\t\t\t\r\n                            <!-- ============================================================ -->\r\n                            <!-- SECTION 2: Platform News (Marketplace + In the Know)           -->\r\n                            <!-- ============================================================ -->\r\n                            <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                <tr>\r\n                                    <td>\r\n                                        <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n\t\t\t\t\t\t\t\t\t\t\t<tr>\r\n                                                <td class=\"p40\" style=\"padding:40px 40px 40px 40px;\" bgcolor=\"#EAF6F7\">\r\n                                                    <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                                        <tr>\r\n                                                            <td style=\"color:#000000; font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; font-size:28px; font-weight:500; line-height:normal; padding-bottom:10px; text-align:left\">Reaching Your Audience</td>\r\n                                                        </tr>\r\n                                                        <tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<td class=\"column-top\" width=\"290\" style=\"vertical-align:top; padding-top:10px;\">\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<td style=\"color:#00892E; font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; font-size:11px; line-height:10px; text-align:left; padding-bottom:7px;\">Developer Portal</td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<td style=\"color:#000000; font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; font-size:22px; line-height:normal; text-align:left; padding-bottom:8px; font-weight:300;\">Turn recommendations into revenue</td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<td style=\"color:#000000; font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; font-size:12px; line-height:18px; text-align:left; padding-bottom:5px; padding-top:;\">You already point people toward tools that work. Join the Intuit Product Referrals program, share your link, and collect up to $300 for every qualified customer in your network who subscribes to QuickBooks Online. They get 50% off for three months. Terms apply.</td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<td align=\"left\">\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<table border=\"0\" cellspacing=\"0\" cellpadding=\"0\" style=\"padding:20px 0px 0px 0px;\">\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<td class=\"btn\" style=\"font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; font-size:11.5px; padding:19px 20px; text-align:center; border-radius:3px; background:#000000;\"><a href=\"https://quickbooks.intuit.com/partners/referrals/?elqTrackId=0777076904354a5484b8c9b17e50f90c&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF56194F22E9FD3CABA83414589FE537C42EBD512E6767E92CA241D54CD8E806768\" target=\"_blank\" style=\"text-decoration:none;\"><span style=\"color:#FFFFFF; font-weight:600;\">Explore how it works</span></a></td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</table>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</table>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</table>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<td class=\"column-empty\" width=\"30\" style=\"font-size:0pt; line-height:0pt;\">&nbsp;</td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<td class=\"column-top\" style=\"vertical-align:top;\">\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<td class=\"fluid-img mobile-hide\" style=\"font-size:0pt; line-height:0pt; text-align:left; padding-top:15px;\"><a href=\"https://quickbooks.intuit.com/partners/referrals/?elqTrackId=1d4033006a5541c893162400c1bc6f3d&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF5877165E076CE3845CBC94E740A263DF7EBD512E6767E92CA241D54CD8E806768\" target=\"_blank\"><img src=\"https://quickbooks.intuit.com/oidam/intuit/sbseg-ipd/en_us/ipr/Inbound-hero-IPR.png?crop=1&w=250&h=245\" width=\"250\" height=\"245\" border=\"0\" alt=\"\" style=\"border-radius:3px; width:100%; max-width:250; height:245;\" /></a></td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</table>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</table>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</table>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tr>\r\n                                                    </table>\r\n                                                </td>\r\n                                            </tr>\r\n                                        </table>\r\n                                    </td>\r\n                                </tr>\r\n                            </table>\r\n                            <!-- END SECTION 2 -->\r\n\t\t\t\t\t\t\t\r\n\t\t\t\t\t\t\t\r\n\t\t\t\t\t\t\t<!-- ============================================================ -->\r\n                            <!-- SECTION 3: IMPORTANT UPDATES (Reports API deadline)           -->\r\n                            <!-- ============================================================ -->\r\n                            <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                <tr>\r\n                                    <td>\r\n                                        <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                            <tr>\r\n                                                <td class=\"p40\" style=\"padding:40px 40px 40px 40px;\" bgcolor=\"#FFFFFF\">\r\n                                                    <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                                        <tr>\r\n                                                            <td>\r\n                                                                <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                                                    <tr>\r\n                                                                        <td>\r\n                                                                            <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                                                                <tr>\r\n                                                                                    <td style=\"color:#00254A; font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; font-size:28px; font-weight:500; line-height:normal; padding-bottom:20px; text-align:left\">Developer Tools</td>\r\n                                                                                </tr>\r\n                                                                                \r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<td style=\"padding:20px; border-radius:3px;\" bgcolor=\"#000000\">\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tbody><tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<td style=\"color:#00892E; font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; font-size:11px; line-height:10px; text-align:center; padding-bottom:3px;\">Technical Tips</td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tbody><tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tbody><tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<td style=\"color:#5BEF76; font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; font-size:22px; line-height:normal; font-weight:300; text-align:center; padding-bottom:5px; padding-right:10px\">Subscribe to our status page</td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<td style=\"color:#FFFFFF; font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; font-size:12px; line-height:16px; text-align:center; padding-right:10px\">When there's an outage, you shouldn't have to file a support ticket to find out what's wrong. Subscribe to our status page to get notified the moment we detect an issue, and follow along as we post updates through resolution.</td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<td align=\"center\">\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<table border=\"0\" cellspacing=\"0\" cellpadding=\"0\" style=\"padding:20px 0px 0px 0px;\">\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<td class=\"btn\" style=\"font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; font-size:11.5px; padding:19px 20px; text-align:center; border-radius:3px; background:#FFFFFF;\"><a href=\"https://status.developer.intuit.com/?elqTrackId=67eb8723f2044fb592be47879cdd95c8&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF5024D2B3316B36180CF4F15E7300D1A12EBD512E6767E92CA241D54CD8E806768\" target=\"_blank\" style=\"text-decoration:none;\"><span style=\"color:#000000; font-weight:600;\">Subscribe now</span></a></td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</table>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tbody></table>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tbody></table>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tbody></table>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tr>\r\n                                                                            </table>\r\n                                                                        </td>\r\n                                                                    </tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr>\r\n                                                                        <td>\r\n                                                                            <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\" style=\"padding-bottom: 20px\">\r\n                                                                                <tr>\r\n                                                                                    <td class=\"column-top\" width=\"270\" style=\"vertical-align:top;\">\r\n                                                                                        <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                                                                            <tr>\r\n                                                                                                <td class=\"fluid-img mobile-hide\" style=\"font-size:0pt; line-height:0pt; text-align:left; padding-top:40px;\"><a href=\"https://medium.com/intuitdev/retrying-the-right-way-4xx-vs-5xx-9f4e2a61d5c4?elqTrackId=e7bab3e9e5504f5381b77e7520a8caac&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF5EE0722C2AFF6A77A3A5B38BED934ECC9EBD512E6767E92CA241D54CD8E806768\" target=\"_blank\"><img src=\"https://www.intuit.com/blog/wp-content/uploads/2025/07/Intuit-Blog-Header-13.png?crop=1&w=270&h=217\" width=\"270\" height=\"217\" border=\"0\" alt=\"\" style=\"border-radius:3px; width:100%; max-width:270px; height:217;\" /></a></td>\r\n                                                                                            </tr>\r\n                                                                                        </table>\r\n                                                                                    </td>\r\n                                                                                    <td class=\"column-empty\" width=\"30\" style=\"font-size:0pt; line-height:0pt;\">&nbsp;</td>\r\n                                                                                    <td class=\"column-top\" style=\"vertical-align:top; padding-top:40px;\">\r\n                                                                                        <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                                                                            <tr>\r\n                                                                                                <td>\r\n                                                                                                    <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t <tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<td style=\"color:#00892E; font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; font-size:11px; line-height:10px; text-align:left; padding-bottom:3px;\">Technical Tips</td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t <tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<td style=\"color:#000000; font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; font-size:22px; line-height:normal; text-align:left; padding-top:5px; padding-right: 20px; font-weight:300;\">Best practices for retrying API errors</td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr>\r\n                                                                                                            <td style=\"color:#000000; font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; font-size:12px; line-height:18px; text-align:left; padding-bottom:5px; padding-top:10px;\">Retrying a failed API call isn't always the right move. This post breaks down when retries help and when they just make things worse, plus practical safeguards to build in either way.</td>\r\n                                                                                                        </tr>\r\n                                                                                                        <tr>\r\n                                                                                                            <td align=\"left\">\r\n                                                                                                                <table border=\"0\" cellspacing=\"0\" cellpadding=\"0\" style=\"padding:20px 0px 0px 0px;\">\r\n                                                                                                                    <tr>\r\n                                                                                                                        <td class=\"btn\" style=\"font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; font-size:11.5px; padding:19px 20px; text-align:center; border-radius:3px; background:#5BEF76;\"><a href=\"https://medium.com/intuitdev/retrying-the-right-way-4xx-vs-5xx-9f4e2a61d5c4?elqTrackId=853581716298455591dad3335b31b912&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF51B99BDED64FCC446ED9255947B8EA1CEEBD512E6767E92CA241D54CD8E806768\" target=\"_blank\" style=\"text-decoration:none;\"><span style=\"color:#000000; font-weight:600;\">Learn more</span></a></td>\r\n                                                                                                                    </tr>\r\n                                                                                                                </table>\r\n                                                                                                            </td>\r\n                                                                                                        </tr>\r\n                                                                                                    </table>\r\n                                                                                                </td>\r\n                                                                                            </tr>\r\n                                                                                        </table>\r\n                                                                                    </td>\r\n                                                                                </tr>\r\n                                                                            </table>\r\n                                                                        </td>\r\n                                                                    </tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr>\r\n                                                                        <td>\r\n                                                                            <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\" style=\"padding-top: 20px\">\r\n                                                                                <tr>\r\n                                                                                    <td class=\"column-top\" width=\"270\" style=\"vertical-align:top; padding-top:15px;\">\r\n                                                                                        <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                                                                          <tr>\r\n                                                                                                <td>\r\n                                                                                                    <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t <tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<td style=\"color:#00892E; font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; font-size:11px; line-height:10px; text-align:left; padding-bottom:3px;\">Technical Tips</td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t <tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<td style=\"color:#000000; font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; font-size:22px; line-height:normal; text-align:left; padding-top:5px; padding-right: 20px; font-weight:300;\">From invoice to payment: A step-by-step walkthrough</td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tr>\r\n                                                                                                            <td style=\"color:#000000; font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; font-size:12px; line-height:18px; text-align:left; padding-bottom:5px; padding-top:10px;\">Processing a payment end to end touches two APIs and a lot of moving pieces — invoice, card token, charge, and reconciliation. This refreshed tutorial walks through each step with working request and response examples so you can wire it up correctly the first time.</td>\r\n                                                                                                        </tr>\r\n                                                                                                        <tr>\r\n                                                                                                            <td align=\"left\">\r\n                                                                                                                <table border=\"0\" cellspacing=\"0\" cellpadding=\"0\" style=\"padding:20px 0px 0px 0px;\">\r\n                                                                                                                    <tr>\r\n                                                                                                                        <td class=\"btn\" style=\"font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; font-size:11.5px; padding:19px 20px; text-align:center; border-radius:3px; background:#5BEF76;\"><a href=\"https://medium.com/intuitdev/from-invoice-to-payment-a-step-by-step-receive-payment-walkthrough-42befe253f96?elqTrackId=46192906ba634ccbb10305363ac4ddc8&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF5B0EF48207017B586EFF4197C05B2A5A0EBD512E6767E92CA241D54CD8E806768\" target=\"_blank\" style=\"text-decoration:none;\"><span style=\"color:#000000; font-weight:600;\">Learn more</span></a></td>\r\n                                                                                                                    </tr>\r\n                                                                                                                </table>\r\n                                                                                                            </td>\r\n                                                                                                        </tr>\r\n                                                                                                    </table>\r\n                                                                                                </td>\r\n                                                                                            </tr>  \r\n                                                                                        </table>\r\n                                                                                    </td>\r\n                                                                                    <td class=\"column-empty\" width=\"30\" style=\"font-size:0pt; line-height:0pt;\">&nbsp;</td>\r\n                                                                                    <td class=\"column-top\" style=\"vertical-align:top;\">\r\n                                                                                        <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                                                                            <tr>\r\n                                                                                                <td class=\"fluid-img mobile-hide\" style=\"font-size:0pt; line-height:0pt; text-align:left; padding-top:15px;\"><a href=\"https://medium.com/intuitdev/from-invoice-to-payment-a-step-by-step-receive-payment-walkthrough-42befe253f96?elqTrackId=482fcf50e27841ae9bbb95d8b229a194&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF5CD04A943DEEB0D47583785EE3F7DCC55EBD512E6767E92CA241D54CD8E806768\" target=\"_blank\"><img src=\"https://www.intuit.com/blog/wp-content/uploads/2025/09/1100x620.jpg?crop=1&w=270&h=280\" width=\"270\" height=\"280\" border=\"0\" alt=\"\" style=\"border-radius:3px; width:100%; max-width:270px; height:280;\" /></a></td>\r\n                                                                                            </tr>\r\n                                                                                        </table>\r\n                                                                                    </td>\r\n                                                                                </tr>\r\n                                                                            </table>\r\n                                                                        </td>\r\n                                                                    </tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\r\n                                                                </table>\r\n                                                            </td>\r\n                                                        </tr>\r\n                                                    </table>\r\n                                                </td>\r\n                                            </tr>\r\n                                        </table>\r\n                                    </td>\r\n                                </tr>\r\n                            </table>\r\n                            <!-- END SECTION 3 -->\r\n\t\t\t\t\t\t\t\r\n\t\t\t\t\t\t\t\r\n\t\t\t\t\t\t\t<!-- Section 4: Footer Links -->\r\n                            <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                <tr>\r\n                                    <td>\r\n                                        <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                            <td class=\"p40\" style=\"padding: 0px 40px 0px 40px\" bgcolor=\"#ffffff\">\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t<table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tbody><tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<td style=\"padding: 10px; border-radius:5px;\" bgcolor=\"#000000\">\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<tbody><tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t<td class=\"m-left\" style=\"color:#FFFFFF; font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; font-size:16px; line-height:normal; text-align:center; font-weight: 500;\"><a href=\"https://developer.intuit.com?elqTrackId=c7c9e5c647fe4e10bc5ccfb92de13487&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF59D59E099671CF371D026872907389301EBD512E6767E92CA241D54CD8E806768\" target=\"_blank\" style=\"color: #5BEF76; text-decoration: none\">Developer portal</a> <span style=\"font-size: 21px; font-weight: lighter;\">|</span>\r\n <a href=\"https://blogs.intuit.com?elqTrackId=e7e9732b4d894d8f85a4ca0abb411a66&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF5E3B4141920334DDF2794750B0B5D5B8AEBD512E6767E92CA241D54CD8E806768\" target=\"_blank\" style=\"color: #5BEF76; text-decoration: none\">Intuit developer blog</a> <span style=\"font-size: 21px; font-weight: lighter;\">|</span>  <a href=\"https://help.developer.intuit.com?elqTrackId=676fcd85313a416da8031bc6026bf285&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF5E97BB854BED0FE38100EB2ECED1AB44EEBD512E6767E92CA241D54CD8E806768\" target=\"_blank\" style=\"color: #5BEF76; text-decoration: none\">Contact support</a></td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tbody></table>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t</td>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t</tr>\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t</tbody></table>\r\n\t\t\t\t\t\t\t\t\t\t\t\t</td>\r\n                                        </table>\r\n                                    </td>\r\n                                </tr>\r\n                            </table>\r\n                            <!-- END Section 4 -->\r\n\r\n                            <!-- Footer Image -->\r\n                            <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\" bgcolor=\"#FFFFFF\">\r\n                                <tr>\r\n                                    <td>\r\n                                        <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                            <tr>\r\n                                                <td class=\"fluid-img\" style=\"font-size:0pt; line-height:0pt; text-align:left; display:block;\"><img src=\"https://image.dp.intuit.com/EloquaImages/clients/IntuitPartners/%7B08750202-ea39-4ea3-8e18-ef390e5a71c3%7D_septembergradient-light_%282%29.png\" width=\"650\" height=\"67\" border=\"0\" alt=\"\" style=\"width:100%; max-width:650px; height:auto;\" /></td>\r\n                                            </tr>\r\n                                        </table>\r\n                                    </td>\r\n                                </tr>\r\n                            </table>\r\n                            <!-- END Footer Image -->\r\n\r\n                            <!-- Footer -->\r\n                           \r\n                                                                                 <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\" bgcolor=\"#000000\">\r\n                                <tr>\r\n                                    <td class=\"p40\" style=\"padding:40px;\">\r\n                                        <table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                            <tr>\r\n                                                <td align=\"left\" style=\"padding-bottom:30px;\" valign=\"top\">\r\n                                                    <table align=\"left\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" style=\"font-family:Arial, Helvetica, sans-serif; font-size:12px;\">\r\n                                                        <tr>\r\n                                                            <td align=\"center\" valign=\"top\">\r\n                                                                <table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" style=\"font-family:Arial, Helvetica, sans-serif; font-size:12px;\">\r\n                                                                    <tr>\r\n                                                                        <td align=\"center\" class=\"stack\" valign=\"top\">\r\n                                                                            <table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" style=\"font-family:Arial, Helvetica, sans-serif; font-size:12px;\">\r\n                                                                                <tr>\r\n                                                                                    <td align=\"left\" style=\"font-family:'AvenirNext forINTUIT', Helvetica, Arial, sans-serif; color:#9d9e9f; font-size:11px; line-height:1.8; text-align:left;\" valign=\"top\">\r\n                                                                                           <a href=\"https://app.dp.intuit.com/e/er?s=2332625&lid=28&elqTrackId=723947f68b6747e09b329f9d5552eba5&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqak=8AF574C421792C6D2DFFA5B2AEB8D54D3261EBD512E6767E92CA241D54CD8E806768\" style=\"color:#5BEF76; text-decoration:underline; font-weight:normal;\" target=\"_blank\">Unsubscribe</a>\r\n                                                                                        <div style=\"font-size:11px; line-height:16px; text-align:left;\"> \t\t\t<span style=\"color:#FFFFFF;\">\r\n                                                                                              Intuit respects your privacy. To learn more, read our <a href=\"https://www.intuit.com/privacy/?elqTrackId=4c7d767df89544d9a45b32a4fd4e4f7a&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF5067C47764D809F6B4042D23F33E62443EBD512E6767E92CA241D54CD8E806768\" style=\"font-weight:normal; color:#C2F5FF\" target=\"_blank\">Privacy Statement</a>.<br />\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\tIf you receive a suspicious email, please <a href=\"https://security.intuit.com/contact-us?elqTrackId=2e4d6b09c84440118cf004f83d2efb6f&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF567C0A5C817086D2DF3B104ECE91559FFEBD512E6767E92CA241D54CD8E806768\" style=\"font-weight:normal; color:#C2F5FF\" target=\"_blank\">Report It</a>. Visit <a href=\"https://security.intuit.com/?elqTrackId=7f4e00d7f90648febe85d6d5a137f15d&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF5D7E0577163A66B76362597DC7194AF69EBD512E6767E92CA241D54CD8E806768\" style=\"font-weight:normal; color:#C2F5FF\" target=\"_blank\">Security</a> to find out more.<br />\r\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t&copy; 2026 Intuit Inc., All rights reserved. <a href=\"https://www.intuit.com/legal/trademark/?elqTrackId=5894d90fee18401d8a2d143ae14f3516&elq=b7019d7673774545b1b19ed839cbc3ce&elqaid=235&elqat=1&elqCampaignId=148&elqak=8AF59EED8DFBB7C0E88A58B4A299F7849B9DEBD512E6767E92CA241D54CD8E806768\" style=\"color:#C2F5FF\" target=\"_blank\">Trademarks</a>.\r\n                                                                                            </span>\r\n                                                                                        </div>\r\n                                                                                    </td>\r\n                                                                                </tr>\r\n                                                                            </table>\r\n                                                                        </td>\r\n                                                                    </tr>\r\n                                                                </table>\r\n                                                            </td>\r\n                                                        </tr>\r\n                                                    </table>\r\n                                                </td>\r\n                                            </tr>\r\n                                            <tr>\t\t\t\t\t\t\t\t\t  <td align=\"left\" style=\"padding-bottom:10px;\">\r\n                                                    <table border=\"0\" cellspacing=\"0\" cellpadding=\"0\">\r\n                                                        <tr>\r\n                                                            <td class=\"fluid-img\" style=\"font-size:0pt; line-height:0pt; text-align:left; display:block;\"><a href=\"\" target=\"_blank\"><img src=\"https://image.dp.intuit.com/EloquaImages/clients/IntuitPartners/%7B575a5b50-4cff-4c3d-8bf7-93f500fd16f1%7D_septemberIntuit_Proterty_Logos_Image_in_Footer_%283%29.png\" width=\"\" height=\"\" border=\"0\" alt=\"Intuit\" style=\"max-width:100%; height:auto;\" /></a></td>\r\n                                                        </tr>\r\n                                                    </table>\r\n                                                </td>\r\n                                            </tr>\r\n                                        </table>\r\n                                    </td>\r\n                                </tr>\r\n                            </table>\r\n                            <!-- END Footer -->\r\n                        </td>\r\n                    </tr>\r\n                </table>\r\n            </td>\r\n        </tr>\r\n    </table>\r\n\r\n</html\r\n\r\n</body></html>",
+    "attachments_metadata": [
+      {
+        "size": 9478,
+        "filename": "",
+        "content_type": "text/plain"
+      },
+      {
+        "size": 58605,
+        "filename": "",
+        "content_type": "text/html"
+      }
+    ],
+    "is_read": false,
+    "is_starred": false,
+    "has_attachments": true,
+    "created_at": "2026-10-16T05:27:35.717Z",
+    "updated_at": "2026-10-16T05:27:35.717Z"
+  }
+},
+{
+  "model": "core.tempemail",
+  "pk": 2,
+  "fields": {
+    "email_record": 2,
+    "uid": "121",
+    "subject": "Inquiry ",
+    "from_email": "doctor@drshiny.com",
+    "to_email": "minibini.test@gmail.com",
+    "cc_email": "",
+    "bcc_email": "",
+    "date_sent": "2026-10-10T19:29:47Z",
+    "in_reply_to": "",
+    "references": "",
+    "text_body": "Without files\r\n\r\nhttps://www.admonymous.co/drshiny\r\n",
+    "html_body": "",
+    "attachments_metadata": [],
+    "is_read": false,
+    "is_starred": false,
+    "has_attachments": false,
+    "created_at": "2026-10-16T05:27:35.904Z",
+    "updated_at": "2026-10-16T05:27:35.904Z"
+  }
+},
+{
+  "model": "core.tempemail",
+  "pk": 3,
+  "fields": {
+    "email_record": 3,
+    "uid": "122",
+    "subject": "CNC cutting?",
+    "from_email": "doctor@drshiny.com",
+    "to_email": "minibini.test@gmail.com",
+    "cc_email": "",
+    "bcc_email": "",
+    "date_sent": "2026-10-11T03:35:02Z",
+    "in_reply_to": "",
+    "references": "",
+    "text_body": "I need these things cut from plywood \r\n\r\nhttps://www.admonymous.co/drshiny\r\n",
+    "html_body": "",
+    "attachments_metadata": [],
+    "is_read": false,
+    "is_starred": false,
+    "has_attachments": false,
+    "created_at": "2026-10-16T05:27:36.253Z",
+    "updated_at": "2026-10-16T05:27:36.253Z"
   }
 },
 {
@@ -890788,6 +890935,162 @@
   }
 },
 {
+  "model": "core.jobhistory",
+  "pk": 51795,
+  "fields": {
+    "entry_type": "audit",
+    "object_type": "task",
+    "object_id": 9628,
+    "user": [
+      "dev_user"
+    ],
+    "timestamp": "2026-10-16T05:48:50.778Z",
+    "changes": {
+      "_created": true
+    },
+    "text": ""
+  }
+},
+{
+  "model": "core.jobhistory",
+  "pk": 51796,
+  "fields": {
+    "entry_type": "audit",
+    "object_type": "material",
+    "object_id": 190,
+    "user": [
+      "dev_user"
+    ],
+    "timestamp": "2026-10-16T05:48:57.969Z",
+    "changes": {
+      "task_id": {
+        "new": 9628,
+        "old": 1045
+      }
+    },
+    "text": ""
+  }
+},
+{
+  "model": "core.jobhistory",
+  "pk": 51797,
+  "fields": {
+    "entry_type": "audit",
+    "object_type": "task",
+    "object_id": 9629,
+    "user": [
+      "dev_user"
+    ],
+    "timestamp": "2026-10-16T05:57:32.104Z",
+    "changes": {
+      "_created": true
+    },
+    "text": ""
+  }
+},
+{
+  "model": "core.jobhistory",
+  "pk": 51798,
+  "fields": {
+    "entry_type": "audit",
+    "object_type": "material",
+    "object_id": 1545,
+    "user": [
+      "dev_user"
+    ],
+    "timestamp": "2026-10-16T05:58:01.077Z",
+    "changes": {
+      "_created": true
+    },
+    "text": ""
+  }
+},
+{
+  "model": "core.jobhistory",
+  "pk": 51799,
+  "fields": {
+    "entry_type": "audit",
+    "object_type": "material",
+    "object_id": 1545,
+    "user": [
+      "dev_user"
+    ],
+    "timestamp": "2026-10-16T05:58:01.078Z",
+    "changes": {
+      "cost_source": {
+        "new": "entered",
+        "old": null
+      }
+    },
+    "text": ""
+  }
+},
+{
+  "model": "core.jobhistory",
+  "pk": 51800,
+  "fields": {
+    "entry_type": "audit",
+    "object_type": "material",
+    "object_id": 1545,
+    "user": [
+      "dev_user"
+    ],
+    "timestamp": "2026-10-16T05:58:11.134Z",
+    "changes": {
+      "task_id": {
+        "new": 9629,
+        "old": null
+      }
+    },
+    "text": ""
+  }
+},
+{
+  "model": "core.jobhistory",
+  "pk": 51801,
+  "fields": {
+    "entry_type": "audit",
+    "object_type": "material",
+    "object_id": 1546,
+    "user": [
+      "dev_user"
+    ],
+    "timestamp": "2026-10-16T06:01:36.315Z",
+    "changes": {
+      "_created": true
+    },
+    "text": ""
+  }
+},
+{
+  "model": "core.jobhistory",
+  "pk": 51802,
+  "fields": {
+    "entry_type": "audit",
+    "object_type": "material",
+    "object_id": 1546,
+    "user": [
+      "dev_user"
+    ],
+    "timestamp": "2026-10-16T06:01:36.316Z",
+    "changes": {
+      "unit_cost": {
+        "new": "8",
+        "old": "0.00"
+      },
+      "cost_source": {
+        "new": "entered",
+        "old": null
+      },
+      "inventory_item_id": {
+        "new": 445,
+        "old": null
+      }
+    },
+    "text": ""
+  }
+},
+{
   "model": "core.crmhistory",
   "pk": 1,
   "fields": {
@@ -923881,6 +924184,18 @@
     "timestamp": "2026-10-16T01:03:36.393Z",
     "ip_address": "127.0.0.1",
     "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
+  }
+},
+{
+  "model": "core.loginevent",
+  "pk": 2,
+  "fields": {
+    "user": [
+      "dev_user"
+    ],
+    "timestamp": "2026-10-16T05:27:14.559Z",
+    "ip_address": "127.0.0.1",
+    "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"
   }
 },
 {
@@ -1225141,6 +1225456,58 @@
     "qty_source": "elapsed_time",
     "rate": "85.00",
     "unit_label": "hour",
+    "accounting_category": 3,
+    "active_modifiers": [],
+    "actual_qty": null,
+    "descoped_by": null
+  }
+},
+{
+  "model": "jobs.task",
+  "pk": 9628,
+  "fields": {
+    "name": "CNC cut signs",
+    "description": "cut 4 signs from 2 sheets of HDU (after painting and masking)",
+    "sort_order": 18,
+    "service_item": 12,
+    "est_worker_time": "03:00:00",
+    "est_qty": "75.00",
+    "parent_task": null,
+    "assignee": null,
+    "job": 263,
+    "status": "pending",
+    "blocked_reason": "",
+    "worker_queue": null,
+    "source_scheme": 1,
+    "qty_source": "entered_qty",
+    "rate": "22.00",
+    "unit_label": "min",
+    "accounting_category": 3,
+    "active_modifiers": [],
+    "actual_qty": null,
+    "descoped_by": null
+  }
+},
+{
+  "model": "jobs.task",
+  "pk": 9629,
+  "fields": {
+    "name": "CNC cut plywood panels",
+    "description": "rectangles with some blind holes",
+    "sort_order": 2,
+    "service_item": 12,
+    "est_worker_time": "01:00:00",
+    "est_qty": "18.00",
+    "parent_task": null,
+    "assignee": null,
+    "job": 39,
+    "status": "pending",
+    "blocked_reason": "",
+    "worker_queue": null,
+    "source_scheme": 1,
+    "qty_source": "entered_qty",
+    "rate": "22.00",
+    "unit_label": "min",
     "accounting_category": 3,
     "active_modifiers": [],
     "actual_qty": null,
@@ -1669745,9 +1670112,9 @@
   "pk": 52,
   "fields": {
     "job": 51,
-    "description": "CNC cut a set of 6 cabinets.  *****.75\" Holes*****  From Pre-Finished Apple Ply (for cabinet faces)  and Pre-Finished Baltic Birch (for the cabinet bodies)  ---This is price per cabinet",
+    "description": "cabinets from prefin ply with .75\" dia holes in front",
     "qty_ordered": "6.00",
-    "units": "none",
+    "units": "ea",
     "source_line": null,
     "sort_order": 10,
     "created_at": "2026-09-13T00:00:00Z",
@@ -1669983,25 +1670350,11 @@
   "pk": 69,
   "fields": {
     "job": 68,
-    "description": "Build tabletop display with wood base and 1/8\" neon green acrylic cover, to which 4 HUGs are attached with Aire rails supporting two sample solar panel frames\nEnstall to provide all attachment hardware, Neal's to provide wood and acrylic (see below)",
+    "description": "tabletop display with wood base and 1/8\" neon green acrylic cover, to which 4 HUGs are attached with Aire rails supporting two sample solar panel frames",
     "qty_ordered": "20.00",
     "units": "none",
     "source_line": null,
     "sort_order": 10,
-    "created_at": "2026-09-02T00:00:00Z",
-    "updated_at": "2026-09-02T00:00:00Z"
-  }
-},
-{
-  "model": "deliverables.deliverable",
-  "pk": 70,
-  "fields": {
-    "job": 68,
-    "description": "2x4 lumber, 8' long",
-    "qty_ordered": "6.00",
-    "units": "none",
-    "source_line": null,
-    "sort_order": 20,
     "created_at": "2026-09-02T00:00:00Z",
     "updated_at": "2026-09-02T00:00:00Z"
   }
@@ -1670165,8 +1670518,8 @@
   "pk": 82,
   "fields": {
     "job": 80,
-    "description": "Fake Deliverable",
-    "qty_ordered": "1.00",
+    "description": "Parts for M58 booth from blk/wht prelam",
+    "qty_ordered": "2.00",
     "units": "ea",
     "source_line": null,
     "sort_order": 10,
@@ -1672867,7 +1673220,7 @@
   "pk": 275,
   "fields": {
     "job": 263,
-    "description": "Fake Deliverable",
+    "description": "\"BLDG 21\" large sign",
     "qty_ordered": "1.00",
     "units": "ea",
     "source_line": null,
@@ -1702190,6 +1702543,104 @@
     "sort_order": 10,
     "created_at": "2022-02-13T00:00:00Z",
     "updated_at": "2022-02-13T00:00:00Z"
+  }
+},
+{
+  "model": "deliverables.deliverable",
+  "pk": 2370,
+  "fields": {
+    "job": 80,
+    "description": "parts for M67 booth from blk/wht prelam",
+    "qty_ordered": "2.00",
+    "units": "ea",
+    "source_line": null,
+    "sort_order": 11,
+    "created_at": "2026-08-25T00:00:00Z",
+    "updated_at": "2026-08-25T00:00:00Z"
+  }
+},
+{
+  "model": "deliverables.deliverable",
+  "pk": 2371,
+  "fields": {
+    "job": 263,
+    "description": "\"BLDG 3\" large sign",
+    "qty_ordered": "1.00",
+    "units": "ea",
+    "source_line": null,
+    "sort_order": 11,
+    "created_at": "2026-05-20T00:00:00Z",
+    "updated_at": "2026-05-20T00:00:00Z"
+  }
+},
+{
+  "model": "deliverables.deliverable",
+  "pk": 2372,
+  "fields": {
+    "job": 263,
+    "description": "\"BLDG 4\" large sign",
+    "qty_ordered": "1.00",
+    "units": "ea",
+    "source_line": null,
+    "sort_order": 12,
+    "created_at": "2026-05-20T00:00:00Z",
+    "updated_at": "2026-05-20T00:00:00Z"
+  }
+},
+{
+  "model": "deliverables.deliverable",
+  "pk": 2373,
+  "fields": {
+    "job": 263,
+    "description": "\"BLDG 22\" large sign",
+    "qty_ordered": "1.00",
+    "units": "ea",
+    "source_line": null,
+    "sort_order": 14,
+    "created_at": "2026-05-20T00:00:00Z",
+    "updated_at": "2026-05-20T00:00:00Z"
+  }
+},
+{
+  "model": "deliverables.deliverable",
+  "pk": 2374,
+  "fields": {
+    "job": 263,
+    "description": "\"Security\" small sign",
+    "qty_ordered": "1.00",
+    "units": "ea",
+    "source_line": null,
+    "sort_order": 15,
+    "created_at": "2026-05-20T00:00:00Z",
+    "updated_at": "2026-05-20T00:00:00Z"
+  }
+},
+{
+  "model": "deliverables.deliverable",
+  "pk": 2375,
+  "fields": {
+    "job": 263,
+    "description": "\"Worklife\" small sign",
+    "qty_ordered": "1.00",
+    "units": "ea",
+    "source_line": null,
+    "sort_order": 16,
+    "created_at": "2026-05-20T00:00:00Z",
+    "updated_at": "2026-05-20T00:00:00Z"
+  }
+},
+{
+  "model": "deliverables.deliverable",
+  "pk": 2376,
+  "fields": {
+    "job": 263,
+    "description": "\"Transportation\" small sign",
+    "qty_ordered": "1.00",
+    "units": "ea",
+    "source_line": null,
+    "sort_order": 17,
+    "created_at": "2026-05-20T00:00:00Z",
+    "updated_at": "2026-05-20T00:00:00Z"
   }
 },
 {
@@ -1913415,7 +1913866,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1913438,7 +1913890,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1913461,7 +1913914,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1913484,7 +1913938,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1913507,7 +1913962,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1913530,7 +1913986,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1913553,7 +1914010,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1913576,7 +1914034,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1913599,7 +1914058,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1913622,7 +1914082,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1913645,7 +1914106,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1913668,7 +1914130,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1913691,7 +1914154,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1913714,7 +1914178,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1913737,7 +1914202,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1913760,7 +1914226,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1913783,7 +1914250,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1913806,7 +1914274,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1913829,7 +1914298,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1913852,7 +1914322,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1913875,7 +1914346,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1913898,7 +1914370,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1913921,7 +1914394,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1913944,7 +1914418,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1913967,7 +1914442,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1913990,7 +1914466,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914013,7 +1914490,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914036,7 +1914514,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914059,7 +1914538,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914082,7 +1914562,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914105,7 +1914586,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914128,7 +1914610,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914151,7 +1914634,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914174,7 +1914658,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914197,7 +1914682,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914220,7 +1914706,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914243,7 +1914730,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914266,7 +1914754,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914289,7 +1914778,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914312,7 +1914802,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914335,7 +1914826,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914358,7 +1914850,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914381,7 +1914874,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914404,7 +1914898,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914427,7 +1914922,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914450,7 +1914946,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914473,7 +1914970,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914496,7 +1914994,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914519,7 +1915018,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914542,7 +1915042,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914565,7 +1915066,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914588,7 +1915090,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914611,7 +1915114,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914634,7 +1915138,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914657,7 +1915162,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914680,7 +1915186,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914703,7 +1915210,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914726,7 +1915234,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914749,7 +1915258,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914772,7 +1915282,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914795,7 +1915306,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914818,7 +1915330,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914841,7 +1915354,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914864,7 +1915378,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914887,7 +1915402,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914910,7 +1915426,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914933,7 +1915450,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914956,7 +1915474,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1914979,7 +1915498,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915002,7 +1915522,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915025,7 +1915546,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915048,7 +1915570,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915071,7 +1915594,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915094,7 +1915618,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915117,7 +1915642,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915140,7 +1915666,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915163,7 +1915690,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915186,7 +1915714,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915209,7 +1915738,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915232,7 +1915762,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915255,7 +1915786,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915278,7 +1915810,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915301,7 +1915834,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915324,7 +1915858,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915347,7 +1915882,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915370,7 +1915906,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915393,7 +1915930,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915416,7 +1915954,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915439,7 +1915978,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915462,7 +1916002,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915485,7 +1916026,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915508,7 +1916050,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915531,7 +1916074,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915554,7 +1916098,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915577,7 +1916122,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915600,7 +1916146,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915623,7 +1916170,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915646,7 +1916194,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915669,7 +1916218,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915692,7 +1916242,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915715,7 +1916266,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915738,7 +1916290,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915761,7 +1916314,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915784,7 +1916338,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915807,7 +1916362,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915830,7 +1916386,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915853,7 +1916410,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915876,7 +1916434,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915899,7 +1916458,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915922,7 +1916482,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915945,7 +1916506,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915968,7 +1916530,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1915991,7 +1916554,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916014,7 +1916578,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916037,7 +1916602,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916060,7 +1916626,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916083,7 +1916650,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916106,7 +1916674,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916129,7 +1916698,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916152,7 +1916722,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916175,7 +1916746,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916198,7 +1916770,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916221,7 +1916794,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916244,7 +1916818,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916267,7 +1916842,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916290,7 +1916866,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916313,7 +1916890,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916336,7 +1916914,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916359,7 +1916938,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916382,7 +1916962,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916405,7 +1916986,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916428,7 +1917010,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916451,7 +1917034,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916474,7 +1917058,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916497,7 +1917082,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916520,7 +1917106,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916543,7 +1917130,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916566,7 +1917154,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916589,7 +1917178,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916612,7 +1917202,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916635,7 +1917226,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916658,7 +1917250,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916681,7 +1917274,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916704,7 +1917298,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916727,7 +1917322,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916750,7 +1917346,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916773,7 +1917370,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916796,7 +1917394,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916819,7 +1917418,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916842,7 +1917442,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916865,7 +1917466,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916888,7 +1917490,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916911,7 +1917514,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916934,7 +1917538,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916957,7 +1917562,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1916980,7 +1917586,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917003,7 +1917610,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917026,7 +1917634,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917049,7 +1917658,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917072,7 +1917682,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917095,7 +1917706,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917118,7 +1917730,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917141,7 +1917754,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917164,7 +1917778,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917187,7 +1917802,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917210,7 +1917826,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917233,7 +1917850,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917256,7 +1917874,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917279,7 +1917898,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917302,7 +1917922,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917325,7 +1917946,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917348,7 +1917970,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917371,7 +1917994,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917394,7 +1918018,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917417,7 +1918042,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917440,7 +1918066,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917463,7 +1918090,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917486,7 +1918114,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917509,7 +1918138,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917532,7 +1918162,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917555,7 +1918186,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917578,7 +1918210,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917601,7 +1918234,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917624,7 +1918258,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917647,7 +1918282,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917670,7 +1918306,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917693,7 +1918330,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917716,7 +1918354,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917739,7 +1918378,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917762,7 +1918402,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917785,7 +1918426,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917808,7 +1918450,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917831,7 +1918474,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917854,7 +1918498,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917877,7 +1918522,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917900,7 +1918546,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917923,7 +1918570,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917946,7 +1918594,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917969,7 +1918618,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1917992,7 +1918642,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918015,7 +1918666,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918038,7 +1918690,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918061,7 +1918714,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918084,7 +1918738,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918107,7 +1918762,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918130,7 +1918786,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918153,7 +1918810,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918176,7 +1918834,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918199,7 +1918858,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918222,7 +1918882,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918245,7 +1918906,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918268,7 +1918930,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918291,7 +1918954,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918314,7 +1918978,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918337,7 +1919002,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918360,7 +1919026,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918383,7 +1919050,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918406,7 +1919074,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918429,7 +1919098,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918452,7 +1919122,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918475,7 +1919146,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918498,7 +1919170,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918521,7 +1919194,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918544,7 +1919218,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918567,7 +1919242,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918590,7 +1919266,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918613,7 +1919290,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918636,7 +1919314,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918659,7 +1919338,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918682,7 +1919362,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918705,7 +1919386,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918728,7 +1919410,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918751,7 +1919434,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918774,7 +1919458,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918797,7 +1919482,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918820,7 +1919506,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918843,7 +1919530,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918866,7 +1919554,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918889,7 +1919578,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918912,7 +1919602,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918935,7 +1919626,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918958,7 +1919650,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1918981,7 +1919674,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919004,7 +1919698,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919027,7 +1919722,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919050,7 +1919746,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919073,7 +1919770,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919096,7 +1919794,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919119,7 +1919818,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919142,7 +1919842,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919165,7 +1919866,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919188,7 +1919890,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919211,7 +1919914,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919234,7 +1919938,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919257,7 +1919962,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919280,7 +1919986,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919303,7 +1920010,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919326,7 +1920034,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919349,7 +1920058,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919372,7 +1920082,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919395,7 +1920106,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919418,7 +1920130,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919441,7 +1920154,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919464,7 +1920178,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919487,7 +1920202,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919510,7 +1920226,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919533,7 +1920250,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919556,7 +1920274,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919579,7 +1920298,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919602,7 +1920322,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919625,7 +1920346,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919648,7 +1920370,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919671,7 +1920394,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919694,7 +1920418,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919717,7 +1920442,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919740,7 +1920466,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919763,7 +1920490,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919786,7 +1920514,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919809,7 +1920538,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919832,7 +1920562,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919855,7 +1920586,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919878,7 +1920610,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919901,7 +1920634,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919924,7 +1920658,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919947,7 +1920682,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919970,7 +1920706,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1919993,7 +1920730,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920016,7 +1920754,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920039,7 +1920778,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920062,7 +1920802,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920085,7 +1920826,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920108,7 +1920850,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920131,7 +1920874,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920154,7 +1920898,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920177,7 +1920922,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920200,7 +1920946,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920223,7 +1920970,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920246,7 +1920994,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920269,7 +1921018,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920292,7 +1921042,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920315,7 +1921066,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920338,7 +1921090,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920361,7 +1921114,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920384,7 +1921138,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920407,7 +1921162,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920430,7 +1921186,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920453,7 +1921210,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920476,7 +1921234,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920499,7 +1921258,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920522,7 +1921282,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920545,7 +1921306,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920568,7 +1921330,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920591,7 +1921354,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920614,7 +1921378,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920637,7 +1921402,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920660,7 +1921426,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920683,7 +1921450,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920706,7 +1921474,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920729,7 +1921498,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920752,7 +1921522,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920775,7 +1921546,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920798,7 +1921570,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920821,7 +1921594,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920844,7 +1921618,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920867,7 +1921642,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920890,7 +1921666,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920913,7 +1921690,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920936,7 +1921714,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920959,7 +1921738,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1920982,7 +1921762,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921005,7 +1921786,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921028,7 +1921810,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921051,7 +1921834,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921074,7 +1921858,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921097,7 +1921882,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921120,7 +1921906,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921143,7 +1921930,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921166,7 +1921954,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921189,7 +1921978,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921212,7 +1922002,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921235,7 +1922026,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921258,7 +1922050,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921281,7 +1922074,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921304,7 +1922098,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921327,7 +1922122,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921350,7 +1922146,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921373,7 +1922170,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921396,7 +1922194,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921419,7 +1922218,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921442,7 +1922242,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921465,7 +1922266,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921488,7 +1922290,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921511,7 +1922314,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921534,7 +1922338,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921557,7 +1922362,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921580,7 +1922386,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921603,7 +1922410,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921626,7 +1922434,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921649,7 +1922458,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921672,7 +1922482,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921695,7 +1922506,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921718,7 +1922530,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921741,7 +1922554,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921764,7 +1922578,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921787,7 +1922602,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921810,7 +1922626,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921833,7 +1922650,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921856,7 +1922674,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921879,7 +1922698,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921902,7 +1922722,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921925,7 +1922746,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921948,7 +1922770,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921971,7 +1922794,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1921994,7 +1922818,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1922017,7 +1922842,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1922040,7 +1922866,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1922063,7 +1922890,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1922086,7 +1922914,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1922109,7 +1922938,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1922132,7 +1922962,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1922155,7 +1922986,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1922178,7 +1923010,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1922201,7 +1923034,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1922224,7 +1923058,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1922247,7 +1923082,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1922270,7 +1923106,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1922293,7 +1923130,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1922316,7 +1923154,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1922339,7 +1923178,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1922362,7 +1923202,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1922385,7 +1923226,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1922408,7 +1923250,8 @@
     "receipt_note": "",
     "qty_cancelled": "0.00",
     "final_price": null,
-    "invoice_only": false
+    "invoice_only": false,
+    "vendor_sku": ""
   }
 },
 {
@@ -1922496,6 +1923339,17 @@
     "job": 263,
     "quantity": "2.00",
     "created_date": "2026-05-20T00:00:00Z",
+    "notes": ""
+  }
+},
+{
+  "model": "inventory.earmark",
+  "pk": 9,
+  "fields": {
+    "inventory_item": 445,
+    "job": 68,
+    "quantity": "4.00",
+    "created_date": "2026-10-16T06:01:36.308Z",
     "notes": ""
   }
 },
@@ -1923189,7 +1924043,7 @@
     "description": "4'x8' x 3/4\" sheet(s) of Baltic Birch plywood  *price as of 10/21/25*",
     "purchase_price": "95.00",
     "selling_price": "114.00",
-    "qty_on_hand": "72.00",
+    "qty_on_hand": "2.00",
     "qty_sold": "1315.12",
     "qty_wasted": "0.00",
     "is_active": true,
@@ -1929882,16 +1930736,16 @@
   "pk": 435,
   "fields": {
     "code": "LOT-00435",
-    "description": "Jig for mounting placement from slipsheet (Material included)",
+    "qbo_id": "",
     "units": "ea",
-    "selling_price": "49.99",
+    "description": "Jig for mounting placement from slipsheet (Material included)",
     "purchase_price": "41.66",
+    "selling_price": "49.99",
     "qty_on_hand": "0.00",
     "qty_sold": "1.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "accounting_category": 2,
-    "qbo_id": ""
+    "accounting_category": 2
   }
 },
 {
@@ -1929899,16 +1930753,16 @@
   "pk": 436,
   "fields": {
     "code": "LOT-00436",
-    "description": "4'x8' x 1/2\" sheet(s) of marine ply\n**price is estimated**",
+    "qbo_id": "",
     "units": "sheet",
-    "selling_price": "150.00",
+    "description": "4'x8' x 1/2\" sheet(s) of marine ply\n**price is estimated**",
     "purchase_price": "125.00",
+    "selling_price": "150.00",
     "qty_on_hand": "0.00",
     "qty_sold": "2.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "accounting_category": 2,
-    "qbo_id": ""
+    "accounting_category": 2
   }
 },
 {
@@ -1929916,16 +1930770,16 @@
   "pk": 437,
   "fields": {
     "code": "LOT-00437",
-    "description": "4'x8' x 3/8\" sheet(s) of marine ply\n**price is estimated**",
+    "qbo_id": "",
     "units": "sheet",
-    "selling_price": "109.99",
+    "description": "4'x8' x 3/8\" sheet(s) of marine ply\n**price is estimated**",
     "purchase_price": "91.66",
+    "selling_price": "109.99",
     "qty_on_hand": "0.00",
     "qty_sold": "5.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "accounting_category": 2,
-    "qbo_id": ""
+    "accounting_category": 2
   }
 },
 {
@@ -1929933,16 +1930787,16 @@
   "pk": 438,
   "fields": {
     "code": "LOT-00438",
-    "description": "New parts layout, full sheets of 56 parts",
+    "qbo_id": "",
     "units": "sheet",
-    "selling_price": "374.99",
+    "description": "New parts layout, full sheets of 56 parts",
     "purchase_price": "312.49",
+    "selling_price": "374.99",
     "qty_on_hand": "0.00",
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "accounting_category": 2,
-    "qbo_id": ""
+    "accounting_category": 2
   }
 },
 {
@@ -1929950,16 +1930804,16 @@
   "pk": 439,
   "fields": {
     "code": "LOT-00439",
-    "description": "4'x8' x 2\" sheet(s) of 15 lb. High Density Urethane foam\nNote: material will fit (3) additional 24\"dia. forms at 4\" thick.",
+    "qbo_id": "",
     "units": "sheet",
-    "selling_price": "599.98",
+    "description": "4'x8' x 2\" sheet(s) of 15 lb. High Density Urethane foam\nNote: material will fit (3) additional 24\"dia. forms at 4\" thick.",
     "purchase_price": "499.98",
+    "selling_price": "599.98",
     "qty_on_hand": "0.00",
     "qty_sold": "1.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "accounting_category": 2,
-    "qbo_id": ""
+    "accounting_category": 2
   }
 },
 {
@@ -1929967,16 +1930821,16 @@
   "pk": 440,
   "fields": {
     "code": "LOT-00440",
-    "description": "4'x10' sheet(s) of exterior plywood **price may vary**",
+    "qbo_id": "",
     "units": "sheet",
-    "selling_price": "209.99",
+    "description": "4'x10' sheet(s) of exterior plywood **price may vary**",
     "purchase_price": "174.99",
+    "selling_price": "209.99",
     "qty_on_hand": "0.00",
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "accounting_category": 2,
-    "qbo_id": ""
+    "accounting_category": 2
   }
 },
 {
@@ -1929984,16 +1930838,16 @@
   "pk": 441,
   "fields": {
     "code": "LOT-00441",
-    "description": "4'x8' x 1/4\" sheet(s) of Plyboo bamboo ply\n*price as of 4/1/22*",
+    "qbo_id": "",
     "units": "sheet",
-    "selling_price": "215.99",
+    "description": "4'x8' x 1/4\" sheet(s) of Plyboo bamboo ply\n*price as of 4/1/22*",
     "purchase_price": "179.99",
+    "selling_price": "215.99",
     "qty_on_hand": "0.00",
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "accounting_category": 2,
-    "qbo_id": ""
+    "accounting_category": 2
   }
 },
 {
@@ -1930001,16 +1930855,16 @@
   "pk": 442,
   "fields": {
     "code": "LOT-00442",
-    "description": "4'x8' x 5/8\" sheet(s) of melamine with particleboard core, white\n*price as of 4/7/22*",
+    "qbo_id": "",
     "units": "sheet",
-    "selling_price": "51.49",
+    "description": "4'x8' x 5/8\" sheet(s) of melamine with particleboard core, white\n*price as of 4/7/22*",
     "purchase_price": "42.91",
+    "selling_price": "51.49",
     "qty_on_hand": "0.00",
     "qty_sold": "0.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "accounting_category": 2,
-    "qbo_id": ""
+    "accounting_category": 2
   }
 },
 {
@@ -1930018,16 +1930872,16 @@
   "pk": 443,
   "fields": {
     "code": "LOT-00443",
-    "description": "Waterjet part(s) from HD FRP sheets, either\n00012886-01 REV01 \"ANTISLIP, ODP, LEFT\"\n00012886-02 REV01 \"ANTISLIP, ODP, RIGHT\"",
+    "qbo_id": "",
     "units": "sheet",
-    "selling_price": "319.99",
+    "description": "Waterjet part(s) from HD FRP sheets, either\n00012886-01 REV01 \"ANTISLIP, ODP, LEFT\"\n00012886-02 REV01 \"ANTISLIP, ODP, RIGHT\"",
     "purchase_price": "266.66",
+    "selling_price": "319.99",
     "qty_on_hand": "0.00",
     "qty_sold": "6.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "accounting_category": 2,
-    "qbo_id": ""
+    "accounting_category": 2
   }
 },
 {
@@ -1930035,16 +1930889,33 @@
   "pk": 444,
   "fields": {
     "code": "LOT-00444",
-    "description": "4'x8' sheet(s) of Watco Fiberglass Reinforced Plastic.\nBlack, Medium grit",
+    "qbo_id": "",
     "units": "sheet",
-    "selling_price": "467.98",
+    "description": "4'x8' sheet(s) of Watco Fiberglass Reinforced Plastic.\nBlack, Medium grit",
     "purchase_price": "389.98",
+    "selling_price": "467.98",
     "qty_on_hand": "0.00",
     "qty_sold": "6.00",
     "qty_wasted": "0.00",
     "is_active": true,
-    "accounting_category": 2,
-    "qbo_id": ""
+    "accounting_category": 2
+  }
+},
+{
+  "model": "inventory.inventoryitem",
+  "pk": 445,
+  "fields": {
+    "code": "LOT-1546",
+    "qbo_id": "",
+    "units": "ea",
+    "description": "2x6 lumber, 8' lengths",
+    "purchase_price": "8.00",
+    "selling_price": "11.00",
+    "qty_on_hand": "0.00",
+    "qty_sold": "0.00",
+    "qty_wasted": "0.00",
+    "is_active": true,
+    "accounting_category": 2
   }
 },
 {
@@ -1933838,7 +1934709,7 @@
     "sell_price": "690.00",
     "inventory_item": 167,
     "accounting_category": 2,
-    "task": 1045,
+    "task": 9628,
     "job": 263,
     "consumption_state": "pending",
     "released_qty": "0.00",
@@ -1960921,6 +1961792,46 @@
     "task": 9610,
     "job": 2267,
     "consumption_state": "consumed",
+    "released_qty": "0.00",
+    "po_line_item": null,
+    "cost_source": "entered",
+    "descoped_by": null
+  }
+},
+{
+  "model": "inventory.material",
+  "pk": 1545,
+  "fields": {
+    "description": "4'x8' x 3/4\" sheet(s) of Baltic Birch plywood  *price as of 10/21/25*",
+    "quantity": "3.00",
+    "units": "sheet",
+    "unit_cost": "95.00",
+    "sell_price": "114.00",
+    "inventory_item": 41,
+    "accounting_category": 2,
+    "task": 9629,
+    "job": 39,
+    "consumption_state": "pending",
+    "released_qty": "0.00",
+    "po_line_item": null,
+    "cost_source": "entered",
+    "descoped_by": null
+  }
+},
+{
+  "model": "inventory.material",
+  "pk": 1546,
+  "fields": {
+    "description": "2x6 lumber, 8' lengths",
+    "quantity": "4.00",
+    "units": "ea",
+    "unit_cost": "8.00",
+    "sell_price": "11.00",
+    "inventory_item": 445,
+    "accounting_category": 2,
+    "task": null,
+    "job": 68,
+    "consumption_state": "pending",
     "released_qty": "0.00",
     "po_line_item": null,
     "cost_source": "entered",

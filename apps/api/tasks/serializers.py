@@ -10,7 +10,8 @@ from apps.core.models import AccountingCategory
 from apps.core.units import UnitsField
 
 
-class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
+class MaterialSerializer(JobScopedCanManageMixin, InvoiceRefMixin, serializers.ModelSerializer):
+    can_manage_job_path = 'job'
     invoice_source_type = 'material'
     is_expense_bound = serializers.BooleanField(read_only=True)
     po_line_item_id = serializers.SerializerMethodField()
@@ -36,7 +37,7 @@ class MaterialSerializer(InvoiceRefMixin, serializers.ModelSerializer):
             'is_expense_bound',
             'po_line_item_id', 'po_id', 'po_number', 'po_status',
             'qty_on_hand', 'qty_on_order', 'qty_available', 'item_code',
-            'invoice',
+            'invoice', 'can_manage',
         ]
         read_only_fields = fields
 

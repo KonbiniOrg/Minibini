@@ -15,15 +15,10 @@
   let formError = $state('');
   let fieldErrs = $state({});
 
-  // Context from query params (?job=…&material=…).
+  // Context from query params (?business=…&contact=…).
   const initialParams = new URLSearchParams($querystring);
-  const contextJobId = initialParams.get('job');
-  const contextMaterialId = initialParams.get('material');
-  const contextInventoryItemId = initialParams.get('inventory_item');
   const contextBusinessId = initialParams.get('business') ? Number(initialParams.get('business')) : null;
   const contextContactId = initialParams.get('contact') ? Number(initialParams.get('contact')) : null;
-  let contextJob = $state(null);
-  let contextMaterial = $state(null);
 
   async function load() {
     loading = true;
@@ -33,21 +28,6 @@
 
       if (isEdit) {
         po = await api.get(`/api/purchase-orders/${params.id}/`);
-      }
-
-      if (contextJobId) {
-        try {
-          contextJob = await api.get(`/api/jobs/${contextJobId}/`);
-        } catch {
-          contextJob = null;
-        }
-      }
-      if (contextMaterialId) {
-        try {
-          contextMaterial = await api.get(`/api/materials/${contextMaterialId}/`);
-        } catch {
-          contextMaterial = null;
-        }
       }
     } catch (e) {
       // Load failure has no form to land on — the global overlay is the venue.
@@ -66,16 +46,7 @@
         push(`/purchase-orders/${params.id}`);
       } else {
         const created = await api.post('/api/purchase-orders/', data);
-        // Forward context onto the detail page so the line-item form prefills.
-        const qs = [];
-        if (contextMaterial?.material_id) {
-          qs.push(`prefill_material=${contextMaterial.material_id}`);
-        }
-        if (contextJob?.job_id) {
-          qs.push(`default_job=${contextJob.job_id}`);
-        }
-        const suffix = qs.length ? `?${qs.join('&')}` : '';
-        push(`/purchase-orders/${created.po_id}${suffix}`);
+        push(`/purchase-orders/${created.po_id}`);
       }
     } catch (e) {
       const t = triageError(e);
@@ -111,7 +82,6 @@
     {businesses}
     errors={fieldErrs}
     {formError}
-    {contextJob}
     defaultBusinessId={contextBusinessId}
     defaultContactId={contextContactId}
     onSubmit={handleSubmit}

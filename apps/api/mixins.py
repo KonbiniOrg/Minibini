@@ -587,18 +587,21 @@ class JobScopedPermissionMixin:
 
     def get_permission_target_job(self, request):
         from apps.jobs.models import Job
-        if self.job_url_kwarg and self.kwargs.get(self.job_url_kwarg):
-            return Job.objects.filter(pk=self.kwargs[self.job_url_kwarg]).first()
-        lookup = self.lookup_url_kwarg or self.lookup_field
-        if self.kwargs.get(lookup) is not None:
-            model = self.get_queryset().model
-            obj = model._default_manager.filter(pk=self.kwargs[lookup]).first()
-            if obj is not None:
-                return self.get_object_job(obj)
-        if self.job_create_field:
-            jid = request.data.get(self.job_create_field)
-            if jid:
-                return Job.objects.filter(pk=jid).first()
+        try:
+            if self.job_url_kwarg and self.kwargs.get(self.job_url_kwarg):
+                return Job.objects.filter(pk=self.kwargs[self.job_url_kwarg]).first()
+            lookup = self.lookup_url_kwarg or self.lookup_field
+            if self.kwargs.get(lookup) is not None:
+                model = self.get_queryset().model
+                obj = model._default_manager.filter(pk=self.kwargs[lookup]).first()
+                if obj is not None:
+                    return self.get_object_job(obj)
+            if self.job_create_field:
+                jid = request.data.get(self.job_create_field)
+                if jid:
+                    return Job.objects.filter(pk=jid).first()
+        except (ValueError, TypeError):
+            return None   # a malformed pk denies; it must not 500
         return None
 
 
