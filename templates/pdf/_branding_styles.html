@@ -1,21 +1,34 @@
-        .letterhead { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-        .letterhead.logo-right { flex-direction: row-reverse; }
-        .letterhead.logo-center { display: block; text-align: center; }
-        .letterhead .logo { max-height: 80px; max-width: 240px; }
-        .letterhead .company { text-align: right; }
-        .letterhead .company:first-child { text-align: left; }
-        .letterhead.logo-right .company { text-align: left; }
-        .letterhead.logo-center .company { text-align: center; margin-top: 8px; }
-        .letterhead .company-line { margin: 2px 0; }
-        .doc-text { margin: 14px 0; overflow-wrap: anywhere; }
+        {# The layout (apps/core/pdf_layout.py): a full-width row flows and splits across pages like any text; a multi-column row is a fixed-width table — WeasyPrint's most reliable layout path — kept whole on one page. #}
+        table.layout-row { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 0 0 14px; break-inside: avoid; }
+        table.layout-row > tbody > tr > td.layout-cell { vertical-align: top; padding: 0; border: none; }
+        table.layout-row > tbody > tr > td.layout-cell + td.layout-cell { padding-left: 16px; }
+        .layout-flow { margin: 0 0 14px; }
+        .block { overflow-wrap: anywhere; }
+        .align-left { text-align: left; }
+        .align-center { text-align: center; }
+        .align-right { text-align: right; }
+        .block-logo .logo { max-height: 80px; max-width: 100%; }
+        .block-image .image { max-width: 100%; }
+        .image-small { width: 25%; }
+        .image-medium { width: 50%; }
+        .image-large { width: 100%; }
+        .block-company_name, .block-company_address, .block-company_phone, .block-company_email { margin: 2px 0; }
+        .block-text { margin: 4px 0; }
+        {# Divider lines sit on borders: under a block, under a row (across the page — on a column row, along the bottom of every cell, which border-collapse joins), and between columns (a cell's inline border-right). #}
+        .line-below { border-bottom: 1px solid #333; padding-bottom: 6px; margin-bottom: 6px; }
+        .layout-flow.row-line { border-bottom: 1px solid #333; padding-bottom: 8px; }
+        table.layout-row.row-line > tbody > tr > td.layout-cell { border-bottom: 1px solid #333; padding-bottom: 8px; }
+        .spacer-small { height: 8px; }
+        .spacer-medium { height: 20px; }
+        .spacer-large { height: 40px; }
         .page-footer { position: running(page-footer); font-size: 10px; color: #555; text-align: center; overflow-wrap: anywhere; }
         .page-number::before { content: counter(page); }
         .page-count::before { content: counter(pages); }
         @page { @bottom-center { content: element(page-footer); width: 100%; } }
         {# Rich text (apps/core/rich_text.py): paragraphs sit flush like typed lines, an empty one keeps its line, lists indent without extra spacing, and the size steps are relative to the surrounding text. #}
-        .company-line p, .doc-text p, .page-footer p { margin: 0; }
-        .company-line p:empty::before, .doc-text p:empty::before, .page-footer p:empty::before { content: "\00a0"; }
-        .company-line ul, .company-line ol, .doc-text ul, .doc-text ol, .page-footer ul, .page-footer ol { margin: 0; padding-left: 1.4em; }
+        .rich p { margin: 0; }
+        .rich p:empty::before { content: "\00a0"; }
+        .rich ul, .rich ol { margin: 0; padding-left: 1.4em; text-align: left; }
         .size-small { font-size: 0.85em; }
         .size-large { font-size: 1.25em; }
         .size-xlarge { font-size: 1.5em; }

@@ -1877,67 +1877,141 @@ purchase order) are customizable from **Settings → Documents**
 scope: the invoice send attaches QBO's rendered PDF, whose look is set
 in QuickBooks.
 
-Customization is **structured, not free-form**: the templates own the
-layout and the user fills fixed slots. There is no user-editable
-template or CSS (a user-authored Django template would be a server-side
-template-injection surface, and a typo would break every send). The slot
-*contents* are rich text, but only a fixed allowlist of it — see
-**Rich text** below.
+Customization is **structured, not free-form**: the user arranges
+**blocks** in a **layout**; the templates own how each block looks. There
+is no user-editable template or CSS (a user-authored Django template would
+be a server-side template-injection surface, and a typo would break every
+send). Text *contents* are rich text, but only a fixed allowlist of it —
+see **Rich text** below.
 
-`apps/core/pdf_branding.py` is the whole backend:
+The backend is `apps/core/pdf_branding.py` (company data, footers, the
+`branding` context, preview rasterizing, logo storage) and
+`apps/core/pdf_layout.py` (layouts):
 
-- **Shared letterhead** — `pdf_logo`, `pdf_logo_position`
-  (`left` | `center` | `right`, the only layout choice), and
-  `pdf_company_name` / `_address` / `_phone` / `_email` (rich text; name,
-  phone and email are single-line in the editor). Blank parts are not
-  printed; with nothing set the letterhead is omitted entirely. The
-  template no longer forces the name bold/larger — that is the user's
-  formatting (migration `core.0004` wrapped existing names in bold +
-  Large so they print as before).
-- **Per-document text** — four fixed slots per document kind
-  (`estimate`, `change_order`, `po`), keyed
-  `<kind>_pdf_text_<slot>`: `below_header` (under the title, above the
-  customer/vendor block), `above_lines`, `below_totals`, and
-  `page_footer` (a CSS running element repeated on every page). Empty
-  slots print nothing.
-- **Rich text** — the 16 `RICH_TEXT_KEYS` (four company fields + 3 × 4
-  slots) hold a tiny HTML subset: `<p>`, `<br>`, `<ul>`, `<ol>` (its
-  only attribute a `start` of 2–9999), `<li>`, `<strong>`, `<em>`, `<u>`,
-  and `<span class="size-small|size-large|size-xlarge">` (four
-  size steps with Normal = no span; the PDF stylesheet maps them to
-  0.85× / 1.25× / 1.5× of the surrounding text). WeasyPrint fetches what
-  markup references (`<img src="file:///…">`, stylesheets), so
+- **Shared company data** — `pdf_logo` and `pdf_company_name` /
+  `_address` / `_phone` / `_email` (rich text; name, phone and email are
+  single-line in the editor). One set of values for every document; the
+  layouts decide where (and whether) each prints. Blank values print
+  nothing. (Migration `core.0004` wrapped existing names in bold + Large
+  so they kept their old look.)
+- **Per-document layout** — each document kind (`estimate`,
+  `change_order`, `po`) has its own, fully independent layout in
+  Configuration `<kind>_pdf_layout` (canonical JSON). With no row stored
+  (or one that no longer validates) the kind prints with
+  `default_layout(kind)`: a ½ + ½ letterhead row (logo left, the four
+  company blocks right-aligned), then title, details, line items. Shape:
+  `{"version": 1, "rows": [{"columns": <preset>, "cells": [[block, …], …]}]}`.
+  - **Column presets** (`COLUMN_PRESETS`): `full`, `1/2-1/2`, `1/3-2/3`,
+    `2/3-1/3`, `1/3-1/3-1/3`; a row has exactly that many cells.
+  - **Blocks** (`BLOCK_TYPES`): `logo`, `company_name` /
+    `company_address` / `company_phone` / `company_email` (print the
+    shared values), `text` (`html`: the document's own rich text),
+    `spacer` (`orientation` vertical / horizontal, `size` small / medium /
+    large, `side` left / right), and the document's own `title`,
+    `details` (customer/vendor, attn, job, dates) and `line_items` (the
+    line table with its total rows; on a change order also the intro
+    line and the deliverables table). Logo, company, text, title and
+    details take `align` (left/center/right).
+  - **Divider lines are not blocks** — they sit on borders and take no
+    space of their own, each stored only when set: `line_below: true` on
+    a block (a line under it, across its column — the class
+    `line-below`), `line_below: true` on a row (a line under the row,
+    across the page — `row-line`), and `column_lines` on a column row
+    (one boolean per boundary: a vertical line down the middle of that
+    gap, the row's full height — the left cell's `border-right`, the gap
+    split either side).
+  - **Column frames** — a *horizontal* spacer (an indent) is not a block
+    in print either. `resolve_layout` turns each cell into `{blocks,
+    style}` with `_cell_style` computing inline CSS: indents add
+    `padding` on their side (small 12, medium 24, large 48 px, summed); a
+    column after the first gets the row's **gap** as `padding-left`
+    (halved either side of a column line). A column row may carry `gap`
+    small / large (8 / 32 px; absent = medium, 16 px; dropped on full
+    rows). The canvas mirrors `_cell_style` in `lib/pdfLayout.js`
+    `cellStyle` — keep the two in step.
+  - **Rules** (`validate_layout`, run on save, on every draft preview,
+    and when reading a stored layout): known version, 1–40 rows, ≤ 20
+    blocks per cell, known types, no unknown settings, `line_items`
+    exactly once and **alone in a `full` row**, `title` / `details` at
+    most once, text sanitized and ≤ 20 000 chars. Errors are
+    `{'layout': ['Row 2, column 1, block 3: …', …]}`.
+  - **Rendering** — `resolve_layout` drops blocks with nothing to print
+    (no logo, blank company field or text) and then rows left empty; a
+    kept row keeps its empty cells so its columns hold their place. A
+    **full-width row flows** (a plain block that splits across pages
+    like any text — the line items always do); a **multi-column row is a
+    fixed-width `<table class="layout-row">`** with a `<colgroup>`
+    (WeasyPrint's most reliable layout path) and `break-inside: avoid`,
+    so it is kept whole on one page. The line items must be in a full
+    row because WeasyPrint only splits a table across pages reliably in
+    normal flow.
+- **Per-document page footer** — `<kind>_pdf_text_page_footer` (rich
+  text), a CSS running element in the bottom page margin, repeated on
+  every page; outside the layout, which is the page body.
+- **Rich text** — the 7 `RICH_TEXT_KEYS` (four company fields + three
+  footers) and every text block hold a small HTML subset: `<p>` (its only
+  style `text-align` left / center / right / justify), `<br>`, `<ul>`,
+  `<ol>` (its only attribute a `start` of 2–9999), `<li>`, `<strong>`,
+  `<em>`, `<u>`, `<s>`, `<sub>`, `<sup>`, and `<span>` carrying a size
+  class `size-small|size-large|size-xlarge` (Normal = no span; the PDF
+  stylesheet maps them to 0.85× / 1.25× / 1.5× of the surrounding text)
+  and / or a style of only `color` / `background-color` (`#rgb`,
+  `#rrggbb`, `rgb(r, g, b)` ≤ 255, or a letters-only colour name) and
+  `font-family` (`sans-serif` / `serif` / `monospace`). No links, images
+  or user markup. WeasyPrint fetches what markup references
+  (`<img src="file:///…">`, stylesheets, `url()`), so
   `apps/core/rich_text.py`'s `sanitize_rich_text` — a stdlib-`HTMLParser`
-  allowlist — runs **on save** (the settings PATCH, for `RICH_TEXT_KEYS`
-  only) **and again on render** (every branding value, saved or draft):
-  attributes dropped, `b`/`i` → `strong`/`em`, block tags (and an `<li>`
-  outside any list) → paragraphs,
-  unknown tags unwrapped to their text, script/style/svg/iframe-type
-  elements dropped with their content. The SPA editor is
-  `components/RichTextEditor.svelte` (Tiptap 3: document, paragraph,
-  text, bold, italic, underline, hard break, bullet/ordered list + list
-  item, undo/redo, plus the `TextSize` mark in `lib/richText.js`). Lists
-  and line breaks are multi-line fields only — company name, phone and
-  email are single-line. List nesting (Tab / Shift-Tab) is kept; the
-  sanitizer scopes closes so a paragraph never closes past its list
-  item, nor an item past its list. Tiptap's schema keeps
-  bold/italic/underline from pasted Word/email/web content and drops the
-  rest, lists included. Empty paragraphs keep their line in the PDF
-  (`p:empty::before`); lists indent 1.4em with no extra spacing.
+  allowlist that *rebuilds* styles from whole-value matches, never passes
+  them through — runs **on save** (the settings PATCH for
+  `RICH_TEXT_KEYS`, `validate_layout` for text blocks) **and again on
+  render** (every value, saved or draft): other attributes and style
+  properties dropped, `b`/`i` → `strong`/`em`, `strike`/`del` → `s`,
+  block tags (and an `<li>` outside any list) → paragraphs, unknown tags
+  unwrapped to their text, script/style/svg/iframe-type elements dropped
+  with their content. The SPA editor is `components/RichTextEditor.svelte`
+  (Tiptap 3: document, paragraph, text, bold, italic, underline, strike,
+  subscript, superscript, hard break, bullet/ordered list + list item,
+  undo/redo, TextStyle + Color + BackgroundColor, `AllowedFontFamily`
+  (FontFamily reading only the three allowed families), TextAlign on
+  paragraphs, plus the `TextSize` mark in `lib/richText.js`, whose parse
+  rule is non-consuming so a sized span's styles are read too). Its
+  toolbar: B / I / U / S, x₂ / x², size, font, text colour, highlight,
+  alignment, lists (multi-line only), clear formatting, undo / redo.
+  `focusAt` ({x, y} or end) focuses it on creation at the click that
+  opened it — no scroll. Company name, phone and email are single-line.
+  List nesting (Tab / Shift-Tab) is kept; the sanitizer scopes closes so a
+  paragraph never closes past its list item, nor an item past its list.
+  Tiptap's schema keeps what the toolbar can make from pasted
+  Word/email/web content and drops the rest. Empty paragraphs keep their
+  line in the PDF (`.rich p:empty::before`); lists indent 1.4em with no
+  extra spacing.
+- **Image library** — `pdf_image_<32 hex>` Configuration rows, each JSON
+  `{name, src (data URI), added}` (listed by `added`: the key is the
+  primary key). `PdfBrandingService.add_image` / `list_images` /
+  `remove_image`; uploads pass the logo's checks (PNG / JPEG, 1 MB,
+  Pillow-verified), at most 50. An `image` block (`image`: a library id
+  or '', `align`, `size` small / medium / large → 25 / 50 / 100 % of its
+  column) prints its picture; a missing or removed one prints nothing.
+  `pdf_branding_context` loads only the images its layout places. The
+  settings GET never carries them and the PATCH refuses `pdf_image_*`.
+- **Title heading** — the `title` block's optional `heading` (plain text,
+  ≤ 80 chars, stored only when not blank) replaces the document's name
+  (`TITLE_DEFAULTS`: Estimate / Change Order / Purchase Order; also
+  `block_catalog(kind)['default_heading']`).
 - **Placeholders** — `render_rich_text` sanitizes, then substitutes
   `{name}` in the HTML with the value **escaped** (a contact named
   `<b>Bob` prints literally). It **never raises**: unknown names,
   stray/unbalanced braces, and a placeholder split by formatting part-way
   through (`{contact_<strong>fname</strong>}`) print as typed. (It is deliberately not
   `render_email_template`, whose `str.format_map` raises on an
-  unbalanced brace.) Values: `contact_fname`, `contact_lname`,
-  `contact_business`, `document_number`, plus `job_number` / `job_name`
-  / `object_url` on estimate and change order, and the per-document
-  aliases `estimate_number`, `change_order_number`, `po_number`,
-  `vendor_name`. There is no `{my_user_name}` — the generators have no
-  sending user. The footer additionally takes `{page}` /
-  `{page_count}`, inserted as trusted spans (`safe_values`) filled from
-  the CSS page counters.
+  unbalanced brace.) Values (text blocks and footers): `contact_fname`,
+  `contact_lname`, `contact_business`, `document_number`, plus
+  `job_number` / `job_name` / `object_url` on estimate and change order,
+  and the per-document aliases `estimate_number`, `change_order_number`,
+  `po_number`, `vendor_name`. There is no `{my_user_name}` — the
+  generators have no sending user. The footer additionally takes
+  `{page}` / `{page_count}`, inserted as trusted spans (`safe_values`)
+  filled from the CSS page counters.
 - **Logo storage** — the logo is a base64 `data:` URI in the
   `pdf_logo` Configuration row, not a file under `MEDIA_ROOT`: the
   Django container has no persistent volume, so a file would not
@@ -1945,49 +2019,131 @@ template-injection surface, and a typo would break every send). The slot
   directly. `PdfBrandingService.set_logo` accepts PNG/JPEG only (no
   SVG — it can carry external references), 1 MB max, verified with
   Pillow.
+- **Migration `core.0005_pdf_layouts`** replaced the old fixed
+  arrangement (`pdf_logo_position` + three body slots per document,
+  `<kind>_pdf_text_below_header` / `_above_lines` / `_below_totals`)
+  with a stored layout per document that prints as before, then deleted
+  those keys. With no branding set at all it stores nothing (the
+  defaults apply). Its reverse restores the slots and position from the
+  layouts as far as they can say.
 
 Each `pdf.py` exposes `render_<doc>_html(obj)` (the HTML string, which
 is what the tests assert on) and `generate_<doc>_pdf(obj)` (bytes), both
 going through `render_document_html(template, kind, context, values,
-drafts=None)`, which merges the `branding` context in. The shared markup lives in two
-partials every document template includes —
-`templates/pdf/_branding_styles.html` and `templates/pdf/_letterhead.html`
-— while each template inlines its own three in-flow slots.
+drafts=None, layout=None)`, which merges the `branding` context
+(`{rows, page_footer}`) in. Each document template keeps its own `<head>`
+stylesheet (line-table rules are scoped to `table.lines`) and its body is
+two includes: `pdf/_page_footer.html` and `pdf/_layout.html` (the
+row/cell loop). Shared blocks render from `pdf/_blocks.html`; each
+document's `title` / `details` / `line_items` from its own partial
+(`estimates/_estimate_blocks.html`, `estimates/_change_order_blocks.html`,
+`purchasing/_po_blocks.html` — `DOCUMENT_TEMPLATES`). Layout and block
+CSS lives in `pdf/_branding_styles.html`.
 
 Endpoints (all `can_manage_config`):
 
 | Endpoint | Purpose |
 |---|---|
-| `PATCH /api/settings/` | The letterhead and text keys, like any other Configuration key. `RICH_TEXT_KEYS` values are stored sanitized; `pdf_logo_position` is validated; writing `pdf_logo` here is rejected. |
+| `PATCH /api/settings/` | The company and footer keys, like any other Configuration key. `RICH_TEXT_KEYS` values are stored sanitized; writing `pdf_logo` or a `<kind>_pdf_layout` here is rejected (field error). |
+| `GET` / `PUT /api/settings/pdf-layout/<kind>/` | GET → `{layout, default, catalog}`: the effective layout, the built-in default, and `block_catalog` (`blocks: [{type, label, settings, single, required}]`, `presets: [{key, widths}]`). PUT `{layout}` validates (400 `{'layout': [...]}`), stores, and answers like GET. Unknown kind → 404. |
+| `GET` / `POST /api/settings/pdf-images/`, `DELETE /api/settings/pdf-images/<id>/` | The image library: list `{images: [{id, name, src}]}`, upload (multipart `image`; field error on a bad file) → the new image, remove (200 + message; 404 when unknown). No confirm — re-uploading undoes it. |
 | `GET` / `POST` / `DELETE /api/settings/pdf-logo/` | Read (`{'logo': '<data URI or empty>'}`), upload (multipart `logo`), remove. `GET /api/settings/` omits the `pdf_logo` blob. |
-| `POST /api/settings/pdf-preview/` | The live preview. Body `{document: <kind> \| 'letterhead', values: {key: str}}`; `values` are the form's **unsaved** drafts, limited to `preview_draft_keys(kind)` (the logo position and company keys, plus — for a document — its four text keys; anything else, including `pdf_logo`, is a `values` field error). Returns `{pages: [PNG data URI…], pdf: PDF data URI}`; for `letterhead`, `pages` is one image of the letterhead band, or `[]` when nothing would print. Nothing is written. |
+| `GET /api/settings/pdf-canvas/<kind>/` | The layout canvas's drawing material: `{blocks: {title, title_number, details, line_items}, stylesheet}` — the document's own block partials (`title_number`: the title without its heading, which the canvas draws and edits) rendered with the preview's sample data (`sample_<doc>()` in each `pdf.py`), and its PDF stylesheet (head rules + `_branding_styles.html`) re-aimed at the canvas by `scope_css` (every selector prefixed `.pdf-page`, `body` → `.pdf-page`, `@page` dropped). Unknown kind → 404. |
+| `POST /api/settings/pdf-preview/` | The Print view. Body `{document: <kind>, values: {key: str}, layout: {...}}`, both optional; `values` are **unsaved** drafts limited to `preview_draft_keys(kind)` (the company keys and that document's footer; anything else, including `pdf_logo`, is a `values` field error); `layout` is a draft layout, validated like a saved one. Returns `{pages: [PNG data URI…], pdf: PDF data URI}`. Nothing is written. |
 
-**Live preview.** The Letterhead box and each document's box on Settings →
-Documents have a preview window on their right. After a pause in typing
-(500 ms) the SPA posts that box's drafts — a document's preview also takes
-the letterhead drafts, so a letterhead edit refreshes all four windows while
-a document's edit refreshes only its own — and swaps in the returned page
-images. The letterhead window shows `preview_letterhead_html` (the
-`_letterhead.html` partial alone on a page, `pdf/letterhead_preview.html`,
-same stylesheet and body margins as the documents) cropped by
-`pdf_page_images(…, crop=True)`: first page only, full width so the logo
-position reads, cut 24 pt below the lowest non-white pixel; a blank page
-yields no image and the window says the letterhead is left off. Older replies are dropped by a per-document
-request counter, and a preview error shows in the window, never the global
-overlay (it fires on every pause). Clicking the pages opens the returned PDF
-from a blob URL in a new tab. The Save buttons are unchanged: previewing
-never saves.
+**The settings page.** Settings → Documents has four boxes: **Company
+details** (logo upload/remove and the four company fields, one Save),
+**Images** (the library: thumbnails with Remove, an "Add an image"
+upload), **Available variables**, and **Document layouts** — a tab per
+document under a **sticky action bar** at its top: **Save <document>**
+(PUT the layout, then PATCH its footer — plus the company keys when they
+differ from the stored ones, so company text edited on the page is saved
+with it), the unsaved / saved note and save errors, **Reset to
+default**, **Copy layout from…**, and the **Edit page / Print view**
+toggle. Every edit is an unsaved, reversible draft (a tab shows `*`, the
+bar "unsaved changes" — layout, footer or company details) until Save —
+so nothing confirms. Reset and Copy replace the draft only.
 
-The sample document comes from `preview_<doc>_html(drafts)` in each
-`pdf.py` — in-memory sample objects, no real record read — and `drafts`
-overlay the stored rows inside `pdf_branding_context`. The view renders the
-real PDF with WeasyPrint, then `pdf_page_images` rasterizes each page at
-`PREVIEW_SCALE` (1.5 × 72 dpi) with **pypdfium2** (WeasyPrint dropped image
-output in v53). PDFium is not thread-safe and the page fires three previews
-at once into a threaded server — an unguarded concurrent render core-dumped
-the dev server — so every PDFium call runs under `_PDFIUM_LOCK`, and each
-bitmap/page/document is closed inside it so garbage collection never
-finalizes one on another thread.
+**Edit page — the canvas** (`components/settings/PdfCanvas.svelte`,
+`PdfCanvasBlock.svelte`; pure operations in `lib/pdfLayout.js`, hit-testing
+in `lib/pdfCanvas.js`). The document drawn as its page: A4 at 96 dpi
+(794 × 1123 px — the templates set no `@page` size, so WeasyPrint prints
+A4) with WeasyPrint's default 75 px page margin, the 40 px body margin
+from the scoped stylesheet, and the same markup as the PDF (full-width
+rows as `.layout-flow`, column rows as `table.layout-row` with a
+`<colgroup>`, blocks as `.block.block-<type>.align-<align>`). Shared blocks
+draw from the layout and the *unsaved* company values; title / details /
+line items are the `pdf-canvas` sample HTML. Blocks that would print
+nothing (no logo, blank company field, empty text) show canvas-only
+placeholders; an indent draws as a small marker while its column shows
+the padding it prints (`cellStyle`). Text
+placeholders show as typed (`{contact_fname}`); Print
+view substitutes them. The canvas doesn't simulate page breaks — long
+content just runs on; Print view shows real pages.
+
+- **Drag** a block, or a palette entry (palette left of the page; a click
+  instead adds the block as a new row at the end). Pointer events, not
+  HTML5 drag: on the first move past 4 px the canvas measures every
+  row / column / block box, then `targetAt` maps the pointer to a target
+  and `indicatorFor` draws it — a line between blocks (**stack**), a bar
+  within 20 % of a column's left/right edge (**beside** — a new column,
+  rows re-split evenly, max three), a line in a gap or within 8 px of a row
+  edge (**new row**). A target `insertBlock` / `dropBlock` refuses (into
+  the line-item row, a fourth column, a no-op) shows no indicator. The
+  line items move only as their whole row.
+- **Tidy**: every operation drops columns left empty (re-splitting the row
+  evenly; a row down to one column loses its gap) and rows left empty —
+  there is no empty-row state. The click a browser sends after any drag
+  is ignored, so a drop never deselects the dropped block.
+- **Divider** (palette): dragged — or an existing line dragged — onto
+  the page, it drops a *line on the border* under the pointer
+  (`placeLine` / `lineForTarget`): between two stacked blocks → the upper
+  block's line; the bottom of a full-width row or the gap between rows →
+  the row's line; a column's edge next to another column → that
+  boundary's column line. The top of the page and page edges are no
+  border (no indicator). Clicked instead, it lines the last row. A line
+  draws as the PDF draws it, with a thin handle over it: click to select
+  (a "Line tools" bar with remove; Delete works too), drag to move it to
+  another border. A block's line travels with the block; a row re-split
+  to a different column count loses its column lines.
+- **Select** (click / Enter): a toolbar above the block — block
+  alignment ("Align block …", distinct from a text editor's paragraph
+  alignment); spacer Gap / Indent with side and size; an image's picture
+  (from the library), **Upload…** (adds to the library and places it;
+  errors show in the toolbar) and size; the row's **column gap** (any
+  block in a column row); ↑ ↓ ← → moves (`moveBlock`: within the column, crossing
+  into the row above/below past the line items; into the neighbouring
+  column), remove (also Delete/Backspace; never the line items).
+  **Text edits in place, in one click**: selecting a text block, a
+  company field or the title — or clicking the page footer (in the
+  bottom margin) — swaps it for its editor, focused with the caret where
+  the click landed (`focusAt`), so the keyboard types straight in. A
+  company field edits the *shared* value (the Company details form above
+  follows; every document shows it); the title edits its `heading`
+  (blank = the document's name). Escape or a click on empty page
+  deselects.
+- **Column width grip** (a small tab above a two-column row's boundary):
+  drag (or ←/→ on the focused `slider`) snaps between ⅓ + ⅔, ½ + ½,
+  ⅔ + ⅓ (`snapPreset`).
+
+**Print view.** After a pause in editing (500 ms) the SPA posts the
+selected document's drafts — company text, its footer, its layout — and
+shows the returned page images; only while Print view is showing (the
+canvas needs no server render). Switching tabs clears it and renders the
+new document. Older replies are dropped by a request counter, and an
+error shows in the pane, never the global overlay. Clicking the pages
+opens the PDF from a blob URL in a new tab. Neither view saves.
+
+The sample document comes from `sample_<doc>()` in each `pdf.py` (template,
+context, placeholder values — in-memory sample objects, no real record
+read), rendered by `preview_<doc>_html(drafts, layout)`; the
+drafts overlay the stored rows inside `pdf_branding_context`. The view
+renders the real PDF with WeasyPrint, then `pdf_page_images` rasterizes
+each page at `PREVIEW_SCALE` with **pypdfium2** (WeasyPrint dropped image
+output in v53). PDFium is not thread-safe and the dev server is threaded
+— an unguarded concurrent render core-dumped it — so every PDFium call
+runs under `_PDFIUM_LOCK`, and each bitmap/page/document is closed inside
+it so garbage collection never finalizes one on another thread.
 
 ---
 

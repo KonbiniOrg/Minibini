@@ -1,4 +1,3 @@
-{% load money %}
 <!DOCTYPE html>
 <html>
 <head>
@@ -7,67 +6,16 @@
         body { font-family: sans-serif; font-size: 12px; margin: 40px; }
         h1 { font-size: 18px; margin-bottom: 5px; }
         h2 { font-size: 14px; color: #555; margin-top: 0; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #333; padding: 6px 8px; text-align: left; }
-        th { background-color: #eee; }
-        td.amount { text-align: right; }
+        table.lines { width: 100%; border-collapse: collapse; margin-top: 6px; }
+        table.lines th, table.lines td { border: 1px solid #333; padding: 6px 8px; text-align: left; }
+        table.lines th { background-color: #eee; }
+        table.lines td.amount { text-align: right; }
         .total-row td { font-weight: bold; border-top: 2px solid #333; }
-        .header-info { margin-bottom: 20px; }
+        .header-info { margin: 0; }
         .header-info p { margin: 2px 0; }
         .preserve-breaks { white-space: pre-wrap; overflow-wrap: anywhere; }
 {% include 'pdf/_branding_styles.html' %}    </style>
 </head>
 <body>
-{% include 'pdf/_letterhead.html' %}    <h1>Estimate</h1>
-    <h2>{{ estimate.estimate_number }}</h2>
-
-    {% if branding.text.below_header %}<div class="doc-text">{{ branding.text.below_header }}</div>{% endif %}
-    <div class="header-info">
-        {% if business_name %}
-        <p><strong>Customer:</strong> {{ business_name }}</p>
-        {% endif %}
-        {% if contact_name %}
-        <p><strong>Attn:</strong> {{ contact_name }}</p>
-        {% endif %}
-        {% if job %}
-        <p><strong>Job:</strong> {{ job.job_number }}{% if job.name %} — {{ job.name }}{% endif %}</p>
-        {% endif %}
-        <p><strong>Date:</strong> {{ estimate.sent_date|default:estimate.created_date|date:"N j, Y" }}</p>
-        {% if estimate.expiration_date %}
-        <p><strong>Valid Until:</strong> {{ estimate.expiration_date|date:"N j, Y" }}</p>
-        {% endif %}
-    </div>
-
-    {% if branding.text.above_lines %}<div class="doc-text">{{ branding.text.above_lines }}</div>{% endif %}
-    <table>
-        <thead>
-            <tr>
-                <th>#</th>
-                <th>Description</th>
-                <th>Qty</th>
-                <th>Unit</th>
-                <th>Price</th>
-                <th>Total</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for item in line_items %}
-            <tr>
-                <td>{{ item.line_number }}</td>
-                <td class="preserve-breaks">{{ item.description }}</td>
-                <td class="amount">{{ item.qty }}</td>
-                <td>{{ item.units }}</td>
-                <td class="amount">{{ item.price|money }}</td>
-                <td class="amount">{{ item.total_amount|money }}</td>
-            </tr>
-            {% endfor %}
-            <tr class="total-row">
-                <td colspan="5">Total</td>
-                <td class="amount">{{ total|money }}</td>
-            </tr>
-        </tbody>
-    </table>
-
-    {% if branding.text.below_totals %}<div class="doc-text">{{ branding.text.below_totals }}</div>{% endif %}
-</body>
+{% include 'pdf/_page_footer.html' %}{% include 'pdf/_layout.html' %}</body>
 </html>

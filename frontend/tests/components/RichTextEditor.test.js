@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 
 import RichTextEditor from '@/components/RichTextEditor.svelte';
@@ -48,13 +48,16 @@ describe('RichTextEditor', () => {
     expect(editor.getHTML()).toBe('<p>Terms</p>');
   });
 
-  it('keeps bold/italic/underline from pasted markup and drops everything else', () => {
+  it('keeps what the toolbar can make from pasted markup and drops everything else', () => {
     const { editor } = setup();
     editor.commands.setContent(
       '<p style="margin:0"><b style="font-family:Calibri">B</b> <i>I</i> '
       + '<span style="text-decoration: underline">U</span> '
-      + '<span style="color:red; font-size:40px">plain</span><img src="x.png"><a href="http://x">link</a></p>');
-    expect(editor.getHTML()).toBe('<p><strong>B</strong> <em>I</em> <u>U</u> plainlink</p>');
+      + '<span style="color:red; font-size:40px">red</span><img src="x.png"><a href="http://x">link</a></p>');
+    // No Calibri (not a family the PDF keeps), no font size, no image, no
+    // link. (The bare span around U is unwrapped by the server's sanitizer.)
+    expect(editor.getHTML()).toBe(
+      '<p><strong>B</strong> <em>I</em> <span><u>U</u></span> <span style="color: red;">red</span>link</p>');
   });
 
   it('reads the stored size steps back', () => {
@@ -114,6 +117,73 @@ describe('RichTextEditor', () => {
     const { queryByRole } = setup({ value: '<p>Neal CNC</p>', singleLine: true });
     expect(queryByRole('button', { name: 'Bulleted list' })).toBeNull();
     expect(queryByRole('button', { name: 'Numbered list' })).toBeNull();
+  });
+
+  it('offers strikethrough, sub- and superscript', async () => {
+    const { editor, getByRole } = setup({ value: '<p>H2O</p>' });
+    for (const [name, tag] of [['Strikethrough', 's'], ['Subscript', 'sub'], ['Superscript', 'sup']]) {
+      editor.commands.selectAll();
+      await fireEvent.click(getByRole('button', { name }));
+      expect(editor.getHTML()).toContain(`<${tag}>`);
+      await fireEvent.click(getByRole('button', { name }));
+    }
+  });
+
+  it('sets a font family, a text colour and a highlight', async () => {
+    const { editor, getByRole } = setup({ value: '<p>Terms</p>' });
+    const font = getByRole('combobox', { name: 'Font' });
+    expect([...font.options].map((o) => o.value)).toEqual(['', 'sans-serif', 'serif', 'monospace']);
+    editor.commands.selectAll();
+    await fireEvent.change(font, { target: { value: 'serif' } });
+    editor.commands.selectAll();
+    await fireEvent.input(getByRole('textbox', { name: 'Terms' }).ownerDocument
+      .querySelector('input[aria-label="Text colour"]'), { target: { value: '#cc0000' } });
+    editor.commands.selectAll();
+    await fireEvent.input(getByRole('textbox', { name: 'Terms' }).ownerDocument
+      .querySelector('input[aria-label="Highlight colour"]'), { target: { value: '#ffff00' } });
+    const html = editor.getHTML();
+    expect(html).toContain('font-family: serif');
+    // The DOM normalizes colours to rgb(), which the server keeps too.
+    expect(html).toContain('color: rgb(204, 0, 0)');
+    expect(html).toContain('background-color: rgb(255, 255, 0)');
+  });
+
+  it('aligns paragraphs and clears formatting', async () => {
+    const { editor, getByRole } = setup({ value: '<p><strong>Terms</strong></p>' });
+    editor.commands.selectAll();
+    await fireEvent.click(getByRole('button', { name: 'Align center' }));
+    expect(editor.getHTML()).toBe('<p style="text-align: center;"><strong>Terms</strong></p>');
+    expect(getByRole('button', { name: 'Align center' })).toHaveAttribute('aria-pressed', 'true');
+    editor.commands.selectAll();
+    await fireEvent.click(getByRole('button', { name: 'Clear formatting' }));
+    expect(editor.getHTML()).toBe('<p>Terms</p>');
+  });
+
+  it('undoes and redoes', async () => {
+    const { editor, getByRole } = setup({ value: '<p>Terms</p>' });
+    editor.commands.selectAll();
+    await fireEvent.click(getByRole('button', { name: 'Bold' }));
+    await fireEvent.click(getByRole('button', { name: 'Undo' }));
+    expect(editor.getHTML()).toBe('<p>Terms</p>');
+    await fireEvent.click(getByRole('button', { name: 'Redo' }));
+    expect(editor.getHTML()).toBe('<p><strong>Terms</strong></p>');
+  });
+
+  it('has no link or HTML tools', () => {
+    const { queryByRole } = setup();
+    expect(queryByRole('button', { name: /link/i })).toBeNull();
+    expect(queryByRole('button', { name: /html|source/i })).toBeNull();
+  });
+
+  it('focuses itself when asked, so one click opens it ready to type', async () => {
+    const { textbox } = setup({ value: '<p>Terms</p>', focusAt: { x: 0, y: 0 } });
+    await vi.waitFor(() => expect(document.activeElement).toBe(textbox));
+  });
+
+  it('does not take focus unless asked', async () => {
+    const { textbox } = setup({ value: '<p>Terms</p>' });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(document.activeElement).not.toBe(textbox);
   });
 
   it('follows a new value from the parent', async () => {

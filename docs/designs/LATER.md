@@ -377,10 +377,13 @@ The CO surface and its estimate-parallel code.
   through the shared `components/PortalDocument.svelte` shell; and both PDF
   generators use `_pdf_party_context(job)` (`apps/estimates/pdf.py`).
   Deliberately still duplicated: `estimate_pdf.html` vs `change_order_pdf.html`
-  (base CSS + header-info block). The no-include convention was relaxed
-  2026-10-02 for the branding partials (`templates/pdf/_letterhead.html`,
-  `_branding_styles.html` — architecture §7.15), but the base CSS and
-  header-info block were left per-template; touch the two templates in tandem. (A diff-logic note,
+  base CSS, and the details block in `_estimate_blocks.html` vs
+  `_change_order_blocks.html`. The no-include convention was relaxed
+  2026-10-02 for the branding partials and again 2026-10-16 for the layout
+  (`templates/pdf/_layout.html`, `_blocks.html`, `_page_footer.html`,
+  `_branding_styles.html`, the per-document block partials — architecture
+  §7.15), but the base CSS and details block were left per-document; touch
+  them in tandem. (A diff-logic note,
   updated 2026-08-09: the frontend merged-rows logic
   [`buildMergedRows`/`lineDiffTotals` in `frontend/src/lib/changeOrderDiff.js`]
   this used to be kept in lockstep with was **retired** when `COEditView`

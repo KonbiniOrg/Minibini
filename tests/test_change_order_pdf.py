@@ -93,17 +93,17 @@ class ChangeOrderPdfTests(FixtureTestCase):
         """Regression: the chained `sent_date|date|default:created_date|date`
         expression rendered a blank Date once sent_date was set (i.e. on a
         resend of an open CO). The date must render in all states."""
-        from django.template.loader import render_to_string
+        from apps.core.pdf_branding import render_document_html
         ChangeOrderService.mark_open(self.co.pk)
         self.co.refresh_from_db()
         self.assertIsNotNone(self.co.sent_date)
-        html = render_to_string('estimates/change_order_pdf.html', {
+        html = render_document_html('estimates/change_order_pdf.html', 'change_order', {
             'co': self.co, 'job': self.job,
             'business_name': '', 'contact_name': '',
             'estimate_number': self.est.estimate_number,
             'deliverable_rows': [], 'line_rows': [],
             'prior_total': 0, 'proposed_total': 0, 'diff_total': 0,
-        })
+        }, {})
         self.assertIn(str(self.co.sent_date.year), html)
 
     def test_email_defaults_preview_shows_pdf(self):

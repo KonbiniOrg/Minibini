@@ -1,0 +1,2 @@
+{# The blocks every document shares (apps/core/pdf_layout.py SHARED_TEMPLATE); `block` is one resolved block. #}
+{% if block.type == 'logo' %}<img class="logo" src="{{ block.src }}" alt="">{% elif block.type == 'image' %}<img class="image image-{{ block.size }}" src="{{ block.src }}" alt="">{% elif block.type == 'spacer' %}<div class="spacer-{{ block.size }}"></div>{% else %}<div class="rich">{{ block.html }}</div>{% endif %}

@@ -152,7 +152,7 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 | `/api/jobs/board/*` | `IsAuthenticated` | — | one bulk reorder endpoint requires `can_manage_jobs` |
 | `/api/home/` | `IsAuthenticated` | — | |
 | `/api/settings/` | `IsAuthenticated` | `can_manage_config` | including `/api/settings/units/` |
-| `/api/settings/pdf-logo/`, `/api/settings/pdf-preview/` | `can_manage_config` | `can_manage_config` | document-PDF branding: logo read/upload/remove and the live sample-document preview (POST) |
+| `/api/settings/pdf-logo/`, `/api/settings/pdf-images/` (+ `<id>/`), `/api/settings/pdf-layout/<kind>/`, `/api/settings/pdf-canvas/<kind>/`, `/api/settings/pdf-preview/` | `can_manage_config` | `can_manage_config` | document-PDF branding: logo read/upload/remove, the image library (list/upload/remove), each document's layout (GET/PUT), the layout canvas's sample blocks + stylesheet (GET), and the print-view render (POST) |
 | `/api/setup/status/` | GET | IsAuthenticated | Per-area setup gate availability + messages (sidebar/Home Help) |
 | `/api/qbo/import/*` | POST/GET | per area: config (categories/schemes), financials (catalog), jobs (contacts) | QBO snapshot pull, suggestions, commits, dismissals |
 | `/api/qbo/*` | `can_manage_config` | `can_manage_config` | OAuth + connection state — see `quickbooks-integration.md` |

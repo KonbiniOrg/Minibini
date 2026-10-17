@@ -13,7 +13,10 @@ from imap_tools import MailBox
 
 from apps.core.models import Configuration, AccountingCategory
 from apps.core.pdf_branding import (
-    LOGO_KEY, LOGO_POSITION_KEY, LOGO_POSITIONS, RICH_TEXT_KEYS, PdfBrandingService,
+    DOCUMENT_KINDS, IMAGE_PREFIX, LOGO_KEY, RICH_TEXT_KEYS, PdfBrandingService,
+)
+from apps.core.pdf_layout import (
+    block_catalog, default_layout, get_layout, layout_key, save_layout,
 )
 from apps.core.rich_text import sanitize_rich_text
 from apps.core.services import ConfigurationService
@@ -242,9 +245,11 @@ def _validate_schedule_keys(data):
 
 
 def _settings_payload():
-    """Every Configuration row as {key: value}, minus the PDF logo blob —
-    it is large and has its own endpoint (`pdf_logo_view`)."""
-    configs = Configuration.objects.exclude(key=LOGO_KEY)
+    """Every Configuration row as {key: value}, minus the PDF logo and
+    image-library blobs — they are large and have their own endpoints
+    (`pdf_logo_view`, `pdf_images_view`)."""
+    configs = Configuration.objects.exclude(key=LOGO_KEY).exclude(
+        key__startswith=IMAGE_PREFIX)
     return {c.key: c.value for c in configs}
 
 
@@ -259,12 +264,15 @@ def settings_view(request):
         return Response(
             {LOGO_KEY: ['Upload the logo through the logo upload instead.']},
             status=400)
-    if (LOGO_POSITION_KEY in request.data
-            and request.data[LOGO_POSITION_KEY] not in LOGO_POSITIONS):
+    images = [key for key in request.data if key.startswith(IMAGE_PREFIX)]
+    if images:
         return Response(
-            {LOGO_POSITION_KEY: [
-                'Must be one of: ' + ', '.join(LOGO_POSITIONS) + '.']},
-            status=400)
+            {images[0]: ['Add images through the image library.']}, status=400)
+    for kind in DOCUMENT_KINDS:
+        if layout_key(kind) in request.data:
+            return Response(
+                {layout_key(kind): ['Save a document layout through its layout editor.']},
+                status=400)
     schedule_errors = _validate_schedule_keys(request.data)
     if schedule_errors:
         return Response(schedule_errors, status=400)
@@ -390,21 +398,86 @@ def pdf_logo_view(request):
     return Response({'logo': PdfBrandingService.get_logo()})
 
 
+@api_view(['GET', 'PUT'])
+@permission_classes([IsAuthenticated, CanManageConfig])
+def pdf_layout_view(request, kind):
+    """One document kind's PDF layout (apps/core/pdf_layout.py).
+
+    GET returns `{'layout', 'default', 'catalog'}` — the effective layout,
+    the built-in default (the editor's "Reset to default" loads it as an
+    unsaved draft), and the blocks and column presets the editor may use.
+    PUT takes `{'layout': {...}}`, validates and stores it, and answers
+    like GET."""
+    if kind not in DOCUMENT_KINDS:
+        return Response({'detail': 'Unknown document.'}, status=404)
+    if request.method == 'PUT':
+        if 'layout' not in request.data:
+            return Response({'layout': ['This field is required.']}, status=400)
+        save_layout(kind, request.data['layout'])
+    return Response({
+        'layout': get_layout(kind),
+        'default': default_layout(kind),
+        'catalog': block_catalog(kind),
+    })
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated, CanManageConfig])
+def pdf_images_view(request):
+    """The PDF image library: GET `{'images': [{id, name, src}]}`; POST a
+    multipart `image` (PNG/JPEG, 1 MB max) to add one — returns it."""
+    if request.method == 'POST':
+        return Response(PdfBrandingService.add_image(request.FILES.get('image')))
+    return Response({'images': PdfBrandingService.list_images()})
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated, CanManageConfig])
+def pdf_image_view(request, image_id):
+    """Remove one library image (no confirm — re-uploading undoes it);
+    image blocks that placed it print nothing."""
+    if not PdfBrandingService.remove_image(image_id):
+        return Response({'detail': 'No such image.'}, status=404)
+    return Response({'message': 'Image removed.'})
+
+
+def _pdf_samples():
+    from apps.estimates.pdf import sample_change_order, sample_estimate
+    from apps.purchasing.pdf import sample_purchase_order
+    return {
+        'estimate': sample_estimate,
+        'change_order': sample_change_order,
+        'po': sample_purchase_order,
+    }
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, CanManageConfig])
+def pdf_canvas_view(request, kind):
+    """The layout canvas's drawing material for one document kind:
+    `{'blocks': {title|details|line_items: html}, 'stylesheet': css}` — the
+    document's own blocks rendered with the preview's sample data, and the
+    PDF's stylesheet (apps/core/pdf_branding.canvas_parts)."""
+    from apps.core.pdf_branding import canvas_parts
+    samples = _pdf_samples()
+    if kind not in samples:
+        return Response({'detail': 'Unknown document.'}, status=404)
+    template, context, _values = samples[kind]()
+    return Response(canvas_parts(kind, template, context))
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, CanManageConfig])
 def pdf_preview_view(request):
-    """A sample document rendered with the settings form's unsaved values.
+    """A sample document rendered with the settings page's unsaved edits.
 
-    Body: `{'document': 'estimate'|'change_order'|'po'|'letterhead',
-    'values': {key: str}}` — `values` are drafts for the letterhead text and
-    (for a document) its text slots, layered over the saved settings and
-    never written. Returns `{'pages': [PNG data URI, ...], 'pdf': PDF data
-    URI}`; for `letterhead`, `pages` is the letterhead band cropped from the
-    top of the page, or [] when nothing would print."""
+    Body: `{'document': 'estimate'|'change_order'|'po', 'values': {key: str},
+    'layout': {...}}` — `values` are drafts for the shared company text and
+    the document's page footer, `layout` a draft layout; both optional,
+    layered over the saved settings and never written. Returns `{'pages':
+    [PNG data URI, ...], 'pdf': PDF data URI}`."""
     from weasyprint import HTML
-    from apps.core.pdf_branding import (
-        LETTERHEAD, pdf_page_images, preview_draft_keys, preview_letterhead_html,
-    )
+    from apps.core.pdf_branding import pdf_page_images, preview_draft_keys
     from apps.estimates.pdf import preview_estimate_html, preview_change_order_html
     from apps.purchasing.pdf import preview_purchase_order_html
 
@@ -412,12 +485,11 @@ def pdf_preview_view(request):
         'estimate': preview_estimate_html,
         'change_order': preview_change_order_html,
         'po': preview_purchase_order_html,
-        LETTERHEAD: preview_letterhead_html,
     }
     kind = request.data.get('document', '')
     if kind not in previews:
         return Response(
-            {'detail': 'Unknown document. Use estimate, change_order, po, or letterhead.'},
+            {'detail': 'Unknown document. Use estimate, change_order, or po.'},
             status=400)
     drafts = request.data.get('values') or {}
     if not isinstance(drafts, dict):
@@ -430,9 +502,11 @@ def pdf_preview_view(request):
     if not all(isinstance(v, str) for v in drafts.values()):
         return Response({'values': ['Setting values must be text.']}, status=400)
 
-    pdf = HTML(string=previews[kind](drafts)).write_pdf()
+    # An invalid draft layout raises ValidationError: the central handler
+    # renders it as {'layout': [...]}.
+    pdf = HTML(string=previews[kind](drafts, request.data.get('layout'))).write_pdf()
     return Response({
-        'pages': pdf_page_images(pdf, crop=kind == LETTERHEAD),
+        'pages': pdf_page_images(pdf),
         'pdf': f'data:application/pdf;base64,{base64.b64encode(pdf).decode("ascii")}',
     })
 

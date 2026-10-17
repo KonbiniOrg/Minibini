@@ -111,9 +111,9 @@ def generate_change_order_pdf(co):
 
 # --- Settings previews -------------------------------------------------------
 # Sample documents rendered through the real templates with the branding,
-# so a config user can check the letterhead and text slots without sending
-# anything. `drafts` are the settings form's unsaved values, layered over the
-# saved ones. Nothing here touches a real Estimate / ChangeOrder.
+# so a config user can check a layout without sending anything. `drafts` /
+# `layout` are the settings form's unsaved values and layout, layered over
+# the saved ones. Nothing here touches a real Estimate / ChangeOrder.
 
 _SAMPLE_PARTY = {'business_name': 'Sample Customer Co.', 'contact_name': 'Alex Sample'}
 _SAMPLE_JOB = SimpleNamespace(job_number='JOB-0000', name='Sample job')
@@ -127,9 +127,10 @@ _SAMPLE_VALUES = {
 }
 
 
-def preview_estimate_html(drafts=None):
-    """A sample estimate as an HTML string, branded with the saved settings
-    overlaid by `drafts`."""
+def sample_estimate():
+    """A sample estimate for the settings previews and canvas:
+    (template name, template context, placeholder values). In-memory
+    objects only — no real Estimate is read."""
     today = date.today()
     lines = [
         SimpleNamespace(line_number=1, description='Sample service line',
@@ -139,7 +140,7 @@ def preview_estimate_html(drafts=None):
                         qty=Decimal('4'), units='ea', price=Decimal('12.50'),
                         total_amount=Decimal('50.00')),
     ]
-    return render_document_html('estimates/estimate_pdf.html', 'estimate', {
+    return 'estimates/estimate_pdf.html', {
         'estimate': SimpleNamespace(
             estimate_number='EST-0000', sent_date=today, created_date=today,
             expiration_date=None),
@@ -147,15 +148,13 @@ def preview_estimate_html(drafts=None):
         **_SAMPLE_PARTY,
         'line_items': lines,
         'total': sum(line.total_amount for line in lines),
-    }, {**_SAMPLE_VALUES, 'document_number': 'EST-0000', 'estimate_number': 'EST-0000'},
-        drafts)
+    }, {**_SAMPLE_VALUES, 'document_number': 'EST-0000', 'estimate_number': 'EST-0000'}
 
 
-def preview_change_order_html(drafts=None):
-    """A sample change order as an HTML string, branded with the saved
-    settings overlaid by `drafts`."""
+def sample_change_order():
+    """A sample change order: (template name, context, placeholder values)."""
     today = date.today()
-    return render_document_html('estimates/change_order_pdf.html', 'change_order', {
+    return 'estimates/change_order_pdf.html', {
         'co': SimpleNamespace(
             change_order_number='CO-0000', sent_date=today, created_date=today,
             expiration_date=None),
@@ -177,4 +176,20 @@ def preview_change_order_html(drafts=None):
     }, {
         **_SAMPLE_VALUES, 'document_number': 'CO-0000',
         'change_order_number': 'CO-0000', 'estimate_number': 'EST-0000',
-    }, drafts)
+    }
+
+
+def preview_estimate_html(drafts=None, layout=None):
+    """A sample estimate as an HTML string, branded with the saved settings
+    overlaid by `drafts` and laid out by the draft `layout` (the saved one
+    when None)."""
+    template, context, values = sample_estimate()
+    return render_document_html(template, 'estimate', context, values, drafts, layout)
+
+
+def preview_change_order_html(drafts=None, layout=None):
+    """A sample change order as an HTML string, branded with the saved
+    settings overlaid by `drafts` and laid out by the draft `layout`
+    (the saved one when None)."""
+    template, context, values = sample_change_order()
+    return render_document_html(template, 'change_order', context, values, drafts, layout)

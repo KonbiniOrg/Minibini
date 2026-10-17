@@ -37,6 +37,11 @@ class PlainToRichTests(SimpleTestCase):
                            ('po_pdf_text_below_totals', 'a\n\nb')):
             self.assertEqual(migration.rich_to_plain(migration.plain_to_rich(key, plain)), plain)
 
-    def test_converts_exactly_the_rich_text_keys(self):
+    def test_converts_every_rich_text_key_of_its_time(self):
+        # Today's rich keys, plus the body slots 0005_pdf_layouts moved into
+        # the layouts' text blocks.
         from apps.core.pdf_branding import RICH_TEXT_KEYS
-        self.assertEqual(set(migration.RICH_KEYS), set(RICH_TEXT_KEYS))
+        retired = {f'{kind}_pdf_text_{slot}'
+                   for kind in ('estimate', 'change_order', 'po')
+                   for slot in ('below_header', 'above_lines', 'below_totals')}
+        self.assertEqual(set(migration.RICH_KEYS), set(RICH_TEXT_KEYS) | retired)

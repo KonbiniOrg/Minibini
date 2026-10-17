@@ -1,0 +1,49 @@
+{# The purchase order's own blocks (apps/core/pdf_layout.py DOCUMENT_TEMPLATES); `block` is one resolved block. #}
+{% if block.type == 'title' %}    <h1>{{ block.heading }}</h1>
+    <h2>{{ po.po_number }}</h2>
+{% elif block.type == 'title_number' %}{# the canvas draws the heading itself #}    <h2>{{ po.po_number }}</h2>
+{% elif block.type == 'details' %}
+    <div class="header-info">
+        <p><strong>Vendor:</strong> {{ business_name }}</p>
+        {% if contact_name %}
+        <p><strong>Attn:</strong> {{ contact_name }}</p>
+        {% endif %}
+        <p><strong>Date:</strong> {{ po.issued_date|default:po.created_date|date:"N j, Y" }}</p>
+        {% if po.requested_date %}
+        <p><strong>Requested Delivery:</strong> {{ po.requested_date|date:"N j, Y" }}</p>
+        {% endif %}
+    </div>
+{% elif block.type == 'line_items' %}
+    <table class="lines">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Description</th>
+                <th>Code</th>
+                <th>SKU</th>
+                <th>Qty</th>
+                <th>Unit</th>
+                <th>Price</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in line_items %}
+            <tr>
+                <td>{{ item.line_number }}</td>
+                <td class="preserve-breaks">{{ item.description }}</td>
+                <td>{{ item.display_code }}</td>
+                <td>{{ item.vendor_sku }}</td>
+                <td class="amount">{{ item.qty }}</td>
+                <td>{{ item.units }}</td>
+                <td class="amount">${{ item.price|floatformat:2 }}</td>
+                <td class="amount">${{ item.total_amount|floatformat:2 }}</td>
+            </tr>
+            {% endfor %}
+            <tr class="total-row">
+                <td colspan="7">Total</td>
+                <td class="amount">${{ total|floatformat:2 }}</td>
+            </tr>
+        </tbody>
+    </table>
+{% endif %}

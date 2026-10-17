@@ -1,0 +1,50 @@
+{% load money %}{# The estimate's own blocks (apps/core/pdf_layout.py DOCUMENT_TEMPLATES); `block` is one resolved block. #}
+{% if block.type == 'title' %}    <h1>{{ block.heading }}</h1>
+    <h2>{{ estimate.estimate_number }}</h2>
+{% elif block.type == 'title_number' %}{# the canvas draws the heading itself #}    <h2>{{ estimate.estimate_number }}</h2>
+{% elif block.type == 'details' %}
+    <div class="header-info">
+        {% if business_name %}
+        <p><strong>Customer:</strong> {{ business_name }}</p>
+        {% endif %}
+        {% if contact_name %}
+        <p><strong>Attn:</strong> {{ contact_name }}</p>
+        {% endif %}
+        {% if job %}
+        <p><strong>Job:</strong> {{ job.job_number }}{% if job.name %} — {{ job.name }}{% endif %}</p>
+        {% endif %}
+        <p><strong>Date:</strong> {{ estimate.sent_date|default:estimate.created_date|date:"N j, Y" }}</p>
+        {% if estimate.expiration_date %}
+        <p><strong>Valid Until:</strong> {{ estimate.expiration_date|date:"N j, Y" }}</p>
+        {% endif %}
+    </div>
+{% elif block.type == 'line_items' %}
+    <table class="lines">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Description</th>
+                <th>Qty</th>
+                <th>Unit</th>
+                <th>Price</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in line_items %}
+            <tr>
+                <td>{{ item.line_number }}</td>
+                <td class="preserve-breaks">{{ item.description }}</td>
+                <td class="amount">{{ item.qty }}</td>
+                <td>{{ item.units }}</td>
+                <td class="amount">{{ item.price|money }}</td>
+                <td class="amount">{{ item.total_amount|money }}</td>
+            </tr>
+            {% endfor %}
+            <tr class="total-row">
+                <td colspan="5">Total</td>
+                <td class="amount">{{ total|money }}</td>
+            </tr>
+        </tbody>
+    </table>
+{% endif %}

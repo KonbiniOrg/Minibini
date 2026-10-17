@@ -136,6 +136,66 @@ class SanitizeRichTextTests(SimpleTestCase):
             self.assertEqual(sanitize_rich_text(once), once)
 
 
+class RichFormattingTests(SimpleTestCase):
+    """The editor's fuller toolbar: strikethrough, sub/superscript, text
+    colour / highlight / font family on spans, paragraph alignment — each
+    through a strict allowlist; nothing that could fetch, link or script."""
+
+    def assertClean(self, dirty, clean):
+        self.assertEqual(sanitize_rich_text(dirty), clean)
+
+    def test_strike_sub_and_sup_are_kept(self):
+        self.assertClean('<p><s>a</s> <sub>2</sub> <sup>3</sup></p>',
+                         '<p><s>a</s> <sub>2</sub> <sup>3</sup></p>')
+        self.assertClean('<p><strike>a</strike><del>b</del></p>', '<p><s>a</s><s>b</s></p>')
+
+    def test_colour_highlight_and_font_family_spans_are_kept_normalized(self):
+        self.assertClean(
+            '<p><span style="color: #C00; background-color: rgb(255, 240, 0); '
+            'font-family: serif">x</span></p>',
+            '<p><span style="color: #c00; background-color: rgb(255, 240, 0); '
+            'font-family: serif">x</span></p>')
+
+    def test_a_span_keeps_its_size_class_and_its_style(self):
+        self.assertClean('<span class="size-large" style="color:#123456">x</span>',
+                         '<span class="size-large" style="color: #123456">x</span>')
+
+    def test_paragraph_alignment_is_kept(self):
+        for align in ('left', 'center', 'right', 'justify'):
+            self.assertClean(f'<p style="text-align: {align}">x</p>',
+                             f'<p style="text-align: {align}">x</p>')
+        # A block tag turned paragraph keeps its alignment too.
+        self.assertClean('<div style="text-align:center">x</div>', '<p style="text-align: center">x</p>')
+
+    def test_anything_outside_the_allowlist_is_dropped(self):
+        for style in ('color: #12', 'color: rgb(300, 0, 0)',
+                      'background-color: url(http://evil/x.png)',
+                      'background: url(file:///etc/passwd)',
+                      'color: #fff; position: fixed',
+                      'font-family: Comic Sans',
+                      'font-size: 72px',
+                      'color: expression(alert(1))'):
+            out = sanitize_rich_text(f'<p><span style="{style}">x</span></p>')
+            self.assertNotIn('url', out)
+            self.assertNotIn('expression', out)
+            self.assertNotIn('position', out)
+            self.assertNotIn('font-size', out)
+        self.assertClean('<p><span style="color: #12">x</span></p>', '<p>x</p>')
+        self.assertClean('<p><span style="color: Red">x</span></p>',
+                         '<p><span style="color: red">x</span></p>')
+        self.assertClean('<p><span style="color: #fff; position: fixed">x</span></p>',
+                         '<p><span style="color: #fff">x</span></p>')
+        self.assertClean('<p style="text-align: middle; color: #000">x</p>', '<p>x</p>')
+
+    def test_links_are_still_reduced_to_text(self):
+        self.assertClean('<p><a href="javascript:alert(1)" style="color:#f00">x</a></p>', '<p>x</p>')
+
+    def test_is_idempotent_with_styles(self):
+        html = ('<p style="text-align: right"><span class="size-small" style="color: #abc; '
+                'font-family: monospace">x</span><s>y</s><sup>z</sup></p>')
+        self.assertEqual(sanitize_rich_text(sanitize_rich_text(html)), sanitize_rich_text(html))
+
+
 class IsBlankTests(SimpleTestCase):
     def test_blank_values(self):
         for value in ('', None, '<p></p>', '<p> &nbsp; </p>', '<p><br></p>',

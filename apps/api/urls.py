@@ -29,7 +29,8 @@ from apps.api.qbo_import.views import (
 from apps.api.templates_config.views import (
     WorkTemplateViewSet, ServiceItemViewSet,
     AccountingCategoryViewSet, settings_view, units_view, email_verify_view,
-    pdf_logo_view, pdf_preview_view,
+    pdf_canvas_view, pdf_image_view, pdf_images_view, pdf_layout_view, pdf_logo_view,
+    pdf_preview_view,
 )
 from apps.api.rate_schemes.views import RateSchemeViewSet
 from apps.api.change_orders.views import ChangeOrderViewSet
@@ -101,6 +102,10 @@ urlpatterns = [
     path('settings/email-verify/', email_verify_view, name='api-settings-email-verify'),
     path('settings/pdf-logo/', pdf_logo_view, name='api-settings-pdf-logo'),
     path('settings/pdf-preview/', pdf_preview_view, name='api-settings-pdf-preview'),
+    path('settings/pdf-layout/<str:kind>/', pdf_layout_view, name='api-settings-pdf-layout'),
+    path('settings/pdf-canvas/<str:kind>/', pdf_canvas_view, name='api-settings-pdf-canvas'),
+    path('settings/pdf-images/', pdf_images_view, name='api-settings-pdf-images'),
+    path('settings/pdf-images/<str:image_id>/', pdf_image_view, name='api-settings-pdf-image'),
     path('setup/status/', setup_status, name='api-setup-status'),
     path('qbo/import/pull/', import_pull, name='api-qbo-import-pull'),
     path('qbo/import/dismiss/', import_dismiss, name='api-qbo-import-dismiss'),

@@ -8,9 +8,9 @@ both estimate_pdf.html and change_order_pdf.html.
 """
 from decimal import Decimal
 
-from django.template.loader import render_to_string
 from django.test import SimpleTestCase, TestCase
 
+from apps.core.pdf_branding import render_document_html
 from apps.core.templatetags.money import money
 
 
@@ -36,12 +36,13 @@ class MoneyFilterTest(SimpleTestCase):
 
 
 class EstimatePdfNegativeLineRenderTest(TestCase):
-    """Renders estimate_pdf.html directly (same pattern as
-    test_change_order_pdf.py's test_pdf_shows_date_after_send) with a
-    negative-price line, asserting the sign lands before the '$'."""
+    """Renders estimate_pdf.html (with the default layout, as the generator
+    does — same pattern as test_change_order_pdf.py's
+    test_pdf_shows_date_after_send) with a negative-price line, asserting
+    the sign lands before the '$'."""
 
     def test_negative_line_renders_sign_before_dollar(self):
-        html = render_to_string('estimates/estimate_pdf.html', {
+        html = render_document_html('estimates/estimate_pdf.html', 'estimate', {
             'estimate': {
                 'estimate_number': 'EST-MONEY-1',
                 'sent_date': None, 'created_date': None, 'expiration_date': None,
@@ -54,16 +55,16 @@ class EstimatePdfNegativeLineRenderTest(TestCase):
                 'price': Decimal('-500.00'), 'total_amount': Decimal('-500.00'),
             }],
             'total': Decimal('-500.00'),
-        })
+        }, {})
         self.assertIn('-$500.00', html)
         self.assertNotIn('$-500.00', html)
 
 
 class ChangeOrderPdfNegativeLineRenderTest(TestCase):
-    """Renders change_order_pdf.html directly with a negative diff row."""
+    """Renders change_order_pdf.html (default layout) with a negative diff row."""
 
     def test_negative_line_renders_sign_before_dollar(self):
-        html = render_to_string('estimates/change_order_pdf.html', {
+        html = render_document_html('estimates/change_order_pdf.html', 'change_order', {
             'co': {'change_order_number': 'CO-MONEY-1', 'sent_date': None,
                    'created_date': None, 'expiration_date': None},
             'job': None,
@@ -78,6 +79,6 @@ class ChangeOrderPdfNegativeLineRenderTest(TestCase):
             'prior_total': Decimal('1000.00'),
             'proposed_total': Decimal('700.00'),
             'diff_total': Decimal('-300.00'),
-        })
+        }, {})
         self.assertIn('-$300.00', html)
         self.assertNotIn('$-300.00', html)

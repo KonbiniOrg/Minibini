@@ -54,10 +54,10 @@ def generate_purchase_order_pdf(po):
     return HTML(string=render_purchase_order_html(po)).write_pdf()
 
 
-def preview_purchase_order_html(drafts=None):
-    """A sample purchase order as an HTML string for the settings preview,
-    branded with the saved settings overlaid by `drafts` (the form's unsaved
-    values). Touches no real PurchaseOrder."""
+def sample_purchase_order():
+    """A sample purchase order for the settings previews and canvas:
+    (template name, template context, placeholder values). Touches no real
+    PurchaseOrder."""
     today = date.today()
     lines = [
         SimpleNamespace(line_number=1, description='Sample material line',
@@ -65,7 +65,7 @@ def preview_purchase_order_html(drafts=None):
                         qty=Decimal('10'), units='ea', price=Decimal('4.25'),
                         total_amount=Decimal('42.50')),
     ]
-    return render_document_html('purchasing/purchase_order_pdf.html', 'po', {
+    return 'purchasing/purchase_order_pdf.html', {
         'po': SimpleNamespace(
             po_number='PO-0000', issued_date=today, created_date=today,
             requested_date=None),
@@ -80,4 +80,12 @@ def preview_purchase_order_html(drafts=None):
         'document_number': 'PO-0000',
         'po_number': 'PO-0000',
         'vendor_name': 'Sample Vendor Inc.',
-    }, drafts)
+    }
+
+
+def preview_purchase_order_html(drafts=None, layout=None):
+    """A sample purchase order as an HTML string for the settings preview,
+    branded with the saved settings overlaid by `drafts` (the form's unsaved
+    values) and laid out by the draft `layout` (the saved one when None)."""
+    template, context, values = sample_purchase_order()
+    return render_document_html(template, 'po', context, values, drafts, layout)

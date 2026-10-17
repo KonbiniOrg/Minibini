@@ -1,4 +1,3 @@
-{% load money %}
 <!DOCTYPE html>
 <html>
 <head>
@@ -8,13 +7,13 @@
         h1 { font-size: 18px; margin-bottom: 5px; }
         h2 { font-size: 14px; color: #555; margin-top: 0; }
         h3 { font-size: 13px; margin: 22px 0 0; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #333; padding: 6px 8px; text-align: left; }
-        th { background-color: #eee; }
-        td.amount { text-align: right; }
+        table.lines { width: 100%; border-collapse: collapse; margin-top: 6px; }
+        table.lines th, table.lines td { border: 1px solid #333; padding: 6px 8px; text-align: left; }
+        table.lines th { background-color: #eee; }
+        table.lines td.amount { text-align: right; }
         .total-row td { border-top: 2px solid #333; }
         .total-row.grand td { font-weight: bold; }
-        .header-info { margin-bottom: 20px; }
+        .header-info { margin: 0; }
         .header-info p { margin: 2px 0; }
         .preserve-breaks { white-space: pre-wrap; overflow-wrap: anywhere; }
         .change-col { white-space: nowrap; font-size: 11px; }
@@ -26,108 +25,5 @@
 {% include 'pdf/_branding_styles.html' %}    </style>
 </head>
 <body>
-{% include 'pdf/_letterhead.html' %}    <h1>Change Order</h1>
-    <h2>{{ co.change_order_number }}</h2>
-
-    {% if branding.text.below_header %}<div class="doc-text">{{ branding.text.below_header }}</div>{% endif %}
-    <div class="header-info">
-        {% if business_name %}
-        <p><strong>Customer:</strong> {{ business_name }}</p>
-        {% endif %}
-        {% if contact_name %}
-        <p><strong>Attn:</strong> {{ contact_name }}</p>
-        {% endif %}
-        {% if job %}
-        <p><strong>Job:</strong> {{ job.job_number }}{% if job.name %} — {{ job.name }}{% endif %}</p>
-        {% endif %}
-        {% if estimate_number %}
-        <p><strong>Amends estimate:</strong> {{ estimate_number }}</p>
-        {% endif %}
-        <p><strong>Date:</strong> {{ co.sent_date|default:co.created_date|date:"N j, Y" }}</p>
-        {% if co.expiration_date %}
-        <p><strong>Valid Until:</strong> {{ co.expiration_date|date:"N j, Y" }}</p>
-        {% endif %}
-    </div>
-
-    {% if branding.text.above_lines %}<div class="doc-text">{{ branding.text.above_lines }}</div>{% endif %}
-    <p class="intro">The following changes are proposed to the agreement above.</p>
-
-    {% if deliverable_rows %}
-    <h3>What you'll receive</h3>
-    <table>
-        <thead>
-            <tr>
-                <th>Change</th>
-                <th>Description</th>
-                <th>Qty</th>
-                <th>Unit</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for row in deliverable_rows %}
-            <tr class="{% if row.kind == 'added' %}added{% elif row.kind == 'changed' %}changed{% elif row.kind == 'removed' %}removed{% elif row.kind == 'changed-orig' %}was{% endif %}">
-                <td class="change-col">
-                    {% if row.kind == 'added' %}Added
-                    {% elif row.kind == 'removed' %}Removed
-                    {% elif row.kind == 'changed' %}Changed
-                    {% elif row.kind == 'changed-orig' %}was
-                    {% endif %}
-                </td>
-                <td class="preserve-breaks">{{ row.description }}</td>
-                <td class="amount">{{ row.qty }}</td>
-                <td>{{ row.units }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {% endif %}
-
-    <h3>Line items</h3>
-    <table>
-        <thead>
-            <tr>
-                <th>Change</th>
-                <th>#</th>
-                <th>Description</th>
-                <th>Qty</th>
-                <th>Unit</th>
-                <th>Price</th>
-                <th>Total</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for row in line_rows %}
-            <tr class="{% if row.kind == 'added' %}added{% elif row.kind == 'changed' %}changed{% elif row.kind == 'removed' %}removed{% elif row.kind == 'changed-orig' %}was{% endif %}">
-                <td class="change-col">
-                    {% if row.kind == 'added' %}Added
-                    {% elif row.kind == 'removed' %}Removed
-                    {% elif row.kind == 'changed' %}Changed
-                    {% elif row.kind == 'changed-orig' %}was
-                    {% endif %}
-                </td>
-                <td>{{ row.line_number }}</td>
-                <td class="preserve-breaks">{{ row.description }}</td>
-                <td class="amount">{{ row.qty }}</td>
-                <td>{{ row.units }}</td>
-                <td class="amount">{{ row.price|money }}</td>
-                <td class="amount">{{ row.amount|money }}</td>
-            </tr>
-            {% endfor %}
-            <tr class="total-row">
-                <td colspan="6">Previous total</td>
-                <td class="amount">{{ prior_total|money }}</td>
-            </tr>
-            <tr class="total-row grand">
-                <td colspan="6">New total</td>
-                <td class="amount">{{ proposed_total|money }}</td>
-            </tr>
-            <tr class="total-row">
-                <td colspan="6">Change</td>
-                <td class="amount">{{ diff_total|money }}</td>
-            </tr>
-        </tbody>
-    </table>
-
-    {% if branding.text.below_totals %}<div class="doc-text">{{ branding.text.below_totals }}</div>{% endif %}
-</body>
+{% include 'pdf/_page_footer.html' %}{% include 'pdf/_layout.html' %}</body>
 </html>

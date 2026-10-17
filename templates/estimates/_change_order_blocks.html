@@ -1,0 +1,102 @@
+{% load money %}{# The change order's own blocks (apps/core/pdf_layout.py DOCUMENT_TEMPLATES); `block` is one resolved block. #}
+{% if block.type == 'title' %}    <h1>{{ block.heading }}</h1>
+    <h2>{{ co.change_order_number }}</h2>
+{% elif block.type == 'title_number' %}{# the canvas draws the heading itself #}    <h2>{{ co.change_order_number }}</h2>
+{% elif block.type == 'details' %}
+    <div class="header-info">
+        {% if business_name %}
+        <p><strong>Customer:</strong> {{ business_name }}</p>
+        {% endif %}
+        {% if contact_name %}
+        <p><strong>Attn:</strong> {{ contact_name }}</p>
+        {% endif %}
+        {% if job %}
+        <p><strong>Job:</strong> {{ job.job_number }}{% if job.name %} — {{ job.name }}{% endif %}</p>
+        {% endif %}
+        {% if estimate_number %}
+        <p><strong>Amends estimate:</strong> {{ estimate_number }}</p>
+        {% endif %}
+        <p><strong>Date:</strong> {{ co.sent_date|default:co.created_date|date:"N j, Y" }}</p>
+        {% if co.expiration_date %}
+        <p><strong>Valid Until:</strong> {{ co.expiration_date|date:"N j, Y" }}</p>
+        {% endif %}
+    </div>
+{% elif block.type == 'line_items' %}
+    <p class="intro">The following changes are proposed to the agreement above.</p>
+
+    {% if deliverable_rows %}
+    <h3>What you'll receive</h3>
+    <table class="lines">
+        <thead>
+            <tr>
+                <th>Change</th>
+                <th>Description</th>
+                <th>Qty</th>
+                <th>Unit</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in deliverable_rows %}
+            <tr class="{% if row.kind == 'added' %}added{% elif row.kind == 'changed' %}changed{% elif row.kind == 'removed' %}removed{% elif row.kind == 'changed-orig' %}was{% endif %}">
+                <td class="change-col">
+                    {% if row.kind == 'added' %}Added
+                    {% elif row.kind == 'removed' %}Removed
+                    {% elif row.kind == 'changed' %}Changed
+                    {% elif row.kind == 'changed-orig' %}was
+                    {% endif %}
+                </td>
+                <td class="preserve-breaks">{{ row.description }}</td>
+                <td class="amount">{{ row.qty }}</td>
+                <td>{{ row.units }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    <h3>Line items</h3>
+    <table class="lines">
+        <thead>
+            <tr>
+                <th>Change</th>
+                <th>#</th>
+                <th>Description</th>
+                <th>Qty</th>
+                <th>Unit</th>
+                <th>Price</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in line_rows %}
+            <tr class="{% if row.kind == 'added' %}added{% elif row.kind == 'changed' %}changed{% elif row.kind == 'removed' %}removed{% elif row.kind == 'changed-orig' %}was{% endif %}">
+                <td class="change-col">
+                    {% if row.kind == 'added' %}Added
+                    {% elif row.kind == 'removed' %}Removed
+                    {% elif row.kind == 'changed' %}Changed
+                    {% elif row.kind == 'changed-orig' %}was
+                    {% endif %}
+                </td>
+                <td>{{ row.line_number }}</td>
+                <td class="preserve-breaks">{{ row.description }}</td>
+                <td class="amount">{{ row.qty }}</td>
+                <td>{{ row.units }}</td>
+                <td class="amount">{{ row.price|money }}</td>
+                <td class="amount">{{ row.amount|money }}</td>
+            </tr>
+            {% endfor %}
+            <tr class="total-row">
+                <td colspan="6">Previous total</td>
+                <td class="amount">{{ prior_total|money }}</td>
+            </tr>
+            <tr class="total-row grand">
+                <td colspan="6">New total</td>
+                <td class="amount">{{ proposed_total|money }}</td>
+            </tr>
+            <tr class="total-row">
+                <td colspan="6">Change</td>
+                <td class="amount">{{ diff_total|money }}</td>
+            </tr>
+        </tbody>
+    </table>
+{% endif %}

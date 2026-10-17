@@ -1,8 +1,10 @@
 """The rich-text format of the document-PDF branding fields.
 
-The settings editor (Tiptap) produces a tiny HTML subset — paragraphs, line
-breaks, bulleted / numbered lists, bold / italic / underline, and four
-text-size steps carried as span classes. Stored values are rendered into WeasyPrint documents, and WeasyPrint
+The settings editor (Tiptap) produces a small HTML subset — paragraphs (with
+an optional text alignment), line breaks, bulleted / numbered lists, bold /
+italic / underline / strikethrough, sub- / superscript, four text-size steps
+carried as span classes, and text colour / highlight / font family carried
+as span styles. No links, no images, no markup of the user's own. Stored values are rendered into WeasyPrint documents, and WeasyPrint
 fetches whatever an element references (`<img src="file:///…">`, stylesheet
 URLs), so arbitrary markup would be a file-read / SSRF surface. Every value
 therefore passes through `sanitize_rich_text`, an allowlist, both when saved
@@ -16,7 +18,19 @@ from html.parser import HTMLParser
 # span at all.
 SIZE_CLASSES = ('size-small', 'size-large', 'size-xlarge')
 
-_INLINE = {'strong': 'strong', 'b': 'strong', 'em': 'em', 'i': 'em', 'u': 'u'}
+_INLINE = {'strong': 'strong', 'b': 'strong', 'em': 'em', 'i': 'em', 'u': 'u',
+           's': 's', 'strike': 's', 'del': 's', 'sub': 'sub', 'sup': 'sup'}
+# Styles are rebuilt from an allowlist — never passed through: a span may
+# carry colour, highlight and one of a few generic font families; a
+# paragraph, its alignment. Values are matched whole, so nothing like url()
+# or expression() survives.
+FONT_FAMILIES = ('sans-serif', 'serif', 'monospace')
+ALIGNMENTS = ('left', 'center', 'right', 'justify')
+_HEX = re.compile(r'#(?:[0-9a-f]{3}|[0-9a-f]{6})')
+_RGB = re.compile(r'rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)')
+# A named colour (as pasted text often carries): letters only, so it can't
+# carry a function or a URL; a name WeasyPrint doesn't know is ignored.
+_NAMED = re.compile(r'[a-z]{3,20}')
 _LISTS = {'ul', 'ol'}
 # Block-level tags (from pasted documents) become paragraph boundaries. An
 # <li> outside any list is one too.
@@ -33,6 +47,45 @@ _DROP = {'script', 'style', 'head', 'title', 'iframe', 'object', 'embed',
 
 _PLACEHOLDER = re.compile(r'\{(\w+)\}')
 _TAG = re.compile(r'<[^>]*>')
+
+
+def _declarations(style):
+    """(property, value) pairs from a style attribute, lowercased; the last
+    of a repeated property wins."""
+    out = {}
+    for part in (style or '').split(';'):
+        prop, sep, value = part.partition(':')
+        if sep:
+            out[prop.strip().lower()] = value.strip().lower()
+    return out
+
+
+def _colour(value):
+    if _HEX.fullmatch(value) or _NAMED.fullmatch(value):
+        return value
+    match = _RGB.fullmatch(value)
+    if match and all(int(part) <= 255 for part in match.groups()):
+        return 'rgb({}, {}, {})'.format(*(int(part) for part in match.groups()))
+    return None
+
+
+def _span_style(style):
+    parts = []
+    for prop, value in _declarations(style).items():
+        if prop in ('color', 'background-color'):
+            colour = _colour(value)
+            if colour:
+                parts.append(f'{prop}: {colour}')
+        elif prop == 'font-family':
+            family = value.strip('\'"')
+            if family in FONT_FAMILIES:
+                parts.append(f'font-family: {family}')
+    return '; '.join(parts)
+
+
+def _paragraph_open(attrs):
+    align = _declarations(dict(attrs).get('style')).get('text-align')
+    return f'<p style="text-align: {align}">' if align in ALIGNMENTS else '<p>'
 
 
 class _Sanitizer(HTMLParser):
@@ -84,7 +137,7 @@ class _Sanitizer(HTMLParser):
             self.stack.append(('li', True))
         elif tag in _BLOCK or tag == 'li':
             self._close_to('p', _PARAGRAPH_SCOPE)
-            self.out.append('<p>')
+            self.out.append(_paragraph_open(attrs))
             self.stack.append(('p', True))
         elif tag in _INLINE:
             name = _INLINE[tag]
@@ -92,9 +145,13 @@ class _Sanitizer(HTMLParser):
             self.stack.append((name, True))
         elif tag == 'span':
             cls = (dict(attrs).get('class') or '').strip()
-            keep = cls in SIZE_CLASSES
+            cls = cls if cls in SIZE_CLASSES else ''
+            style = _span_style(dict(attrs).get('style'))
+            keep = bool(cls or style)
             if keep:
-                self.out.append(f'<span class="{cls}">')
+                attributes = ''.join((f' class="{cls}"' if cls else '',
+                                      f' style="{style}"' if style else ''))
+                self.out.append(f'<span{attributes}>')
             self.stack.append(('span', keep))
 
     def handle_startendtag(self, tag, attrs):
@@ -131,9 +188,11 @@ class _Sanitizer(HTMLParser):
 
 
 def sanitize_rich_text(value):
-    """Reduce any HTML to the allowlist: <p>, <br>, <ul>, <ol start="n">,
-    <li>, <strong>, <em>, <u>, and <span class="size-…">. Other attributes
-    are dropped, b/i become strong/em,
+    """Reduce any HTML to the allowlist: <p> (style: text-align only),
+    <br>, <ul>, <ol start="n">, <li>, <strong>, <em>, <u>, <s>, <sub>,
+    <sup>, and <span> with a size class and / or a style of colour,
+    background colour and a generic font family. Other attributes and
+    style properties are dropped, b/i become strong/em, strike/del s,
     block tags become paragraphs, unknown tags keep only their text, and
     resource-bearing / script elements are dropped with their content."""
     if not value:

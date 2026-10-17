@@ -3676,7 +3676,7 @@ What happens on send (the cross-doc framing is in
 
 1. Generate the Estimate PDF via `apps/estimates/pdf.py:generate_estimate_pdf`
    (weasyprint over `templates/estimates/estimate_pdf.html`, with the
-   letterhead and text slots from Settings → Documents —
+   estimate's layout, company details and footer from Settings → Documents —
    `architecture-and-conventions.md` §7.15).
 2. Call `OutboundEmailService.send_tracked` with
    `associate_with={'job': estimate.job}` — that persists an outbound

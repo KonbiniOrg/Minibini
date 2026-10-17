@@ -108,16 +108,31 @@ both estimates and change orders; if unset, notifications are silently skipped),
 `change_order_email_body_template`. Optional document-PDF branding (all default
 to empty / not printed; see `architecture-and-conventions.md` §7.15): `pdf_logo`
 (base64 `data:` URI, PNG/JPEG, ≤ 1 MB — written only via
-`/api/settings/pdf-logo/`, never via the settings PATCH), `pdf_logo_position`
-(`left` | `center` | `right`, default `left`), `pdf_company_name`,
-`pdf_company_address`, `pdf_company_phone`, `pdf_company_email`, and the text
-slots `<kind>_pdf_text_<slot>` for kind ∈ {`estimate`, `change_order`, `po`} ×
-slot ∈ {`below_header`, `above_lines`, `below_totals`, `page_footer`}. The
-four company keys and the twelve slot keys are rich text — the allowlisted
-HTML subset of `apps/core/rich_text.py` (`<p>`, `<br>`, `<ul>`,
-`<ol start="2–9999">`, `<li>`, `<strong>`, `<em>`, `<u>`,
-`<span class="size-small|size-large|size-xlarge">`), sanitized on save and on
-render.
+`/api/settings/pdf-logo/`, never via the settings PATCH), the image library
+`pdf_image_<32 hex>` (JSON `{name, src, added}`, PNG/JPEG ≤ 1 MB, at most 50;
+written only via `/api/settings/pdf-images/`, never via the PATCH), `pdf_company_name`,
+`pdf_company_address`, `pdf_company_phone`, `pdf_company_email`, the page
+footers `<kind>_pdf_text_page_footer`, and the layouts `<kind>_pdf_layout`
+(canonical JSON, written only via `PUT /api/settings/pdf-layout/<kind>/`, never
+via the settings PATCH; absent → the built-in default layout), for kind ∈
+{`estimate`, `change_order`, `po`}. A layout holds exactly one `line_items`
+block, alone in a `full`-width row; `title` / `details` at most once each;
+a column row's optional `gap` ∈ {`small`, `large`} (absent = medium); a
+spacer's `orientation` ∈ {`vertical`, `horizontal`}, `side` ∈ {`left`,
+`right`}; an image block's `image` is '' or a 32-hex library id and its
+`size` ∈ {`small`, `medium`, `large`}; a title's optional `heading` is plain
+text ≤ 80 chars; divider lines are not blocks — optional `line_below: true` on a
+block or a row, and `column_lines` (one boolean per column boundary) on a
+column row, each stored only when set
+(`apps/core/pdf_layout.validate_layout`). The four company keys, the three
+footers and every layout text block are rich text — the allowlisted HTML subset
+of `apps/core/rich_text.py` (`<p>` with only `text-align`, `<br>`, `<ul>`,
+`<ol start="2–9999">`, `<li>`, `<strong>`, `<em>`, `<u>`, `<s>`, `<sub>`,
+`<sup>`, `<span>` with a size class and / or only `color` /
+`background-color` / `font-family` ∈ {sans-serif, serif, monospace}),
+sanitized on save and on render. (`pdf_logo_position` and the body slots
+`<kind>_pdf_text_below_header` / `_above_lines` / `_below_totals` were retired
+by migration `core.0005`.)
 **Taxation is handled by QuickBooks** —
 there are no app-side tax keys (`default_tax_rate` / `org_tax_multiplier` were
 removed).
