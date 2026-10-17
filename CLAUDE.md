@@ -40,8 +40,14 @@ cd e2e && npx playwright test           # E2E suite (own ports 8100/9100; dev se
 docker compose up                       # Full stack (app, mysql, nginx)
 
 # Scheduled jobs
-# Management commands like `poll_qbo_payments` exist; a crontab/scheduler to
-# run them is not yet wired in any deployed environment.
+# Staging (docker compose) runs them via the Ofelia `cron` service — schedules
+# in deploy/cron/ofelia.ini (poll_qbo_payments every 15 min; estimate/CO expiry
+# and temp-email cleanup nightly). Nothing is scheduled on a local dev instance;
+# run any of them by hand, they are all manage.py commands:
+python manage.py poll_qbo_payments
+python manage.py mark_estimates_expired
+python manage.py mark_change_orders_expired
+python manage.py cleanup_temp_emails
 
 # Data seeding
 ./scripts/seed_data.sh                  # Seed realistic data via API (requires dev server running)
