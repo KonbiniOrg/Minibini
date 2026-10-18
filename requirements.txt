@@ -28,3 +28,6 @@ python-quickbooks==0.9.8
 
 # PDF generation
 weasyprint==63.1
+
+# Excel file reading (nealsdata converter)
+openpyxl==3.1.5
