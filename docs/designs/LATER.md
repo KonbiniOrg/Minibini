@@ -50,8 +50,8 @@ proper issue.
   estimating docs/UI.
   _Repeatable-fee half SHIPPED 2026-08-16_ (`flat_fee` algorithm,
   item-side amounts, scheme-encapsulated interpretation, converter
-  internal scheme sourcing — spec `docs/plans/2026-08-16-flat-fee-schemes.md`,
-  implemented same day). Remaining: the scheme-surface discoverability
+  internal scheme sourcing — flat-fee-schemes plan, deleted after shipping — see
+  `estimates-and-prices.md` §9b; implemented same day). Remaining: the scheme-surface discoverability
   half — the scheme manager still gives no hint that a Service Item must
   wrap a scheme to make it pickable (an "also create a Service Item?"
   affordance or explanatory copy).
@@ -161,8 +161,12 @@ Status coupling, transitions, and what a job may do at each stage.
   states). The surviving direction is the claims-by-construction model —
   mint modal on frozen (open/accepted) hand lines + explicit decline +
   acceptance checklist + auto-release — see
-  `docs/plans/2026-08-15-estimating-structure.md`.
-  _Done when:_ that spec ships and this entry's flow works in the browser.
+  the estimating-structure spec (plan file deleted after shipping; the
+  shipped behavior is `estimates-and-prices.md` §9a "The acceptance
+  checklist — mint, decline, and auto-release").
+  _2026-10-18:_ that spec shipped in August 2026. **RM to confirm the
+  flow works in the browser, then delete this entry.**
+  _Done when:_ RM confirms and removes this.
 
 - **The full-view pale-yellow body background is a placeholder RM dislikes.** —
   _added 2026-08-14 (RM, colorway mockup review)_
@@ -207,7 +211,8 @@ Status coupling, transitions, and what a job may do at each stage.
   The keep-total toggle's label/behavior isn't landing — RM finds "keep
   total $xx" confusing in use, and suspects the whole bundle modal needs
   restructuring rather than label tweaks. Compounding pressure: the
-  per-unit-lines design (`docs/plans/2026-09-16-per-unit-lines.md` §12)
+  per-unit-lines design (plan deleted after shipping; see
+  `estimates-and-prices.md` §9b and §12.1a)
   wants to add per-unit + split-materials + a before/after stamp preview
   to the same modal, notes keep-total and per-unit are mutually
   exclusive, and flags that the two modes want opposite field-entry
@@ -518,7 +523,7 @@ The CO surface and its estimate-parallel code.
   in full or waits. The real fix for a large bundle worked incrementally
   (e.g. "10 of these, 6 done") is proper per-unit progress billing — "bill
   K of N units" — landing at invoice time from the per-unit-lines work
-  (`docs/plans/2026-09-16-per-unit-lines.md`), not an all-or-nothing skip.
+  (`estimates-and-prices.md` §9b), not an all-or-nothing skip.
   _Done when:_ per-unit-lines' invoice-side phase lets a partially-done
   per-unit bundle bill its completed fraction directly, and this skip
   rule is revisited for lines that qualify.
@@ -657,8 +662,8 @@ Billing mechanics and money-record lifecycle.
   CO PDF generation is now done too (`generate_change_order_pdf` renders the
   diff via `change_order_pdf.html`; the CO send email attaches it alongside the
   portal link).
-  **Remaining:** PO / Invoice / Bill public URLs (no token column, no portal
-  view).
+  **Remaining:** PO / Invoice public URLs (no token column, no portal
+  view). (Bills were retired 2026-07-23 — not a target.)
 
 - **Expense invoice-freeze has no billability-readiness gate, by design.** — _added 2026-06-17_
   Expense atoms have an invoice-freeze (`ExpenseService._assert_not_invoiced`)
@@ -867,20 +872,6 @@ Billing mechanics and money-record lifecycle.
   and only show it when short / when other jobs compete for the stock.
   _Done when:_ a covered row never shows a badge that contradicts its chip,
   and the badge's number is labelled with what it actually measures.
-
-- **"On Hand" chip is gross item QOH ≥ quantity — ignores other jobs'
-  earmarks.** — _added 2026-10-14_
-  `materialStatus` (`frontend/src/lib/materialStatus.js`) decides On Hand
-  from `qty_on_hand < quantity` where `qty_on_hand` is the item's raw QOH.
-  Two committed jobs each needing 3 sheets of a 3-sheet item both read
-  On Hand; only the avail badge goes red (−3). The chip should respect
-  reservations — a row is covered when its own earmark (or the item's
-  uncommitted stock) covers its quantity, not when the shelf happens to
-  hold that many sheets for everyone. Needs a decision on who is "short"
-  when the item is over-committed (first-earmarked wins? everyone short?).
-  _Done when:_ an over-committed item's material rows don't all claim On
-  Hand, with a stated tie rule, and the Order button reappears on the short
-  rows.
 
 - **PO/Bill vendor field: let users search by contact name but resolve to the business.** — _added 2026-06-21_
   The PO and Bill forms pick a vendor with `BusinessPicker` (searches businesses, returns a
@@ -1188,23 +1179,6 @@ Cross-cutting UI/API conventions and shared components.
   _Done when:_ the schedule suite passes at any time of day (spot-check by
   passing a just-past-midnight `now`).
 
-- **`deposit-creation.spec.js` is order-dependent — it picks the first
-  invoice-less job.** — _added 2026-07-30_
-  `findInvoicelessJob` (`e2e/specs/deposits/deposit-creation.spec.js` ~L31)
-  scans the backdrop for the *first* billable job with zero invoices. The
-  suite runs `workers: 1` against one shared `minibini_e2e` with no per-spec
-  reset, so any earlier spec that invoices a billable job changes which job
-  this one gets — or consumes the last candidate. Solo it always lands on the
-  same clean job and passes (verified 8/8 on fresh DBs); it failed once inside
-  a full-suite run. Deterministic under ordering, not timing noise, and the
-  spec does discard its own draft, so it's downstream of others rather than
-  self-poisoning. Same shape as the "filter-change + stale page race" family
-  of shared-state fragilities. Fix shape: have it create its own job (as
-  `rate-scheme-modal` and `coverage-signal` do for their shapes) instead of
-  hunting the seed for an unclaimed one.
-  _Done when:_ the spec's job is one it made, so full-suite ordering can't
-  reach it.
-
 - **`contacts/import-skip-report.spec.js` is flaky (~50% locally).** — _added 2026-08-08_
   A client render race in `ContactListPage`'s letter filter, unrelated to
   QBO import itself and untouched by the skeleton-phase branch that
@@ -1228,45 +1202,10 @@ Cross-cutting UI/API conventions and shared components.
   _Done when:_ the shape-hunt builds its own job via the API (like
   `change-orders/amend-in-place.spec.js` does) instead of hunting the
   shared seed, and the batch passes.
-
-- **Three e2e specs fail in every full-suite run (2026-10-06, both before and
-  after the migration consolidation — identical results on the old and new
-  graphs, 111 passed / 3 failed / 6 skipped).**
-  - `per-unit-lines/mint-first.spec.js` and
-    `task-view-bundling/start-estimate-offer.spec.js` "State C": both pass in
-    isolation; in the full run the freshly created plain hand line is treated
-    as answered (job goes `in_progress` instead of parking on `approved`, no
-    checklist banner). `EstimateService.unanswered_lines` only counts a line
-    answered when it has source rows or sits in an `is_deposit` category, so
-    an earlier spec is leaking state (category flags or a Configuration key)
-    that makes new hand lines look answered. Same order-dependent family as
-    the entries below.
-  - `production-lifecycle/completion.spec.js` §6 "open session closes": fails
-    in isolation too — after Complete, "Working on:" is still rendered.
-    Real regression or stale expectation; needs a look.
-  _Done when:_ a full `npx playwright test` is green, with the leak identified
-  (not papered over by reordering).
-
-- **Two more intermittently-flaky e2e specs, catalogued 2026-08-08 (skeleton-phase final verification).**
-  `production-lifecycle/completion.spec.js` §6 (a timing flake around the
-  work-complete cascade) and `deposits/deposit-creation.spec.js` (a
-  `.deposit-pill` list-timing race; failed once in a full run, passes in
-  isolation and passed earlier full runs). Both pre-date and are
-  untouched by the `feature/better-fees` skeleton phase; evidence in that
-  phase's task reports. Same treatment as the contacts flake above.
-  _2026-08-09 (fee-removal Task 10):_ the cascade timing flake reproduced
-  once more in a full run. Separately, the file's OTHER §6 test
-  ("Completion settle-up") fails deterministically when the spec runs
-  SOLO on a fresh DB: its seed-hunt picks the PT-MIS216 job whose task
-  carries an out-of-stock material, so the (correct, pre-existing)
-  completion stock-gate blocks it — order-dependent candidate selection,
-  same family as the deposit-creation entry, not timing. Not caused by
-  the fee strip (the stripped seed differs from the old one only in
-  `jobs.fee` + fee source rows — verified row-for-row). Fix shape: the
-  hunt should also require the candidate task's materials to be
-  completable (in stock or absent), or build its own job.
-  _Done when:_ each spec waits on its real condition and passes reliably
-  solo and in the full suite.
+  _2026-10-18:_ in every full-suite run this week it no longer fails — it
+  **skips** (`test.skip`, "seed gap: no in_progress job with two
+  accepted-…") because the shape-hunt finds nothing by the time it runs.
+  Skipped is not fixed; the own-job build above is still the fix.
 
 - **Convert the remaining local-state tab pages to per-tab routes.** — _added 2026-07-05 (RM, during the Catalog-area design)_
   The Catalog area set the pattern: real routes per tab (bookmarks, refresh, and
@@ -1441,7 +1380,8 @@ Cross-cutting UI/API conventions and shared components.
 
 - **Bill tables are schema-only leftovers — a drop migration is owed.** — _added 2026-07-23_
   The Bill domain was retired (bills live in QBO; see
-  `docs/plans/bill-removal-spec.md`), but `Bill`, `BillLineItem`, and
+  `materials-inventory-and-purchasing.md` §13 and
+  `quickbooks-integration.md` "Bill push — retired"), but `Bill`, `BillLineItem`, and
   `BillPayment` models were kept as bare schema declarations so the branch
   carries no destructive migration and the change stays revertible.
   `EmailRecord.bill` and `Business.qbo_vendor_id` columns likewise remain.
@@ -1504,7 +1444,7 @@ Cross-cutting UI/API conventions and shared components.
   contact imports.
 
 - **Full AccountingCategory immutability/supersession.** — _added 2026-07-25_
-  The deposits work (`docs/plans/deposit-invoices-spec.md`) freezes only
+  The deposits work (`invoicing-and-expenses.md` "Deposits") freezes only
   `is_deposit`/`taxable` on a used category; RM wants the RateScheme
   pattern generalized — a used AC can't be edited, only retired and
   replaced. Needs its own design: which fields freeze (QBO account/item
