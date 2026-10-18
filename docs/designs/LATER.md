@@ -1047,6 +1047,26 @@ Billing mechanics and money-record lifecycle.
   _Done when:_ RM rules and the overlay either auto-dismisses or the
   decision to keep it sticky is recorded.
 
+- **Should routine row actions acknowledge success?** — _added 2026-10-18
+  (#511 QA, PS)_
+  Adding, editing or completing a task on the Tasks page shows no
+  confirmation at all — the row just appears or changes (`TasksPanel` /
+  `WorkItemForm` / `TaskActions` never call `showSuccess`; only bundling a
+  line into an estimate/CO and starting an estimate do). Noticed while
+  QA-ing the persistent job shell: with the page no longer reloading, the
+  silence is more visible. Three options on the table: (a) keep silence as
+  the rule for in-place row mutations — the updated row is the
+  acknowledgement; (b) a brief, non-blocking toast for these; (c) use the
+  existing green overlay. (c) is a bad fit while the item above stands —
+  the overlay is sticky and intercepts clicks, so it would turn every
+  add-task into a modal interruption. If (b), it needs an auto-dismissing,
+  non-blocking variant of the overlay first (same work as the item above),
+  and a stated rule for which action classes get it. Scope goes beyond
+  tasks: materials, expenses and deliverables rows behave the same way.
+  _Done when:_ RM rules a/b/c; if b, the non-blocking variant exists and the
+  rule for which actions use it is written into `frontend/README.md` →
+  Error Handling (venue 3).
+
 - **Rename the "Tasks" header to "Work".** — _added 2026-08-17 (RM)_
   The job nav rail's section label (`JobNavRail.svelte` line ~15,
   `label: 'Tasks'`) should read **Work** — matching the area's own
