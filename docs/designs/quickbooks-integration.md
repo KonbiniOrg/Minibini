@@ -274,8 +274,10 @@ Each domain service exposes the same small sync-dispatch surface so a failure ca
 
 | Method | Path | Permission | Purpose |
 |---|---|---|---|
-| `GET` | `/api/qbo/sync-failures/` | `can_manage_financials` | List all QBO sync failures across the money pushes |
-| `POST` | `/api/qbo/sync-failures/retry-all/` | `can_manage_financials` | Retry each (isolated per-record); returns `{retried, still_failing}` |
+| `GET` | `/api/qbo/sync-failures/` | `can_manage_financials` or `can_manage_config` | List all QBO sync failures across the money pushes |
+| `POST` | `/api/qbo/sync-failures/retry-all/` | `can_manage_financials` or `can_manage_config` | Retry each (isolated per-record); returns `{retried, still_failing}` |
+
+Config was added to the reader/retry set 2026-10-17 (RM): the panel lives on the config-gated Settings page, so a config-only admin must be able to see and retry failures. The per-row `…/retry-sync/` actions on `ExpenseViewSet` / `ReimbursementViewSet` carry the same `CanManageFinancialsOrConfig` so the panel's Retry buttons work for that admin; every other expense/reimbursement write stays financials-only, and a config-only user's expense *list* stays own-scoped (`_sees_all_expenses` opens the full queryset only for `retry_sync`).
 
 The SPA surfaces this as `QBOSyncFailures.svelte` (per-row Retry + Retry all) on the Settings page; the failures view covers **only** the two `QBOSyncable` money pushes (Customers/Invoices use ad-hoc sync state and are out of scope; the `BillPayment` slice was retired 2026-07-23).
 

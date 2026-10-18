@@ -51,6 +51,15 @@ test('QBO Log tab lists every seeded sync attempt, newest first', async ({ page 
   });
 });
 
+test('config admin sees the QBO Sync Failures panel on the Accounting tab without a permission error', async ({ page }) => {
+  await page.goto('/#/settings');
+  const panel = page.locator('section.qbo-sync-failures');
+  await expect(panel.getByRole('heading', { name: 'QBO Sync Failures' })).toBeVisible();
+  await expect(panel.getByRole('alert')).toHaveCount(0);
+  // Seed has no sync_failed money records, so the panel reports the empty state.
+  await expect(panel.getByText('No QBO sync failures.')).toBeVisible();
+});
+
 test('guard: a worker with no atoms is refused the sync-log API', async () => {
   const api = await apiAs(personas.worker);
   try {

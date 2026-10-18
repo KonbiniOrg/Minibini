@@ -15,7 +15,7 @@ from intuitlib.client import AuthClient
 from intuitlib.enums import Scopes
 
 from apps.api.pagination import StandardPagination
-from apps.api.permissions import CanManageConfig, CanManageFinancials, CanManageFinancialsOrConfig
+from apps.api.permissions import CanManageConfig, CanManageFinancialsOrConfig
 from apps.qbo.models import QBOConnection, QBOSyncLog
 from apps.qbo.serializers import QBOSyncLogSerializer
 from apps.qbo.services import QBOAccountsService, QBOExpenseSyncService, QBOSyncFailureService
@@ -141,14 +141,14 @@ def qbo_payment_accounts(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated, CanManageFinancials])
+@permission_classes([IsAuthenticated, CanManageFinancialsOrConfig])
 def qbo_sync_failures(request):
     """Return all sync-failed records across Expense and Reimbursement."""
     return Response({'failures': QBOSyncFailureService.list_failures()})
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated, CanManageFinancials])
+@permission_classes([IsAuthenticated, CanManageFinancialsOrConfig])
 def qbo_sync_failures_retry_all(request):
     """Retry every sync-failed record; returns {retried, still_failing}."""
     from apps.expenses.models import Expense, Reimbursement

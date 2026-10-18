@@ -6,7 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from apps.expenses.models import Expense
 from apps.expenses.services import ExpenseService
 from apps.api.mixins import QBORetrySyncMixin
-from apps.api.permissions import CanManageFinancials
+from apps.api.permissions import CanManageFinancials, CanManageFinancialsOrConfig
 from apps.api.history.serializers import HistoryEntrySerializer
 from apps.core.models import ExpensesHistory
 from .serializers import ExpenseSerializer
@@ -28,13 +28,24 @@ class ExpenseViewSet(QBORetrySyncMixin, viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ('list', 'retrieve', 'create', 'history'):
             return [IsAuthenticated()]
+        if self.action == 'retry_sync':
+            # The Settings → Accounting sync-failures panel is config-gated, so
+            # config admins may retry a failed QBO push (and nothing else here).
+            return [IsAuthenticated(), CanManageFinancialsOrConfig()]
         return [IsAuthenticated(), CanManageFinancials()]
+
+    def _sees_all_expenses(self):
+        user = self.request.user
+        if user.has_perm('core.can_manage_financials'):
+            return True
+        # Config admins reach every record only through retry-sync (see
+        # get_permissions); list/retrieve stay own-only for them.
+        return self.action == 'retry_sync' and user.has_perm('core.can_manage_config')
 
     def get_queryset(self):
         qs = super().get_queryset()
-        user = self.request.user
-        if not user.has_perm('core.can_manage_financials'):
-            qs = qs.filter(purchased_by=user)
+        if not self._sees_all_expenses():
+            qs = qs.filter(purchased_by=self.request.user)
 
         params = self.request.query_params
         if params.get('purchased_by'):

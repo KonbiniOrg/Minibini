@@ -229,7 +229,9 @@ QBO sync status **separately**.
 - [ ] **Financials:** records/edits/deletes payments, deletes company expenses,
   manages batches.
 - [ ] **Config:** configures the QBO connection + payment accounts (§1); does not
-  need Financials to do so.
+  need Financials to do so. Since 2026-10-17 also sees the **QBO Sync Failures**
+  panel and may Retry / Retry all from it (and read the QBO Log tab) — but still
+  cannot edit/delete expenses or manage batches.
 
 ## 12. Customer/Vendor status sync (sandbox hand test)
 

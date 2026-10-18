@@ -137,8 +137,8 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 | `/api/inventory/` (`InventoryItemViewSet`) | `IsAuthenticated` | `can_manage_financials` **or** `can_manage_config` | `order` action (`POST /api/inventory/{id}/order/` — order to stock, no material/job) is `can_manage_jobs` **or** `can_manage_financials` (`CanManageJobsOrFinancials`; **not** config); `po_id` (append) mode additionally requires `PurchaseOrderService.user_can_manage(user, po)` → 403. `vendor-history` (GET) is `IsAuthenticated` |
 | `/api/earmarks/` (`EarmarkViewSet`) | `IsAuthenticated` | (read-only) | New — `ReadOnlyModelViewSet`, unpaginated, backs the Catalog Earmarks tab |
 | `/api/materials/` | `IsAuthenticated` | `IsAuthenticated` | service enforces consumption-state and immutability rules. `order` action (`POST /api/materials/{id}/order/`): `CanManageFinancialsOrJobOrPM` (financials atom, jobs atom, or PM of the material's job); `po_id` mode additionally requires `user_can_manage(user, po)` → 403. `MaterialSerializer.can_manage` feeds the Order button |
-| `/api/expenses/` | `IsAuthenticated` | `can_manage_financials` for update / destroy / reject / retry-sync | list / retrieve auto-scoped to `purchased_by=user` unless `can_manage_financials`; create open to authenticated |
-| `/api/reimbursements/` | `can_manage_financials` | `can_manage_financials` | |
+| `/api/expenses/` | `IsAuthenticated` | `can_manage_financials` for update / destroy / reject; `retry-sync` is financials **or** config | list / retrieve auto-scoped to `purchased_by=user` unless `can_manage_financials`; create open to authenticated. A config-only user reaches every expense only through `retry-sync` (Settings sync-failures panel) |
+| `/api/reimbursements/` | `can_manage_financials` | `can_manage_financials`; `retry-sync` is financials **or** config | |
 | `/api/users/` (admin) | `can_manage_config` | `can_manage_config` | DELETE returns 405 — use deactivate. Exception: the `schedule-envelope` action is `can_manage_time` **OR** `can_manage_config` — the one user-admin route open to time managers |
 | `/api/auth/users/` (assignee dropdown) | `IsAuthenticated` | — | distinct from `/api/users/` |
 | `/api/emails/` | `IsAuthenticated` | (no writes from this viewset) | reads only |
@@ -155,6 +155,7 @@ Default pattern: list/retrieve are `IsAuthenticated`; create / update / delete a
 | `/api/setup/status/` | GET | IsAuthenticated | Per-area setup gate availability + messages (sidebar/Home Help) |
 | `/api/qbo/import/*` | POST/GET | per area: config (categories/schemes), financials (catalog), jobs (contacts) | QBO snapshot pull, suggestions, commits, dismissals |
 | `/api/qbo/*` | `can_manage_config` | `can_manage_config` | OAuth + connection state — see `quickbooks-integration.md` |
+| `/api/qbo/sync-failures/`, `…/retry-all/`, `/api/qbo/sync-log/` | financials **or** config | financials **or** config | Settings → Accounting sync-failures panel and the QBO Log tab (2026-10-17) |
 
 #### Special cases
 

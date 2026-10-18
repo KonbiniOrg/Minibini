@@ -67,8 +67,12 @@ need no live QBO.
 - [ ] **Pager (not e2e-driven — seed has 3 rows).** Past 25 rows the shared
   Pager appears with Previous/Next and an `N–M of total` label.
 - [ ] **Guard: no atom → 403.** A worker with no atoms gets 403 from the
-  sync-log API. A financials-only user is allowed (same reader set as the
-  Accounting tab's sync-failures panel plus config admins).
+  sync-log API. A financials-only user is allowed (same financials-or-config
+  reader set as the Accounting tab's sync-failures panel).
+- [ ] **Config sees the sync-failures panel.** On the Accounting tab the
+  **QBO Sync Failures** panel loads for a config-only admin (no permission
+  error) and its Retry / Retry all buttons work — the panel's list, retry-all,
+  and per-row retry-sync endpoints are all financials-or-config (2026-10-17).
 - [ ] **Read-only.** There are no retry/edit/delete controls here; retries
   live in the Accounting tab's **QBO Sync Failures** panel.
 
