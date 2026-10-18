@@ -32,9 +32,10 @@ test('add two numbers, reorder, save; the detail shows the new primary first', a
     await expect(page.getByRole('dialog')).toHaveCount(0);
   });
   await test.step('Detail lists A/P first; the list page shows the primary', async () => {
+    // The detail reloads the contact after the modal closes; allTextContents()
+    // does not wait, so assert with an auto-retrying matcher instead.
     const panel = page.locator('.identity .panel').first();
-    const numbers = await panel.locator('dd a[href^="tel:"]').allTextContents();
-    expect(numbers).toEqual(['555-0200', '555-0100']);
+    await expect(panel.locator('dd a[href^="tel:"]')).toHaveText(['555-0200', '555-0100']);
     await page.goto('/#/contacts');
     await page.getByPlaceholder(/Search all contacts/).fill('555 0200');
     await expect(page.getByRole('link', { name: `${stamp} Phones` })).toBeVisible();

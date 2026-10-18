@@ -114,3 +114,16 @@ export function findJob(jobs, { status, withLoosePending, singleOpenTask, used =
   }
   return null;
 }
+
+// An accounting category for a PLAIN hand line: active, not a deposit
+// category, not the configured fallback, and not the configured material
+// category. The last exclusion is the one that matters for work-decision
+// flows: a bare line stamped with `default_material_accounting_category` IS a
+// material (EstimateService._derive_is_material), crystallizes at acceptance,
+// and so never needs a work decision — which flips auto-release. `settings`
+// is GET /api/settings/ (configtime persona); `cats` is the categories list.
+export function plainLineCategory(cats, settings = {}) {
+  const materialId = String(settings.default_material_accounting_category ?? '');
+  return (cats.results || cats).find((c) =>
+    c.is_active !== false && !c.is_deposit && !c.is_fallback && String(c.id) !== materialId);
+}

@@ -628,3 +628,43 @@ describe('TaskDetailPage materials use the shared task-list row (full action set
     expect(queryByText('edit')).toBeNull();
   });
 });
+
+describe('TaskDetailPage navigation between tasks', () => {
+  const delay = (ms, value) => new Promise((r) => setTimeout(() => r(value), ms));
+  const job = (id, name) => ({
+    job_id: id, job_number: `J${id}`, name, status: 'in_progress', contact: null,
+    can_manage: false, tasks: [], materials: [],
+  });
+  const task = (id, name, jobId) => ({
+    task_id: id, name, status: 'pending', qty_source: 'elapsed_time', job: { id: jobId },
+    assigned_to: null, materials: [], subtasks: [],
+  });
+
+  it('shows the task in the URL even when a slower load of the previous task finishes last', async () => {
+    // Navigating 559 → 558 while a reload of 559 is in flight (e.g. the
+    // session-activity refetch right after Start Work): the late 559
+    // response must not overwrite the task the URL now names.
+    api.get.mockReset();
+    api.get.mockImplementation((url) => {
+      if (url === '/api/tasks/559/') return delay(150, task(559, 'Old task', 142));
+      if (url === '/api/tasks/558/') return Promise.resolve(task(558, 'New task', 141));
+      if (url === '/api/jobs/142/') return delay(150, job(142, 'Old job'));
+      if (url === '/api/jobs/141/') return Promise.resolve(job(141, 'New job'));
+      if (url.includes('/materials/')) return Promise.resolve([]);
+      return Promise.resolve({ results: [] });
+    });
+
+    const { rerender, findByRole, queryByText, container } = render(TaskDetailPage, {
+      props: { params: { jobId: '142', taskId: '559' } },
+    });
+    await rerender({ params: { jobId: '141', taskId: '558' } });
+    await findByRole('heading', { name: 'New task' });
+
+    // Let the slow 559 responses land, then check nothing got clobbered.
+    await delay(250);
+    await waitFor(() => {
+      expect(container.querySelector('.task-title')).toHaveTextContent('New task');
+      expect(queryByText(/J142/)).not.toBeInTheDocument();
+    });
+  });
+});

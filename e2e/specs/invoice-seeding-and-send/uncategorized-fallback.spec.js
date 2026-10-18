@@ -34,6 +34,24 @@ test.use({ storageState: personas.finjobs.storageState });
 
 const stamp = `e2e-fbac-${Date.now().toString(36)}`;
 
+// This spec changes a shop-wide setting through the UI. Put it back: with no
+// fallback configured, later specs that pick "the first non-deposit,
+// non-fallback category" would otherwise skip the category this spec
+// designated and land on the configured MATERIAL category, turning their
+// plain hand lines into material lines (which crystallize at acceptance and
+// auto-release the job). Seen as order-dependent failures in
+// per-unit-lines/mint-first and task-view-bundling/start-estimate-offer.
+let originalFallback;
+test.afterAll(async () => {
+  if (originalFallback === undefined) return;
+  const configApi = await apiAs(personas.configtime);
+  try {
+    await configApi.patch('/api/settings/', { fallback_accounting_category: originalFallback });
+  } finally {
+    await configApi.dispose();
+  }
+});
+
 test('null-AC task line seeds the uncategorized→fallback chip; correcting it via Edit clears the chip; the send gate stays clear', async ({ page, browser }) => {
   const api = await apiAs(personas.finjobs);
 
@@ -54,6 +72,8 @@ test('null-AC task line seeds the uncategorized→fallback chip; correcting it v
   await configApi0.dispose();
   const existingFallbackId = existingSettings.fallback_accounting_category
     ? Number(existingSettings.fallback_accounting_category) : null;
+  originalFallback = existingSettings.fallback_accounting_category
+    ? String(existingSettings.fallback_accounting_category) : '';
   const fallbackCat = activeCats.find((c) => c.id === existingFallbackId) || activeCats[0];
   const taskCat = activeCats.find((c) => c.id !== fallbackCat?.id);
   test.skip(!fallbackCat || !taskCat, 'seed gap: need 2+ active non-deposit accounting categories');

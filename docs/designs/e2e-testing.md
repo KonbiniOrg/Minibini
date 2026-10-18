@@ -159,6 +159,26 @@ first full flow spec should follow `docs/ui-flows/Expenses.md`):
   selection + opening the modal is identical. A helper that's only ever
   useful to one flow doc's specs stays local to that directory instead.
 - `workers: 1` — the DB is shared, so specs run serially for now.
+- **Shop-wide settings are shared state across the whole run — restore
+  what you change.** A spec that sets a `Configuration` value (through
+  the Settings page or `PATCH /api/settings/`) must put the previous
+  value back in `test.afterAll`, exactly as the `default_rate_scheme`
+  specs do. The 2026-10-18 case: `uncategorized-fallback.spec.js`
+  designated a fallback accounting category and left it set; every later
+  spec that picked "the first non-deposit, non-fallback category" then
+  skipped it and landed on the configured **material** category, whose
+  hand lines crystallize at acceptance — two unrelated specs
+  (`mint-first`, `start-estimate-offer`) failed only in a full run.
+  Pick categories for plain hand lines with
+  `fixtures/lookups.js` → `plainLineCategory(cats, settings)`, which
+  excludes deposit, fallback *and* material categories explicitly.
+- **Seed-task candidates: filter for every property the flow relies on.**
+  `findStartableTask` only knows what you ask it. A Complete flow that
+  expects the band to close needs `algorithm: 'elapsed_time'` (a counted
+  task answers with the settle-up prompt instead); any Complete flow
+  needs `materials: 'none'` (pending materials block completion with a
+  400). Which seed task comes first shifts as earlier specs create jobs,
+  so an under-specified filter passes alone and fails in the full run.
 
 ## 3. Seed data pipeline
 

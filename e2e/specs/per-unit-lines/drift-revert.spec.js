@@ -17,6 +17,7 @@
 import { expect, test } from '@playwright/test';
 import { apiAs } from '../../fixtures/api.js';
 import { personas } from '../../fixtures/personas.js';
+import { plainLineCategory } from '../../fixtures/lookups.js';
 
 test.use({ storageState: personas.finjobs.storageState });
 
@@ -28,8 +29,7 @@ let unit;
 test.beforeAll(async () => {
   const configApi = await apiAs(personas.configtime);
   const cats = await configApi.get('/api/accounting-categories/');
-  category = (cats.results || cats)
-    .find((c) => c.is_active !== false && !c.is_deposit && !c.is_fallback);
+  category = plainLineCategory(cats, await configApi.get('/api/settings/'));
   const units = await configApi.get('/api/settings/units/');
   unit = units.find((u) => u !== 'none' && u !== 'hour') || units[0];
   scheme = await configApi.post('/api/rate-schemes/', {
