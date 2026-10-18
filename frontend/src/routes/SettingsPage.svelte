@@ -1,6 +1,7 @@
 <script>
   import QBOConnectionCard from '../components/QBOConnectionCard.svelte';
   import QBOSyncFailures from '../components/qbo/QBOSyncFailures.svelte';
+  import QBOSyncLog from '../components/qbo/QBOSyncLog.svelte';
   import AccountingCategories from '../components/settings/AccountingCategories.svelte';
   import UnitsManager from '../components/UnitsManager.svelte';
   import RateSchemeManager from '../components/RateSchemeManager.svelte';
@@ -68,6 +69,7 @@
   <button class:active={tab === 'schedule'} onclick={() => tab = 'schedule'}>Schedule</button>
   <button class:active={tab === 'email'} onclick={() => tab = 'email'}>Email</button>
   <button class:active={tab === 'business'} onclick={() => tab = 'business'}>Business</button>
+  <button class:active={tab === 'qbolog'} onclick={() => tab = 'qbolog'}>QBO Log</button>
 </nav>
 
 {#if tab === 'accounting'}
@@ -141,6 +143,8 @@
   <EmailTemplates />
 {:else if tab === 'business'}
   <BusinessSettings />
+{:else if tab === 'qbolog'}
+  <QBOSyncLog />
 {/if}
 </div>
 

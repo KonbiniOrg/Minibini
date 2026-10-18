@@ -10,4 +10,5 @@ urlpatterns = [
     path('payment-accounts/', views.qbo_payment_accounts, name='qbo-payment-accounts'),
     path('sync-failures/', views.qbo_sync_failures, name='qbo-sync-failures'),
     path('sync-failures/retry-all/', views.qbo_sync_failures_retry_all, name='qbo-sync-failures-retry-all'),
+    path('sync-log/', views.qbo_sync_log, name='qbo-sync-log'),
 ]

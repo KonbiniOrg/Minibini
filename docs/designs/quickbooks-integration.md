@@ -51,6 +51,17 @@ Append-only audit trail. Every push attempt writes a row, success or failure.
 
 Default ordering is `-synced_at`. No retention policy — log grows forever.
 
+**Read surface (2026-10-17):** `GET /api/qbo/sync-log/` (`apps/qbo/views.py`
+`qbo_sync_log`, `QBOSyncLogSerializer` in `apps/qbo/serializers.py`) — paginated
+(`StandardPagination`, 25/page), ordered `-synced_at, -id`, optional exact-match
+`?status=` / `?entity_type=` filters (blank values ignored). Rows expose every
+field above plus `triggered_by_name` (full name, falling back to username; `null`
+for cron rows). Permission `CanManageFinancialsOrConfig`. The SPA renders it as
+`components/qbo/QBOSyncLog.svelte` on the Settings page's **QBO Log** tab
+(read-only `DataTable` + `Pager`; QBO and By columns hidden in lite density). It
+is deliberately separate from the retry surface (`QBOSyncFailures`, below): the
+log answers "what did we send and when", the failures panel "what is broken now".
+
 `db_table = 'qbo_sync_log'`.
 
 ## OAuth lifecycle
@@ -263,8 +274,10 @@ Each domain service exposes the same small sync-dispatch surface so a failure ca
 
 | Method | Path | Permission | Purpose |
 |---|---|---|---|
-| `GET` | `/api/qbo/sync-failures/` | `can_manage_financials` | List all QBO sync failures across the money pushes |
-| `POST` | `/api/qbo/sync-failures/retry-all/` | `can_manage_financials` | Retry each (isolated per-record); returns `{retried, still_failing}` |
+| `GET` | `/api/qbo/sync-failures/` | `can_manage_financials` or `can_manage_config` | List all QBO sync failures across the money pushes |
+| `POST` | `/api/qbo/sync-failures/retry-all/` | `can_manage_financials` or `can_manage_config` | Retry each (isolated per-record); returns `{retried, still_failing}` |
+
+Config was added to the reader/retry set 2026-10-17 (RM): the panel lives on the config-gated Settings page, so a config-only admin must be able to see and retry failures. The per-row `…/retry-sync/` actions on `ExpenseViewSet` / `ReimbursementViewSet` carry the same `CanManageFinancialsOrConfig` so the panel's Retry buttons work for that admin; every other expense/reimbursement write stays financials-only, and a config-only user's expense *list* stays own-scoped (`_sees_all_expenses` opens the full queryset only for `retry_sync`).
 
 The SPA surfaces this as `QBOSyncFailures.svelte` (per-row Retry + Retry all) on the Settings page; the failures view covers **only** the two `QBOSyncable` money pushes (Customers/Invoices use ad-hoc sync state and are out of scope; the `BillPayment` slice was retired 2026-07-23).
 
@@ -585,6 +598,7 @@ All endpoints are mounted under `/api/qbo/` via `apps/qbo/urls.py`.
 | `POST` | `/api/qbo/disconnect/` | `can_manage_config` | Deactivate active connection |
 | `GET` | `/api/qbo/accounts/` | `can_manage_config` | Live fetch of QBO Items + expense accounts for category mapping |
 | `GET` | `/api/qbo/payment-accounts/` | `can_manage_config` | Live fetch of Bank / Credit Card / Other Current Asset accounts for payment-account config |
+| `GET` | `/api/qbo/sync-log/` | `can_manage_financials` or `can_manage_config` | Paginated `QBOSyncLog` listing (`?status=`, `?entity_type=`, `?page=`) for the Settings → QBO Log tab |
 
 Push endpoints live on the owning resource's viewset:
 
@@ -594,11 +608,11 @@ Push endpoints live on the owning resource's viewset:
 
 Expense and reimbursement pushes are triggered server-side from their respective save / finalize flows in `apps/expenses` and `apps/reimbursements` — not via dedicated REST actions.
 
-There is no `GET /api/qbo/sync-log/` endpoint yet; `QBOSyncLog` is currently inspected via the Django admin.
+`QBOSyncLog` is readable in-app via `GET /api/qbo/sync-log/` (Settings → QBO Log tab) as well as the Django admin.
 
 ## Unfinished work
 
-- **Sync log UI.** No `/api/qbo/sync-log/` endpoint or settings panel showing recent push attempts; failures are visible only via the Django admin.
+- **Sync log UI — partially done (2026-10-17).** The read-only Settings → QBO Log tab exists. Still open: an `entity_id` / free-text filter for tracing one record, and linking a row to its Minibini record. The tab's home in Settings is provisional and may move.
 - **Employee-as-Vendor sync for personal reimbursements** — tracked in `invoicing-and-expenses.md`.
 - **Job P&L view.** Phase 5 of the original plan — pull QBO-reported actuals back into Minibini for a per-job profit & loss view. Tracked in `invoicing-and-expenses.md`.
 - **Estimate push.** Not currently supported. Minibini-direct estimate send is also unimplemented; see `estimates-and-prices.md`.

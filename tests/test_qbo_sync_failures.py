@@ -217,7 +217,7 @@ class SyncFailuresEndpointTest(TestCase):
         r = self.client_http.get('/api/qbo/sync-failures/')
         self.assertIn(r.status_code, (401, 403))
 
-    def test_requires_can_manage_financials(self):
+    def test_requires_an_atom(self):
         unpriv = User.objects.create_user(username='unpriv_sf', password='testpass')
         self.client_http.force_login(unpriv)
         r = self.client_http.get('/api/qbo/sync-failures/')
@@ -315,7 +315,7 @@ class RetryAllEndpointTest(TestCase):
                                   content_type='application/json')
         self.assertIn(r.status_code, (401, 403))
 
-    def test_requires_can_manage_financials(self):
+    def test_requires_an_atom(self):
         unpriv = User.objects.create_user(username='unpriv_ra', password='testpass')
         self.client_http.force_login(unpriv)
         r = self.client_http.post('/api/qbo/sync-failures/retry-all/',

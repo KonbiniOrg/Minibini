@@ -10,7 +10,7 @@ from django.contrib.auth import get_user_model
 from apps.expenses.models import Expense, Reimbursement
 from apps.expenses.services import ReimbursementService
 from apps.api.mixins import ConfirmDeleteMixin, QBORetrySyncMixin
-from apps.api.permissions import CanManageFinancials
+from apps.api.permissions import CanManageFinancials, CanManageFinancialsOrConfig
 from .serializers import ReimbursementSerializer, ReimbursementCreateSerializer
 
 User = get_user_model()
@@ -34,6 +34,10 @@ class ReimbursementViewSet(QBORetrySyncMixin, ConfirmDeleteMixin, viewsets.Model
     lookup_field = 'pk'
 
     def get_permissions(self):
+        if self.action == 'retry_sync':
+            # Config admins may retry a failed batch push from the Settings →
+            # Accounting sync-failures panel; every other action stays financials.
+            return [IsAuthenticated(), CanManageFinancialsOrConfig()]
         return [IsAuthenticated(), CanManageFinancials()]
 
     def get_queryset(self):

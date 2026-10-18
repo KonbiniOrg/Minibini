@@ -1814,7 +1814,8 @@ No `rejected` for company-paid; deletion is the escape hatch (voids the QBO Purc
 | Action | Permission |
 |---|---|
 | `list`, `retrieve`, `create` | `IsAuthenticated` |
-| `update`, `partial_update`, `destroy`, `reject`, `retry-sync` | `IsAuthenticated` + `CanManageFinancials` |
+| `update`, `partial_update`, `destroy`, `reject` | `IsAuthenticated` + `CanManageFinancials` |
+| `retry-sync` | `IsAuthenticated` + `CanManageFinancialsOrConfig` (2026-10-17 — config admins retry from the Settings sync-failures panel; `get_queryset` opens the full set for this action only) |
 
 `ExpenseViewSet.get_queryset` further scopes the list/retrieve view: callers without `can_manage_financials` see only expenses where `purchased_by=request.user`. A user can submit and view their own personal expenses; only `CanManageFinancials` can edit, delete, reject, or retry sync.
 
@@ -1944,11 +1945,11 @@ Sorts users by `-total`. Powers the "Outstanding reimbursements" card on the glo
 | `PATCH` | `/api/expenses/{id}/` | Edit | `CanManageFinancials` |
 | `DELETE` | `/api/expenses/{id}/` | Delete (voids QBO) | `CanManageFinancials` |
 | `POST` | `/api/expenses/{id}/reject/` | Reject personal | `CanManageFinancials` |
-| `POST` | `/api/expenses/{id}/retry-sync/` | Retry failed push | `CanManageFinancials` |
+| `POST` | `/api/expenses/{id}/retry-sync/` | Retry failed push | `CanManageFinancialsOrConfig` |
 | `GET` | `/api/reimbursements/` | List, filter by `?purchased_by=` | `CanManageFinancials` |
 | `POST` | `/api/reimbursements/` | Create batch | `CanManageFinancials` |
 | `GET` | `/api/reimbursements/{id}/` | Retrieve | `CanManageFinancials` |
-| `POST` | `/api/reimbursements/{id}/retry-sync/` | Retry failed batch | `CanManageFinancials` |
+| `POST` | `/api/reimbursements/{id}/retry-sync/` | Retry failed batch | `CanManageFinancialsOrConfig` |
 | `DELETE` | `/api/reimbursements/{id}/` | Two-phase unwind | `CanManageFinancials` |
 | `GET` | `/api/reimbursements/outstanding-summary/` | Per-user pending totals | `CanManageFinancials` |
 
