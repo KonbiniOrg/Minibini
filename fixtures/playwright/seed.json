@@ -95220,5 +95220,54 @@
     "fields": {
       "value": "{\"version\": 1, \"fetched_at\": \"2026-07-23T12:00:00+00:00\", \"items\": [], \"income_accounts\": [], \"expense_accounts\": [], \"customers\": [{\"qbo_id\": \"9001\", \"display_name\": \"Zenith Imports E2E\", \"company_name\": \"Zenith Imports E2E\", \"given_name\": \"Zed\", \"family_name\": \"Zenith\", \"email\": \"test+zenith-e2e@robot-six.com\", \"phone\": \"\", \"term_qbo_id\": \"\", \"active\": true}, {\"qbo_id\": \"9002\", \"display_name\": \"Dupmail Company E2E\", \"company_name\": \"\", \"given_name\": \"Dup\", \"family_name\": \"Mail\", \"email\": \"test+aishahamilton@robot-six.com\", \"phone\": \"\", \"term_qbo_id\": \"\", \"active\": true}, {\"qbo_id\": \"e2e-inactive-1\", \"display_name\": \"Dormant Customer E2E\", \"company_name\": \"Dormant Customer E2E\", \"given_name\": \"\", \"family_name\": \"\", \"email\": \"\", \"phone\": \"\", \"term_qbo_id\": \"\", \"active\": false}], \"vendors\": [], \"terms\": []}"
     }
+  },
+  {
+    "model": "qbo.qbosynclog",
+    "pk": 1,
+    "fields": {
+      "entity_type": "customer",
+      "entity_id": 5,
+      "qbo_entity_type": "Customer",
+      "qbo_entity_id": "e2e-cust-5",
+      "action": "reactivate",
+      "status": "success",
+      "error_message": "",
+      "synced_at": "2026-07-17T09:00:00Z",
+      "triggered_by": null
+    }
+  },
+  {
+    "model": "qbo.qbosynclog",
+    "pk": 2,
+    "fields": {
+      "entity_type": "invoice",
+      "entity_id": 1,
+      "qbo_entity_type": "Invoice",
+      "qbo_entity_id": "e2e-inv-1",
+      "action": "create",
+      "status": "success",
+      "error_message": "",
+      "synced_at": "2026-07-18T15:00:00Z",
+      "triggered_by": [
+        "dev_user"
+      ]
+    }
+  },
+  {
+    "model": "qbo.qbosynclog",
+    "pk": 3,
+    "fields": {
+      "entity_type": "expense",
+      "entity_id": 3,
+      "qbo_entity_type": "Purchase",
+      "qbo_entity_id": "",
+      "action": "create",
+      "status": "failed",
+      "error_message": "QuickBooks is not connected.",
+      "synced_at": "2026-07-18T16:30:00Z",
+      "triggered_by": [
+        "jkim"
+      ]
+    }
   }
 ]

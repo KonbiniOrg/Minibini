@@ -14,8 +14,10 @@ from rest_framework.response import Response
 from intuitlib.client import AuthClient
 from intuitlib.enums import Scopes
 
-from apps.api.permissions import CanManageConfig, CanManageFinancials
-from apps.qbo.models import QBOConnection
+from apps.api.pagination import StandardPagination
+from apps.api.permissions import CanManageConfig, CanManageFinancials, CanManageFinancialsOrConfig
+from apps.qbo.models import QBOConnection, QBOSyncLog
+from apps.qbo.serializers import QBOSyncLogSerializer
 from apps.qbo.services import QBOAccountsService, QBOExpenseSyncService, QBOSyncFailureService
 
 
@@ -187,3 +189,23 @@ def qbo_sync_failures_retry_all(request):
             pass
 
     return Response({'retried': attempted, 'still_failing': still_failing})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, CanManageFinancialsOrConfig])
+def qbo_sync_log(request):
+    """Paginated, newest-first QBOSyncLog listing (Settings → QBO Log).
+
+    Optional exact-match filters: ?status=success|failed, ?entity_type=<type>.
+    Blank values are ignored so the SPA's "All" option can send an empty string.
+    """
+    rows = QBOSyncLog.objects.select_related('triggered_by').order_by('-synced_at', '-id')
+    status_filter = request.query_params.get('status')
+    if status_filter:
+        rows = rows.filter(status=status_filter)
+    entity_type = request.query_params.get('entity_type')
+    if entity_type:
+        rows = rows.filter(entity_type=entity_type)
+    paginator = StandardPagination()
+    page = paginator.paginate_queryset(rows, request)
+    return paginator.get_paginated_response(QBOSyncLogSerializer(page, many=True).data)

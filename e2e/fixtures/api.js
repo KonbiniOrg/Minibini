@@ -26,6 +26,7 @@ export async function apiAs(persona, baseURL = BASE_URL) {
     delWith: async (url, data) =>
       asJson(await ctx.delete(url, { data, headers: { 'X-CSRFToken': csrf } })),
     // Raw variants for guard steps that assert on the status code.
+    getRaw: (url) => ctx.get(url),
     postRaw: (url, data) =>
       ctx.post(url, { data, headers: { 'X-CSRFToken': csrf } }),
     patchRaw: (url, data) =>
