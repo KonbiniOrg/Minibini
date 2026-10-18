@@ -824,7 +824,7 @@ All wizard endpoints require `IsAuthenticated` + `CanManageFinancials` (`Invoice
 ### Frontend
 
 The invoice detail view lives at `#/jobs/:jobId/invoice[/:docId]` →
-`JobInvoicePage.svelte` (`frontend/src/routes/jobs/`), which hosts
+`JobWorkspace.svelte` (`frontend/src/routes/jobs/`; its `bodies/InvoiceBody.svelte`), which hosts
 `InvoicePanel.svelte` (`frontend/src/components/invoices/`) inside the
 job workspace shell (`JobShell` — header + nav rail + collapsible
 context band; see `jobs-and-tasks.md` §9.6). The bare
@@ -1961,8 +1961,8 @@ DELETE responses on these viewsets all return 200 with a JSON body per the proje
 | Surface | Component |
 |---|---|
 | Invoice list | `frontend/src/routes/invoices/InvoiceListPage.svelte` (route `#/invoices`) |
-| Invoice detail (glue) | `frontend/src/routes/jobs/JobInvoicePage.svelte` (route `#/jobs/:jobId/invoice[/:docId]`) |
-| Invoice detail (panel) | `frontend/src/components/invoices/InvoicePanel.svelte` — hosted by `JobInvoicePage` inside `JobShell` |
+| Invoice detail (glue) | `frontend/src/routes/jobs/JobWorkspace.svelte` + `bodies/InvoiceBody.svelte` (route `#/jobs/:jobId/invoice[/:docId]`) |
+| Invoice detail (panel) | `frontend/src/components/invoices/InvoicePanel.svelte` — hosted by `InvoiceBody` inside the workspace's `JobShell` |
 | Old detail route (shim) | `frontend/src/routes/invoices/InvoiceDetailPage.svelte` (route `#/invoices/:id`, redirects into the job-scoped URL) |
 | Mode bar (Edit/Customer/Reorder) | `frontend/src/components/docsurface/DocModeBar.svelte` — shared with the estimate side |
 | Edit mode | `frontend/src/components/invoices/InvoiceEditView.svelte` — a mode of `InvoicePanel`, not a route |

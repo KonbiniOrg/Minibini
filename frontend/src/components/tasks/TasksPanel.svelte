@@ -349,8 +349,10 @@
   // whenever `job` changes identity — including after a parent-driven reload
   // triggered by onJobChange(), which is how a mutation's "refresh the job"
   // effect now reaches this panel (the panel no longer owns the job fetch).
+  // `loading` is first-load only: a job-driven reload keeps the current
+  // table on screen until the new data lands, instead of swapping it for the
+  // placeholder and back (the jump reported on task mutations, issue #511).
   async function loadPanelData() {
-    loading = true;
     loadFailures = [];
     try {
       jobMaterials = (job.materials || []).filter(m => !m.task);

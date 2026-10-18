@@ -244,7 +244,7 @@ describe('ChangeOrderPanel in the job workspace', () => {
     expect(coLink.getAttribute('href')).toBe('#/jobs/9/change-order/3');
     expect(coLink).toHaveClass('active');
     // (The job context band belongs to the host page's JobShell now — see
-    // tests/routes/JobChangeOrderPage.test.js.)
+    // tests/routes/bodies/ChangeOrderBody.test.js.)
   });
 });
 
@@ -600,5 +600,31 @@ describe('ChangeOrderPanel send gate', () => {
     await fireEvent.click(await findByRole('button', { name: 'Resend to customer' }));
     expect(await findByRole('dialog', { name: 'Send change order' })).toBeInTheDocument();
     expect(within(document.body).queryByRole('dialog', { name: 'Edit deliverables' })).toBeNull();
+  });
+});
+
+describe('ChangeOrderPanel nav-list freshness', () => {
+  it('reloads the estimates nav list when the viewed CO changes (e.g. after creating a new CO)', async () => {
+    user.set({ permissions: [] });
+    const co3 = makeCO();
+    const co4 = makeCO({ change_order_id: 4, change_order_number: 'CO-4' });
+    api.get.mockReset();
+    api.get.mockImplementation((url) => {
+      if (url === '/api/change-orders/3/') return Promise.resolve({ ...co3 });
+      if (url === '/api/change-orders/4/') return Promise.resolve({ ...co4 });
+      if (url.includes('deliverables-baseline')) return Promise.resolve({ baseline: [] });
+      if (url.startsWith('/api/change-orders/')) return Promise.resolve({ results: [co3, co4] });
+      if (url.includes('/deliverables/')) return Promise.resolve([]);
+      if (url.startsWith('/api/estimates/')) return Promise.resolve({ results: [] });
+      return Promise.resolve({});
+    });
+    const navFetches = () => api.get.mock.calls.filter(([u]) => u.startsWith('/api/estimates/?job=')).length;
+    const { rerender, container } = render(ChangeOrderPanel, { props: { job: JOB, coId: 3 } });
+    await waitFor(() => expect(container.querySelector('.page-title')).toHaveTextContent('CO-3'));
+    await waitFor(() => expect(navFetches()).toBe(1));
+
+    await rerender({ job: JOB, coId: 4 });
+    await waitFor(() => expect(container.querySelector('.page-title')).toHaveTextContent('CO-4'));
+    await waitFor(() => expect(navFetches()).toBe(2));
   });
 });

@@ -1424,7 +1424,8 @@ Unpaid cards; `ClosedCard.svelte` does not.
 
 ## 9. UI: Job Detail page
 
-Route: `#/jobs/:id` → `JobDetailPage.svelte`. This is the job's
+Route: `#/jobs/:id` → `JobWorkspace.svelte` (§9.6), whose overview body
+`routes/jobs/bodies/OverviewBody.svelte` renders `JobDetail.svelte`. This is the job's
 **overview** — the first of eight equal section pages (Overview,
 Estimates, Tasks, Invoices, Shipments, POs, Emails, History) that share
 the **job workspace shell**, `JobShell` (§9.6) — `JobHeader` + collapsible
@@ -1620,7 +1621,7 @@ read the SPA can't cheaply compute: `{due, spend, work}` —
 
 Everything else the blocks need (estimates, change orders, invoices,
 POs, shipments, deliverable count) comes from the page's existing
-per-list fetches — `JobDetailPage.svelte` fires them all in parallel
+per-list fetches — `OverviewBody.svelte` fires them all in parallel
 alongside the overview call, `now` captured once per load so every
 block reads the same instant.
 
@@ -1642,7 +1643,7 @@ is the only place the `.summary-block`/`.stat-spread` markup lives.
 | Component | Role |
 |---|---|
 | `FrozenPartyBanner.svelte` + `ChangeContactModal.svelte` | The frozen-job treatment (2026-10-11, §3.7): see "Frozen job banner" below |
-| `JobDetail.svelte` | Composes the page (~110 lines): mounts `JobShell`, shapes the fetched payloads into lists/numbers (it derives no rules — Coverage moved into the lib 2026-07-28), renders the change-request banner + six blocks |
+| `JobDetail.svelte` | Composes the overview body (rendered `chromeless` inside the workspace's `JobShell`; standalone it mounts its own), shapes the fetched payloads into lists/numbers (it derives no rules — Coverage moved into the lib 2026-07-28), renders the change-request banner + six blocks |
 | `JobHeader.svelte` | Header + status dropdown |
 | `lib/jobOverview.js` | Pure view-model — block rules, temperatures, clocks, copy (§9.1a) |
 | `components/jobs/overview/SummaryBlock.svelte` | The one dumb renderer for all six blocks (active/frozen/dormant markup) |
@@ -1750,9 +1751,9 @@ surfaces. Expense create is open to any authenticated user.
 
 Authoring the Job's own work atoms happens on the **task-list page**
 (`#/jobs/{id}/tasks`, reached from the rail's Tasks link). The route
-(`JobTaskListPage.svelte`) is thin glue —
-it resolves the job and hosts `TasksPanel.svelte` (`components/tasks/`)
-inside `JobShell` (§9.6); `TasksPanel` owns everything described below.
+resolves to `JobWorkspace` (§9.6), whose `bodies/TasksBody.svelte` hosts
+`TasksPanel.svelte` (`components/tasks/`) inside the shared `JobShell`;
+`TasksPanel` owns everything described below.
 It is available regardless of estimate state, so pre-approval / released
 effort is authored and shown there too. For managers it carries two
 affordances:
@@ -2038,22 +2039,73 @@ renders through one shared layout component, **`JobShell.svelte`**
 into its `children` slot. For the seven other sections that content is
 one **section panel**; for the overview it's the six summary blocks
 (§9.1a) — the overview is the one `JobShell` consumer whose body isn't
-a panel. Route pages are thin glue — resolve `GET /api/jobs/{id}/` (and
-its contact), pass the job to `JobShell`, host the content:
+a panel.
 
-| Section | Route | Glue page | Content |
+**One route component, mounted once (2026-10-17, issue #511).** Every
+`#/jobs/:id[/section]` route resolves to the same component,
+`routes/jobs/JobWorkspace.svelte`, registered through a **single shared
+`wrap()` object** in `routes/jobs/jobWorkspaceRoutes.js`. That sharing is
+load-bearing, not tidiness: svelte-spa-router remounts the route component
+whenever the route's stored component object changes
+(`Router.svelte`: `if (componentObj != obj)`), and every `wrap()` call — or
+bare component entry, which the router wraps in its own closure — is a
+distinct object. Twelve separate entries would therefore remount the shell
+on every rail click (the reload flicker the issue describes); one shared
+object keeps `JobWorkspace` mounted, so `JobHeader` + `JobContextBand` +
+`JobNavRail` stay put and only the section body swaps. Because the entries
+share one object they cannot carry per-route props — the workspace derives
+its section **and its params** from the router's `$location`
+(`/jobs/:id/<segment>[/<sub>]`; `tasklist` aliases `tasks`; `<sub>` is the
+estimate/invoice `docId` or the change-order `coId`). It deliberately
+ignores the `params` prop the router passes: those arrive one tick after
+`$location` changes, so a body keyed on the new section would briefly see
+the previous section's docId (estimate/7 → invoice/9 fetched
+`/api/invoices/7/` and remembered `7` for the invoice section until this
+was fixed). One synchronous source for both removes the race. `JobWorkspace` resolves `GET /api/jobs/{id}/`
+(and its contact) once per job, then **silently revalidates** it on every
+in-workspace navigation (tab or document switch): the job is re-requested
+and assigned **only if the payload differs**, so an unchanged job keeps its
+object identity (nothing re-renders, no panel keyed on job identity
+reloads) while a changed one — an estimate accepted via the API, another
+user's edit — flows down the normal props path with no placeholder. This
+keeps the page as fresh as the old remount-per-route layout did, minus the
+flicker. Landing on a *different* job drops the loaded job first so the
+shell mounts fresh for it (per-job band state is re-read). The section
+panels and bodies likewise reload their **document list when the viewed
+document changes** (`InvoicePanel`/`EstimatePanel`/`ChangeOrderPanel`,
+`EstimateBody`/`InvoiceBody`): Start Invoice, new estimate version and new
+CO all create-then-navigate, and without a remount the list those panels'
+gates derive from (e.g. the deposit button's three states) would predate
+the document being viewed. Each section's body lives in
+`routes/jobs/bodies/`.
+
+The `onJobChange` chain is unchanged: a panel calls `onJobChange()` → the
+workspace's `loadJob` refetches the job and hands back a **new `job`
+object** props-down → each body/panel keys its reloads on that identity
+(`OverviewBody` refetches the six-block aggregates this way, as the old
+overview page did). `JobShell` passes the same callback to `JobHeader` as
+`onStatusChange`. During that reload the panels keep their current
+content on screen — `loading` is first-load only in `TasksPanel`,
+`DeliverablesSection` and `OverviewBody` — so a status change or task
+mutation refreshes in place without the table or band jumping. The
+bodies and what they host:
+
+| Section | Route | Section body (`routes/jobs/bodies/`) | Content |
 |---|---|---|---|
-| Overview | `#/jobs/:id` | `JobDetailPage.svelte` | `JobDetail.svelte` — six summary blocks (§9.1a), not a panel |
-| Estimates | `#/jobs/:jobId/estimate[/:docId]` | `JobEstimatePage.svelte` | `EstimatePanel.svelte` (`components/estimates/`) |
-| Tasks | `#/jobs/:jobId/tasks` (task detail: `#/jobs/:jobId/tasks/:taskId`, §10) | `JobTaskListPage.svelte` | `TasksPanel.svelte` (`components/tasks/`) |
-| Invoices | `#/jobs/:jobId/invoice[/:docId]` | `JobInvoicePage.svelte` | `InvoicePanel.svelte` (`components/invoices/`) |
-| Shipments | `#/jobs/:jobId/shipments` | `JobShipmentsPage.svelte` | `ShipmentsPanel.svelte` (`components/shipments/`) |
-| Purchase Orders | `#/jobs/:jobId/pos` | `JobPOsPage.svelte` | `POPanel.svelte` (`components/purchaseorders/`) — a job-filtered, read-only PO list; POs aren't job-owned (a PO's lines can span jobs), so this panel never offers create — creation stays on the global Purchase Orders page |
-| Emails | `#/jobs/:jobId/emails` | `JobEmailsPage.svelte` | the existing `EmailPanel.svelte`, promoted full-width (v1 scope: no thread/master-detail redesign yet — LATER.md tracks that separately) |
-| History | `#/jobs/:jobId/history` (also `#/jobs/:id/history`) | `JobHistoryPage.svelte` | `JobHistorySection.svelte` (named to avoid colliding with the existing contact/business/PO `HistoryPanel.svelte`) — two tabs in the shared `.page-tabs` strip: **Summary** (default; a day-grouped, newest-first milestone log — `time \| actor \| action` — showing creations, status transitions, and hand-written notes (italic), derived client-side by `frontend/src/lib/historyLog.js`; the full status→verb table lives there, with humanized-raw fallback so unknown statuses never drop a row; `_action` text is preferred over the verb when both exist, and a transition recorded as both an audit and an action entry dedupes to the action row (60s window); system/customer-link rows show an em-dash actor; rendered as a house `.data-table`) and **Timeline** (the forensic feed: minute-bundled field diffs, notes, long-value popovers, per-type tints); the add-note box sits above the tab strip, available from both tabs |
+| Overview | `#/jobs/:id` | `OverviewBody.svelte` | `JobDetail.svelte` (`chromeless`) — six summary blocks (§9.1a), not a panel |
+| Estimates | `#/jobs/:jobId/estimate[/:docId]` | `EstimateBody.svelte` (owns the estimates list + docId resolution below) | `EstimatePanel.svelte` (`components/estimates/`) |
+| Tasks | `#/jobs/:jobId/tasks` (task detail: `#/jobs/:jobId/tasks/:taskId`, §10) | `TasksBody.svelte` | `TasksPanel.svelte` (`components/tasks/`) |
+| Invoices | `#/jobs/:jobId/invoice[/:docId]` | `InvoiceBody.svelte` (owns the invoices list + docId resolution below) | `InvoicePanel.svelte` (`components/invoices/`) |
+| Shipments | `#/jobs/:jobId/shipments` | `ShipmentsBody.svelte` | `ShipmentsPanel.svelte` (`components/shipments/`) |
+| Purchase Orders | `#/jobs/:jobId/pos` | `POsBody.svelte` | `POPanel.svelte` (`components/purchaseorders/`) — a job-filtered, read-only PO list; POs aren't job-owned (a PO's lines can span jobs), so this panel never offers create — creation stays on the global Purchase Orders page |
+| Emails | `#/jobs/:jobId/emails` | `EmailsBody.svelte` (owns the `/api/emails/?job=` fetch) | the existing `EmailPanel.svelte`, promoted full-width (v1 scope: no thread/master-detail redesign yet — LATER.md tracks that separately) |
+| History | `#/jobs/:jobId/history` (also `#/jobs/:id/history`) | `HistoryBody.svelte` | `JobHistorySection.svelte` (named to avoid colliding with the existing contact/business/PO `HistoryPanel.svelte`) — two tabs in the shared `.page-tabs` strip: **Summary** (default; a day-grouped, newest-first milestone log — `time \| actor \| action` — showing creations, status transitions, and hand-written notes (italic), derived client-side by `frontend/src/lib/historyLog.js`; the full status→verb table lives there, with humanized-raw fallback so unknown statuses never drop a row; `_action` text is preferred over the verb when both exist, and a transition recorded as both an audit and an action entry dedupes to the action row (60s window); system/customer-link rows show an em-dash actor; rendered as a house `.data-table`) and **Timeline** (the forensic feed: minute-bundled field diffs, notes, long-value popovers, per-type tints); the add-note box sits above the tab strip, available from both tabs |
 
-`#/jobs/:id/tasklist` still resolves to the task-list glue page (alias
-kept for old links). `/jobs/:id/edit` and `/jobs/:id/duplicate` are no
+`#/jobs/:id/tasklist` still resolves to the Tasks section (alias
+kept for old links). Change orders ride the Estimates section:
+`#/jobs/:jobId/change-order/:coId` → `ChangeOrderBody.svelte`, rail
+showing Estimates active. Task detail (`#/jobs/:jobId/tasks/:taskId`,
+§10) is a separate page, not a workspace section. `/jobs/:id/edit` and `/jobs/:id/duplicate` are no
 longer standalone pages — both actions are now `JobHeader` modals
 (§9.1) — and redirect (`JobRedirectToOverview.svelte`) straight to the
 overview.
@@ -2077,8 +2129,8 @@ should redirect to the current estimate instead of showing the old one:
 it doesn't — every version is directly viewable at its own URL.
 **Change orders joined the panel pattern 2026-07-19**: the old 1100-line
 `ChangeOrderDetailPage.svelte` route was extracted into
-`ChangeOrderPanel.svelte` hosted by `routes/jobs/JobChangeOrderPage.svelte`
-(thin glue: job load + `JobShell`), with the deliverables grid as its own
+`ChangeOrderPanel.svelte` hosted (today) by `routes/jobs/bodies/ChangeOrderBody.svelte`
+inside `JobWorkspace`, with the deliverables grid as its own
 component (`CODeliverablesSection.svelte` — owns the inline drafting
 forms, over `lib/changeOrderDiff.js`'s unit-tested `buildDeliverableRows`).
 The line-item surface moved off a client-derived diff to the

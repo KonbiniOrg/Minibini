@@ -28,9 +28,14 @@
     deliverableCount = 0,
     overview = null,
     // The clock. The lib is pure — the page supplies `now` once per load so
-    // every block reads the same instant (JobDetailPage creates it).
+    // every block reads the same instant (OverviewBody creates it).
     now = new Date(),
     onStatusChange = null,
+    // When true, render only the overview body (the six blocks), without the
+    // JobShell chrome. JobWorkspace sets this: it owns the shell and mounts it
+    // once across all tabs, so the overview must not render a second shell.
+    // Default false keeps the standalone behaviour (and existing tests).
+    chromeless = false,
   } = $props();
 
   // List payloads arrive either paginated ({results}) or as a bare array.
@@ -61,7 +66,7 @@
   let materialList = $derived(job?.materials || []);
 </script>
 
-<JobShell {job} {contact} current="overview" onJobChange={onStatusChange}>
+{#snippet overviewBody()}
   <div class="page-body">
     {#if job.status === 'draft' && job.latest_change_request}
       <div class="change-request-banner">
@@ -86,7 +91,15 @@
       <DeliveryBlock shipments={shipmentList} {deliverableCount} {job} {now} />
     </div>
   </div>
-</JobShell>
+{/snippet}
+
+{#if chromeless}
+  {@render overviewBody()}
+{:else}
+  <JobShell {job} {contact} current="overview" onJobChange={onStatusChange}>
+    {@render overviewBody()}
+  </JobShell>
+{/if}
 
 <style>
   /* 10px here + .page-body's 10px = 20px — the blocks' left/right edges line

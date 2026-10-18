@@ -85,6 +85,7 @@ countdown, payment latency, pickup aging), and the page furniture around them
 - [ ] **Band collapse persists across reload:** reload the page → collapse state kept.
 - [ ] **Guard — no controls inside a block:** the card itself is the only interactive element (see §8) — no nested anchors or buttons; status pills and clock lines are inert text.
 - [ ] **Rail navigates:** all eight rail links work from the overview; Overview is underlined as current; empty sections land on their create-affordance pages.
+- [ ] **Rail switch keeps the shell (#511):** click Tasks → Estimates → History → Overview; the header, band and rail do not blink or re-render — only the section body changes (a background `GET /api/jobs/{id}/` revalidation per click is expected; it must not cause any visible reload). Changing status from the header still refreshes the blocks. (e2e: `specs/job-overview/persistent-shell.spec.js`)
 - [ ] **Change-request banner:** a `draft` job with a pending customer change request shows the orange "Customer requested changes: …" banner between the rail and the blocks; the banner contains no links.
 - [ ] **Guard — banner absent otherwise:** any job without a pending change request (or not draft) shows no banner.
 
@@ -124,6 +125,6 @@ in every temperature — a card is never a dead end.
 | Invoice statuses | draft / open / partly-paid (known issue) / paid · alone and mixed (§4) |
 | Billed math | drafts excluded · full-scope draft not frozen · collapse at >4 (§4) |
 | Job lifecycle | fresh draft → quoting → in production → completed (§1, 2, 3, 6) |
-| Furniture | band persistence (nav + reload) · rail · change-request banner present/absent (§7) |
+| Furniture | band persistence (nav + reload) · rail · shell persists across rail clicks, no job refetch (#511) · change-request banner present/absent (§7) |
 | Block links | deep-link (estimate / CO / single invoice) · section index (tasks, POs, history, shipments, multi-invoice, dormant scope) · every temperature links (§8) |
 | Guards | no controls nested inside a block · draft-alone never frozen · banner absence (§4, 7, 8) |

@@ -844,8 +844,9 @@ The three page categories of the `.page-body` rollout
    area decision, not a page redesign. Groupings so far: **job**
    (gray-800 `#1f2937` — the 2026-07-08 job workspace restructure
    formalized this into a reusable shell, `JobShell.svelte`:
-   `JobHeader` + `JobNavRail` + a collapsible `JobContextBand`, with one
-   section panel hosted per page; see `jobs-and-tasks.md`
+   `JobHeader` + `JobNavRail` + a collapsible `JobContextBand`, mounted once
+   by the persistent `JobWorkspace` route component with one section body
+   swapped inside it; see `jobs-and-tasks.md`
    §9.6) and **customer** (`CustomerHeader`, red-950 `#450a0a`, no rail
    yet). More areas are planned; as each lands, its pages move from III
    to II without other change. `JobShell`'s header+rail+band+panel
@@ -1495,7 +1496,8 @@ everything. The panel is used on Contact, Business, and PO detail pages
 slot is occupied by `EmailPanel.svelte` (see §7.6).
 
 A dedicated Job History page lives at `#/jobs/:id/history`
-(`frontend/src/routes/jobs/JobHistoryPage.svelte`). It renders the full
+(`JobWorkspace` → `routes/jobs/bodies/HistoryBody.svelte` →
+`components/jobs/JobHistorySection.svelte`). It renders the full
 collated feed returned by `GET /api/jobs/{id}/history/` — job events
 alongside those from its tasks, estimates, change orders, invoices,
 deliverables, shipments, and materials, each labelled with

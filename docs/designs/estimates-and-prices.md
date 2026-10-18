@@ -1293,7 +1293,7 @@ No `Task` is created at authoring time. The Task is created at acceptance by `on
 
 On the **estimate detail page** (`EstimatePanel.svelte`, hosted at `#/jobs/:jobId/estimate/:docId`), the picker is followed by `EstimateAddLineForm.svelte`, which handles the post-selection form (qty, units, AC) and dispatches to the correct endpoint: `line-items-from-service/` for service picks, the standard `line-items/` POST for inventory or freeform picks.
 
-On the **job task-list page** (`JobTaskListPage.svelte` → `TasksPanel.svelte`), the picker opens with `taskSurface={true}`: it offers only explicit **Add Task** / **Add Material** buttons (plus the service/inventory search) — there is no plain-freeform option on this surface, since a job-owned atomless charge doesn't exist (that's an Estimate/CO-only concept, §11.3). `handleChoose` routes a service pick or "Add Task" to `WorkItemForm` (service pick → Task via `/add-from-template/`; "Add Task" → manual mode, rate scheme picked in the form), and an inventory pick or "Add Material" to `MaterialModal` (`presetPli`, `presetDescription`, `defaultMaterialCategoryId`). See `docs/designs/jobs-and-tasks.md` §9.5.
+On the **job task-list page** (`JobWorkspace` → `bodies/TasksBody.svelte` → `TasksPanel.svelte`), the picker opens with `taskSurface={true}`: it offers only explicit **Add Task** / **Add Material** buttons (plus the service/inventory search) — there is no plain-freeform option on this surface, since a job-owned atomless charge doesn't exist (that's an Estimate/CO-only concept, §11.3). `handleChoose` routes a service pick or "Add Task" to `WorkItemForm` (service pick → Task via `/add-from-template/`; "Add Task" → manual mode, rate scheme picked in the form), and an inventory pick or "Add Material" to `MaterialModal` (`presetPli`, `presetDescription`, `defaultMaterialCategoryId`). See `docs/designs/jobs-and-tasks.md` §9.5.
 
 ---
 
@@ -2115,8 +2115,8 @@ off the amended-agreement basis, not a live scheme read — see §14.4/§14.9
 
 ## 11. UI: Estimate Detail page
 
-Route: `#/jobs/:jobId/estimate[/:docId]` → `JobEstimatePage.svelte`
-(`frontend/src/routes/jobs/`), which hosts `EstimatePanel.svelte`
+Route: `#/jobs/:jobId/estimate[/:docId]` → `JobWorkspace.svelte`
+(`frontend/src/routes/jobs/`; its `bodies/EstimateBody.svelte`), which hosts `EstimatePanel.svelte`
 (`frontend/src/components/estimates/`) inside the job workspace shell
 (`JobShell` — header + nav rail + collapsible context band; see
 `jobs-and-tasks.md` §9.6). The bare section route
@@ -2141,7 +2141,7 @@ linked there):
    status badge) plus this job's change orders, appended in
    `change_order_number` order. Change-order pills link to the
    job-scoped `#/jobs/:jobId/change-order/:coId` route, hosted by
-   `JobChangeOrderPage` → `ChangeOrderPanel` since the 2026-07-19
+   `JobWorkspace` → `bodies/ChangeOrderBody` → `ChangeOrderPanel` since the 2026-07-19
    extraction (see `jobs-and-tasks.md` §9.6).
 3. **Toolbar** — back link, page title (with `superseded` styling
    when applicable), status pill (interactive `<select>` for users
@@ -3201,8 +3201,8 @@ is authoritative.
 ### 14.9 SPA
 
 `ChangeOrderPanel.svelte` (`components/changeorders/`, hosted at
-`#/jobs/:jobId/change-order/:coId` by `routes/jobs/JobChangeOrderPage.svelte`
-inside `JobShell` — extracted 2026-07-19 from the old
+`#/jobs/:jobId/change-order/:coId` by `routes/jobs/bodies/ChangeOrderBody.svelte`
+inside `JobWorkspace`'s `JobShell` — extracted 2026-07-19 from the old
 `ChangeOrderDetailPage` route) is the CO edit view. It owns CO-scoped
 loading (the CO, its `amended-agreement`, sibling COs for display-status
 relabelling, and the deliverables live/baseline pair) plus the toolbar

@@ -66,6 +66,31 @@ function mockApi(estimate, { versions = null, changeOrders = [], deliverables = 
   });
 }
 
+describe('EstimatePanel document-list freshness', () => {
+  it('reloads the version list when the viewed estimate changes (e.g. after creating a new version)', async () => {
+    user.set({ permissions: [] });
+    const e7 = makeEstimate();
+    const e8 = makeEstimate({ estimate_id: 8, estimate_number: 'EST-8', version: 2 });
+    api.get.mockReset();
+    api.get.mockImplementation((url) => {
+      if (url === '/api/estimates/7/') return Promise.resolve({ ...e7 });
+      if (url === '/api/estimates/8/') return Promise.resolve({ ...e8 });
+      if (url.startsWith('/api/estimates/?job=')) return Promise.resolve({ results: [e7, e8] });
+      if (url.endsWith('/deliverables/')) return Promise.resolve([]);
+      if (url.includes('rate-schemes')) return Promise.resolve({ results: [ADJ_SERVICE] });
+      return Promise.resolve({ results: [] });
+    });
+    const listFetches = () => api.get.mock.calls.filter(([u]) => u.startsWith('/api/estimates/?job=')).length;
+    const { rerender, findByText } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    await findByText(/Estimate: EST-7-\d/);
+    await waitFor(() => expect(listFetches()).toBe(1));
+
+    await rerender({ job: JOB, estimateId: 8 });
+    await findByText(/Estimate: EST-8-\d/);
+    await waitFor(() => expect(listFetches()).toBe(2));
+  });
+});
+
 beforeEach(() => {
   api.post?.mockReset?.();
   api.patch?.mockReset?.();

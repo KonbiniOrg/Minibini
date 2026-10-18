@@ -70,6 +70,20 @@ describe('DeliverablesSection', () => {
     expect(api.get.mock.calls.length).toBeGreaterThan(callsBefore);
   });
 
+  it('keeps the current list on screen while a refetch is in flight (no Loading flash)', async () => {
+    mockApi({ items: [{ id: 1, description: 'Chairs', qty_ordered: '3.00', units: 'ea' }] });
+    const props = { jobId: 5, job: { job_id: 5 } };
+    const { findByText, queryByText, rerender } = render(DeliverablesSection, { props });
+    await findByText('Chairs');
+
+    // The refetch never settles: the band must not collapse to a placeholder.
+    api.get.mockImplementation(() => new Promise(() => {}));
+    await rerender({ ...props, job: { job_id: 5 } });
+
+    expect(queryByText('Chairs')).toBeInTheDocument();
+    expect(queryByText('Loading...')).not.toBeInTheDocument();
+  });
+
   it('re-fetches when the deliverables store is bumped (a sibling component mutated the list)', async () => {
     mockApi({ items: [{ id: 1, description: 'Chairs', qty_ordered: '3.00', units: 'ea' }] });
     const { findByText } = render(DeliverablesSection, { props: { jobId: 5 } });
