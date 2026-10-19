@@ -281,6 +281,31 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
         return Response(self.get_serializer(job).data)
 
+    @action(detail=True, methods=['post'], url_path='release-to-floor', url_name='release-to-floor')
+    def release_to_floor(self, request, pk=None):
+        """The header pill's manual approved → in_progress (2026-10-18).
+
+        Two-phase, same shape as ConfirmDeleteMixin: when the accepted
+        estimate still has unanswered checklist lines and the caller has not
+        passed ?confirm=true, answer with the count and mutate nothing; the
+        confirmed call declines every unanswered line and releases. With
+        nothing to confirm (no accepted estimate, or every line answered)
+        the first call releases directly.
+        """
+        job = self.get_object()
+        confirm = request.query_params.get('confirm', '').lower() == 'true'
+        unanswered = JobService.unanswered_line_count(job)
+        if unanswered and not confirm:
+            return Response({
+                'confirm_required': True,
+                'impact': {'unanswered_lines': unanswered},
+            })
+        try:
+            JobService.release_to_floor(job.pk, decline_unanswered=confirm)
+        except NotFoundError:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response({'message': 'Job released to the floor.'})
+
     @action(detail=True, methods=['post'], url_path='duplicate')
     def duplicate(self, request, pk=None):
         """Copy this Job into a new one. Body: {contact_id, path:'approved'|'estimate'}."""

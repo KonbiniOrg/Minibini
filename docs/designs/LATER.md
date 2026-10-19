@@ -21,6 +21,13 @@ proper issue.
 
 ## Job & estimate lifecycle (decisions)
 
+- **`JobSerializer.has_accepted_estimate` has no SPA consumer.** — _added 2026-10-18_
+  It gated the header pill's conditional `approved → in_progress` option; "Release to
+  floor" (2026-10-18) offers that on every approved job, so only `tests/test_api_jobs.py`
+  still reads the flag. Drop it (field + its detail-only exists() query + test) or find
+  it a use.
+  _Done when:_ the field is removed or something in `frontend/src` reads it again.
+
 - **Warn when sending an estimate with no deliverables.** — _added
   2026-09-16 (RM)_
   If an estimate is about to be sent and the job has no Deliverables,

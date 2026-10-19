@@ -638,7 +638,7 @@ cancel), gated by `can_manage_jobs` at the API layer.
 `approved → in_progress` ("release to the floor") is **system-transition
 only** (estimating-structure spec, 2026-08-15): `JobService.update_job`
 rejects a direct edit into this transition unless the caller passes
-`system_transition=True`. The sole system trigger is
+`system_transition=True`. The system trigger is
 `JobService.maybe_auto_release` — fires once every line on the job's
 accepted Estimate that owes a work decision (`EstimateService.
 unanswered_lines`) has been answered (claimed via mint, or explicitly
@@ -647,8 +647,11 @@ line crystallized to an atom (all-catalog estimate — no plain hand
 lines to answer). `on_hold` wins over auto-release unconditionally: a
 held job's checklist completing while held does not release it — it
 stays parked at its true underlying status until explicitly released.
-The manual release-to-floor pill action is retired — see
-`jobs-and-tasks.md` §3.3.
+The manual "Release to floor" pill action (`JobService.release_to_floor`,
+`POST /api/jobs/{id}/release-to-floor/`) is the user-driven way onto the
+same edge: with unanswered lines it bulk-declines them (every flip through
+`_set_work_declined`, so the invariant holds) and releases in one
+transaction; it refuses held jobs — see `jobs-and-tasks.md` §3.3.
 
 `STATUS_IN_PROGRESS` sits between `approved` and `work_complete` (added when
 WorkOrder was removed). `work_complete` = every task terminal AND no
