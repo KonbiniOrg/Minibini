@@ -187,7 +187,9 @@ machine:
   (a job held from `in_progress` goes straight back to `in_progress` —
   there is no detour through `approved`).
 - **API**: `POST /api/jobs/{id}/hold/` (body `{reason}`, required) and
-  `POST /api/jobs/{id}/release/`, via the status-actions mixin.
+  `POST /api/jobs/{id}/release/`, via the status-actions mixin. (Not to
+  be confused with `POST /api/jobs/{id}/release-to-floor/`, the
+  `approved → in_progress` gesture in §3.3.)
   `JobSerializer` exposes `on_hold` and `hold_reason` read-only;
   PATCHing `status: 'on_hold'` now 400s — it is not a status.
 
@@ -290,8 +292,8 @@ tasks.
 
 ### 3.3 Auto-advance on work activity
 
-**To `in_progress`:** two independent triggers share this edge, and
-either alone is sufficient:
+**To `in_progress`:** three independent triggers share this edge, and
+any one alone is sufficient:
 
 - **Work starting** — when work starts on an `approved` Job (a Blep is
   opened via `start_work`/`create_historical`, or a Task completes),
@@ -318,12 +320,38 @@ either alone is sufficient:
   checklist. A job whose every hand line was declined releases with
   **no tasks at all** — taskless hand-billed jobs are a deliberately
   supported flow, not an edge case to guard against.
-  `PATCH /api/jobs/{id}/` can no longer drive `approved → in_progress`
-  directly — `JobService.update_job` raises unless the caller passes
-  `system_transition=True` (the same guard shape as the direct-approval
-  gate above); the status pill (§9.1) no longer offers the transition.
-  See `estimates-and-prices.md` §9a and `users-and-permissions.md`
-  "Manual `approved → in_progress` is retired".
+  `PATCH /api/jobs/{id}/` cannot drive `approved → in_progress`
+  directly once an accepted estimate exists — `JobService.update_job`
+  raises unless the caller passes `system_transition=True` (the same
+  guard shape as the direct-approval gate above). The user-facing route
+  is the dedicated gesture below.
+- **Release to floor (manual, brought back 2026-10-18)** — the header
+  pill (§9.1) offers "Release to floor" on every `approved`, non-held
+  job. It was retired with auto-release but came back because the
+  checklist lives at the bottom of the estimate's edit page and nothing
+  on the job page points at it: a demo stalled at Approved with no
+  visible way forward. `JobService.release_to_floor(pk,
+  decline_unanswered=False)` moves the job `approved → in_progress`.
+  If the accepted estimate still has unanswered checklist lines it
+  refuses unless `decline_unanswered` is set, in which case it marks
+  every unanswered line `work_declined` via
+  `EstimateService.decline_unanswered_lines` (each flip runs the normal
+  per-line guards and auto-release trigger; the last flip is what
+  releases) in one transaction. A job with no accepted estimate
+  (hand-approved) simply releases. Held jobs refuse — hold wins, as for
+  auto-release. Endpoint: `POST /api/jobs/{id}/release-to-floor/`,
+  two-phase like `ConfirmDeleteMixin`: with unanswered lines and no
+  `?confirm=true` it returns `{confirm_required: true, impact:
+  {unanswered_lines: N}}` and mutates nothing; `?confirm=true` (or
+  nothing to confirm) releases and returns `{message}`. The pill turns
+  the first response into a `confirm()` — "There are N estimate lines
+  without associated Tasks. Decline all?" — Cancel leaves everything as
+  it was. Bulk-declined lines keep their per-line Undo on the estimate,
+  so a task for one can still be generated later. After the confirmed
+  call the header bumps `stores/estimateLines.js` so a mounted
+  `EstimatePanel` refetches and shows the declines at once. Permission:
+  `CanManageJobOrPM`. See `estimates-and-prices.md` §9a and
+  `users-and-permissions.md`.
 
 **To `work_complete`:** when a Task transitions to `complete` or
 `cancelled`, `TaskLifecycleService._check_job_work_complete`
@@ -1463,12 +1491,15 @@ Top-down, via `JobShell`:
    "Release hold" posts the release. **A held job's pill shows only
    `HOLD`** (striped amber; the true status is deliberately hidden)
    with the hold reason inline beside it, truncated with the full text
-   on hover. The pill no longer offers `approved → in_progress` at all
-   (retired "Release to floor" trigger, estimating-structure spec,
-   2026-08-15 — `VALID_TRANSITIONS['approved']` in `JobHeader.svelte`
-   dropped the `in_progress` entry): release now happens only via
-   auto-release (§3.3) once the accepted estimate's checklist is fully
-   answered.
+   on hover. On an `approved` job the pill offers **"Release to
+   floor"** (the `in_progress` entry of `VALID_TRANSITIONS['approved']`,
+   labelled by the act): picking it never PATCHes the status — it posts
+   to `release-to-floor` and, when the accepted estimate still has
+   unanswered checklist lines, asks "There are N estimate lines without
+   associated Tasks. Decline all?" before the confirmed post (§3.3).
+   Retired 2026-08-15 in favour of auto-release alone, brought back
+   2026-10-18 for discoverability; auto-release still fires on its own
+   when the checklist completes.
 2. **`JobContextBand`** (§9.6) — the same collapsible description /
    deliverables / email strip every job page gets, defaulting expanded.
    The overview does **not** get a bespoke midband; this is its only

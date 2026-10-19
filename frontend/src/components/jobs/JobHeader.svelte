@@ -1,6 +1,7 @@
 <script>
   import { api, errorMessage } from '../../lib/api.js';
   import { showError } from '../../stores/messages.js';
+  import { notifyEstimateLinesChanged } from '../../stores/estimateLines.js';
   import FormMessage from '../FormMessage.svelte';
   import Modal from '../Modal.svelte';
   import JobEditModal from './JobEditModal.svelte';
@@ -31,15 +32,15 @@
   // not statuses (values prefixed __): "Hold…" opens the reason modal and
   // "Release hold" posts the release — on_hold stays a flag, never a status.
   //
-  // approved→in_progress ("release to floor") is mostly absent: once a job
-  // has an ACCEPTED estimate, the manual gesture is retired
-  // (docs/plans/2026-08-15-estimating-structure.md "Auto-release replaces
-  // release to floor") — the job advances on its own once the estimate's
-  // checklist is fully answered (JobService.update_job refuses the manual
-  // PATCH; system transitions — auto-release, timeslip-start — use it). A
-  // job with NO accepted estimate has no checklist to auto-release it
-  // (final-review fix, 2026-08-16), so it keeps the manual option — see the
-  // has_accepted_estimate filter in validNextStatuses below.
+  // approved→in_progress is the "Release to floor" trigger (brought back
+  // 2026-10-18 — the estimate-side checklist alone proved too hidden). It is
+  // offered on every approved, non-held job. It never PATCHes the status
+  // (JobService.update_job still refuses a direct edit once an estimate is
+  // accepted); it posts to the two-phase release-to-floor endpoint, which
+  // reports the accepted estimate's unanswered checklist lines first so the
+  // pill can ask "decline all?" — see releaseToFloor() below. Auto-release
+  // (the checklist completing on its own) is unchanged and still the usual
+  // path; this is the shortcut past it.
   const VALID_TRANSITIONS = {
     draft: ['submitted', 'rejected'],
     submitted: ['approved', 'rejected'],
@@ -67,33 +68,21 @@
   }
 
   // Trigger labels: the pill names the *act*, not the resulting status, for
-  // triggers where the act is the clearer read. (approved→in_progress used
-  // to be one of these — "Release to floor" — back when the manual gesture
-  // was unconditionally retired; see VALID_TRANSITIONS above for the
-  // estimate-less exception that brought it back.)
+  // triggers where the act is the clearer read.
   function transitionLabel(next) {
+    if (job.status === 'approved' && next === 'in_progress') return 'Release to floor';
     return statusLabel(next);
   }
 
   // While held the backend parks the status (cancel excepted).
   // Approved is offered only on estimate-less jobs: once a job has any
   // estimate, approval flows from accepting the estimate (the backend
-  // rejects a direct edit — see JobService.update_job). in_progress is
-  // offered from approved only when there's no ACCEPTED estimate — once one
-  // exists, release is auto-only (the checklist decides); a job that never
-  // went through acceptance has no checklist, so manual release stays legal
-  // (final-review fix, 2026-08-16 — mirrors JobService.update_job's guard).
-  // The other approved(work_complete)/cancelled→in_progress edges are
-  // unrelated reactivations, not this gesture, so the filter only fires
-  // while job.status is actually 'approved'.
+  // rejects a direct edit — see JobService.update_job).
   let validNextStatuses = $derived(
     job.on_hold
       ? ['cancelled']
       : (VALID_TRANSITIONS[job.status] || []).filter((s) => {
           if (s === 'approved') return !job.has_estimates;
-          if (job.status === 'approved' && s === 'in_progress') {
-            return !job.has_accepted_estimate;
-          }
           return true;
         })
   );
@@ -155,6 +144,11 @@
       releaseHold();
       return;
     }
+    if (job.status === 'approved' && picked === 'in_progress') {
+      e.target.value = job.status;
+      releaseToFloor();
+      return;
+    }
     statusBusy = true;
     try {
       await api.patch(`/api/jobs/${job.job_id}/`, { status: picked });
@@ -202,6 +196,33 @@
     holdModalOpen = false;
     holdReasonInput = '';
     holdError = '';
+  }
+
+  // Release to floor: the first POST either releases outright (nothing on
+  // the checklist left to answer, or no accepted estimate at all) or comes
+  // back with the unanswered-line count. Declining them all is a bulk
+  // answer the user can reverse line by line on the estimate, but it is
+  // several decisions in one click — so it gets a confirm; Cancel leaves
+  // everything as it was.
+  async function releaseToFloor() {
+    if (statusBusy) return;
+    statusBusy = true;
+    try {
+      const first = await api.post(`/api/jobs/${job.job_id}/release-to-floor/`, {});
+      if (first?.confirm_required) {
+        const n = first.impact?.unanswered_lines ?? 0;
+        if (!confirm(`There are ${n} estimate lines without associated Tasks. Decline all?`)) return;
+        await api.post(`/api/jobs/${job.job_id}/release-to-floor/?confirm=true`, {});
+        // The confirmed call declined estimate lines; a mounted EstimatePanel
+        // holds a copy of them and refetches on this bump (stores/estimateLines.js).
+        notifyEstimateLinesChanged();
+      }
+      if (onStatusChange) onStatusChange();
+    } catch (err) {
+      showError(errorMessage(err, 'Release to floor failed.'));
+    } finally {
+      statusBusy = false;
+    }
   }
 
   async function releaseHold() {

@@ -61,19 +61,19 @@ test('§11 Approval & the status pill', async ({ page }) => {
     await expect(pill(page).locator('option:checked')).toHaveText('Approved');
   });
 
-  await test.step('Estimate-less approved job keeps a manual approved→in_progress option', async () => {
-    // docs/plans/2026-08-15-estimating-structure.md "Auto-release replaces
-    // release to floor" retired the manual gesture for jobs WITH an accepted
-    // estimate (the checklist auto-releases them). A job that never went
-    // through acceptance has no checklist, so manual release stays legal —
-    // final-review fix 2026-08-16, JobHeader.validNextStatuses'
-    // has_accepted_estimate filter. The option is labelled by its resulting
-    // status, not the old "Release to floor" act. Auto-release's own
-    // end-to-end journey is covered separately (structure-journey spec).
-    await expect(pill(page).locator('option', { hasText: 'Release to floor' })).toHaveCount(0);
-    await expect(pill(page).locator('option[value="in_progress"]')).toHaveCount(1);
-    await expect(pill(page).locator('option[value="in_progress"]')).toHaveText('In Progress');
+  await test.step('Estimate-less approved job: "Release to floor" is offered and releases without a prompt', async () => {
+    // "Release to floor" came back 2026-10-18 (the estimate-side checklist
+    // alone was too hidden). On a job with no accepted estimate there is no
+    // checklist, so the first POST to release-to-floor releases outright —
+    // no "decline all?" dialog (a dialog here would fail the test, since
+    // nothing accepts it).
+    const inProgress = pill(page).locator('option[value="in_progress"]');
+    await expect(inProgress).toHaveCount(1);
+    await expect(inProgress).toHaveText('Release to floor');
     await expect(pill(page)).toHaveValue('approved');
+    await pill(page).selectOption({ label: 'Release to floor' });
+    await expect.poll(async () => (await jobDetail(jobId)).status).toBe('in_progress');
+    await expect(pill(page).locator('option:checked')).toHaveText('In Progress');
   });
   // §11's in-flight disable is a millisecond window — covered by the
   // JobHeader unit tests (frontend/tests/components/jobs/JobHeader.test.js),

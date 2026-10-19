@@ -16,10 +16,11 @@
 // Tasks page (bundling-in-task-view, Task 5): select two pool atoms' bundle
 // checkboxes -> "Bundle N selected into a line…" -> edit qty under
 // keep-total -> Create — then send/accept/mint/decline walks the checklist
-// to the job's auto-release. A second test covers the two edge assertions that don't fit
-// that single walk: an approved-but-unanswered job's pill still offers no
-// manual in_progress option, and an all-catalog estimate skips the
-// "approved" rest stop entirely.
+// to the job's auto-release. A second test covers the two edge flows that
+// don't fit that single walk: an approved-but-unanswered job's "Release to
+// floor" pill option (brought back 2026-10-18) asks "decline all?" and, once
+// confirmed, declines the leftover lines and releases; and an all-catalog
+// estimate skips the "approved" rest stop entirely.
 import { expect, test } from '@playwright/test';
 import { apiAs } from '../../fixtures/api.js';
 import { personas } from '../../fixtures/personas.js';
@@ -235,16 +236,20 @@ test('structure journey: bundle a line, send, accept, mint/decline the checklist
   await api.dispose();
 });
 
-test('approved-but-unanswered pill offers no manual in_progress; an all-catalog estimate accepts straight to in_progress', async ({ page }) => {
+test('Release to floor on an approved-but-unanswered job declines the rest; an all-catalog estimate accepts straight to in_progress', async ({ page }) => {
   const stamp2 = `e2e-struct2-${Date.now().toString(36)}`;
   const api = await apiAs(personas.finjobs);
   const contact = (await api.get('/api/contacts/?page_size=1')).results[0];
 
-  await test.step('Approved job with an unanswered hand line: the pill has no in_progress option', async () => {
+  await test.step('Approved job with two unanswered hand lines: "Release to floor" asks "decline all?"; Cancel changes nothing; OK declines both and releases', async () => {
     const job = await api.post('/api/jobs/', { name: `${stamp2} unanswered job`, contact: contact.contact_id });
     const estimate = await api.post('/api/estimates/', { job: job.job_id });
-    await api.post(`/api/estimates/${estimate.estimate_id}/line-items/`, {
-      description: `${stamp2} unanswered hand line`, qty: '1', units: scheme.unit_label, price: '40.00',
+    const lineA = await api.post(`/api/estimates/${estimate.estimate_id}/line-items/`, {
+      description: `${stamp2} unanswered hand line A`, qty: '1', units: scheme.unit_label, price: '40.00',
+      accounting_category: category.id,
+    });
+    const lineB = await api.post(`/api/estimates/${estimate.estimate_id}/line-items/`, {
+      description: `${stamp2} unanswered hand line B`, qty: '1', units: scheme.unit_label, price: '60.00',
       accounting_category: category.id,
     });
     await api.post(`/api/jobs/${job.job_id}/deliverables/`, {
@@ -256,11 +261,53 @@ test('approved-but-unanswered pill offers no manual in_progress; an all-catalog 
     const detail = await api.get(`/api/jobs/${job.job_id}/`);
     expect(detail.status).toBe('approved');
 
-    await page.goto(`/#/jobs/${job.job_id}`);
+    // Drive it from the ESTIMATE page: the header pill is the same shell,
+    // and the rows below must swap to "no work needed" + Undo without a
+    // reload once the confirmed call declines them (RM, 2026-10-18 — the
+    // panel only reloaded on estimateId change; stores/estimateLines.js).
+    await page.goto(`/#/jobs/${job.job_id}/estimate/${estimate.estimate_id}`);
     const pill = page.locator('.job-header select');
     await expect(pill).toHaveValue('approved');
-    await expect(pill.locator('option[value="in_progress"]')).toHaveCount(0);
-    await expect(pill.locator('option', { hasText: 'In Progress' })).toHaveCount(0);
+    await expect(pill.locator('option[value="in_progress"]')).toHaveText('Release to floor');
+    const rowA = page.locator('table.line-items-table tbody tr').filter({
+      has: page.locator('td.preserve-breaks', { hasText: lineA.description }),
+    });
+    await expect(rowA.getByRole('button', { name: 'No work needed' })).toBeVisible();
+    await expect(page.locator('.doc-warning')).toHaveText(
+      '2 line(s) need a work decision — the job starts automatically when all are answered.'
+    );
+
+    // Cancel: the dialog names the two unanswered lines; nothing moves.
+    const dialogs = [];
+    page.once('dialog', (d) => { dialogs.push(d.message()); d.dismiss(); });
+    await pill.selectOption({ label: 'Release to floor' });
+    await expect.poll(() => dialogs.length).toBe(1);
+    expect(dialogs[0]).toBe('There are 2 estimate lines without associated Tasks. Decline all?');
+    await expect(pill).toHaveValue('approved');
+    await expect(rowA.getByRole('button', { name: 'No work needed' })).toBeVisible();
+    expect((await api.get(`/api/jobs/${job.job_id}/`)).status).toBe('approved');
+    const lines = (await api.get(`/api/estimates/${estimate.estimate_id}/`)).line_items;
+    expect(lines.find((li) => li.line_item_id === lineA.line_item_id).work_declined).toBe(false);
+    expect(lines.find((li) => li.line_item_id === lineB.line_item_id).work_declined).toBe(false);
+
+    // OK: both lines are declined (reversibly) and the job is on the floor.
+    page.once('dialog', (d) => d.accept());
+    await pill.selectOption({ label: 'Release to floor' });
+    await expect.poll(async () => (await api.get(`/api/jobs/${job.job_id}/`)).status).toBe('in_progress');
+    await expect(pill).toHaveValue('in_progress');
+    await expect(pill.locator('option:checked')).toHaveText('In Progress');
+    const after = (await api.get(`/api/estimates/${estimate.estimate_id}/`)).line_items;
+    expect(after.find((li) => li.line_item_id === lineA.line_item_id).work_declined).toBe(true);
+    expect(after.find((li) => li.line_item_id === lineB.line_item_id).work_declined).toBe(true);
+
+    // No reload: the rows below the header already show the declines, the
+    // banner is gone, and the per-line Undo still works on a bulk-declined line.
+    await expect(rowA.getByText('no work needed')).toBeVisible();
+    await expect(rowA.getByRole('button', { name: 'No work needed' })).toHaveCount(0);
+    await expect(page.locator('.doc-warning')).toHaveCount(0);
+    await rowA.getByRole('button', { name: 'Undo' }).click();
+    await expect(rowA.getByRole('button', { name: 'Generate work…' })).toBeVisible();
+    await expect(page.locator('.doc-warning')).toHaveText('1 line(s) still need a work decision.');
   });
 
   await test.step('An all-catalog estimate skips the approved rest stop: acceptance lands the job straight on in_progress', async () => {

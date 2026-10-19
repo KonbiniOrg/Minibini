@@ -765,6 +765,12 @@ the same `/api` proxy covers its requests.
   `ShiftBand` header strip (Clock In / Clock Out; the `CurrentBlepBand`
   slides in beneath it while a session runs — both in `App.svelte`'s
   sticky `.app-bands` wrapper).
+- `estimateLines.js` — `estimateLinesVersion` + `notifyEstimateLinesChanged()`
+  (2026-10-18). Same version-store shape, for an estimate's *line items*
+  changed from outside the estimate panel: the job header's "Release to
+  floor" bumps it after its confirmed call bulk-declines the checklist, and
+  `EstimatePanel` silently refetches its document so the rows swap to
+  "no work needed" + Undo without a page reload.
 - `deliverables.js` — `deliverablesVersion` + `notifyDeliverablesChanged()`
   (2026-09-29). The version-store pattern (same shape as `blepActivity.js`
   / `shift.js`): every SPA mutation of a job's deliverables bumps it

@@ -1717,8 +1717,12 @@ surface, "No work needed" and its "Undo" carry **no confirmation
 dialog** — both directions are freely reversible, per the UI
 convention that confirmation is reserved for the irreversible.
 
-**Auto-release** replaces the old manual "release to floor" pill
-action; the full trigger/on_hold-interaction mechanics live in
+**Auto-release** is the checklist's own release path (the manual
+"Release to floor" pill was retired alongside it in 2026-08 and brought
+back 2026-10-18 as a shortcut — it bulk-declines whatever is still
+unanswered via `EstimateService.decline_unanswered_lines`, after a
+"decline all?" confirm; see `jobs-and-tasks.md` §3.3); the full
+trigger/on_hold-interaction mechanics live in
 `jobs-and-tasks.md` §3.3 (owner: Job status), and the invariant this
 section's checklist maintains is recorded in `data-constraints.md` §1.8
 "Answeredness invariant". In short: `JobService.maybe_auto_release`

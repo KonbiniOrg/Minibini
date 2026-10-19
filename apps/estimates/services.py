@@ -619,6 +619,21 @@ class EstimateService:
         return li
 
     @staticmethod
+    def decline_unanswered_lines(estimate):
+        """Mark every still-unanswered line on an accepted estimate
+        work_declined — the bulk "no work needed" answer behind the job
+        header's "Release to floor" gesture (2026-10-18). Each flip goes
+        through `_set_work_declined`, so the per-line guards and the
+        auto-release trigger run exactly as they do for a single-line
+        decline; the last flip is what actually releases the job. Every
+        decline stays individually reversible via the estimate's Undo.
+        Returns the number of lines declined."""
+        lines = list(EstimateService.unanswered_lines(estimate))
+        for li in lines:
+            EstimateService._set_work_declined(li, True)
+        return len(lines)
+
+    @staticmethod
     def unanswered_lines(estimate):
         """Lines still owing a work decision on an ACCEPTED estimate:
         non-adjustment, non-deposit lines with no sources and

@@ -992,6 +992,57 @@ class JobService:
                                  system_transition=True)
 
     @staticmethod
+    def unanswered_line_count(job):
+        """How many lines on the job's accepted estimate(s) still owe a work
+        decision (EstimateService.unanswered_lines). Zero for a job with no
+        accepted estimate — there is no checklist to answer."""
+        from apps.estimates.services import EstimateService
+        total = 0
+        for estimate in Estimate.objects.filter(job=job, status=Estimate.STATUS_ACCEPTED):
+            total += EstimateService.unanswered_lines(estimate).count()
+        return total
+
+    @staticmethod
+    def release_to_floor(pk, decline_unanswered=False):
+        """The header pill's manual "Release to floor" (brought back
+        2026-10-18 — the checklist alone proved too hidden): approved ->
+        in_progress for a user, not a system trigger.
+
+        With unanswered checklist lines the call refuses unless
+        `decline_unanswered` is set, in which case every unanswered line is
+        marked work_declined (the reversible "no work needed" answer, via
+        EstimateService.decline_unanswered_lines) in the same transaction —
+        the last decline's auto-release is what moves the job, and the
+        explicit transition below is the fallback for a job with no
+        accepted estimate (hand-approved, no checklist) or nothing left to
+        answer. Held jobs refuse: hold wins, same as auto-release."""
+        try:
+            job = Job.objects.get(pk=pk)
+        except Job.DoesNotExist:
+            raise NotFoundError(f'Job {pk} not found')
+        _assert_job_not_frozen(job, 'release this job to the floor')
+        if job.status != Job.STATUS_APPROVED:
+            raise ValidationError('Only an approved job can be released to the floor.')
+        if job.on_hold:
+            raise ValidationError('Job is on hold — release the hold first.')
+        from apps.estimates.services import EstimateService
+        with transaction.atomic():
+            accepted = Estimate.objects.filter(job=job, status=Estimate.STATUS_ACCEPTED)
+            if JobService.unanswered_line_count(job):
+                if not decline_unanswered:
+                    raise ValidationError(
+                        'This job\'s estimate still has lines without a work '
+                        'decision — decline them or generate their work first.'
+                    )
+                for estimate in accepted:
+                    EstimateService.decline_unanswered_lines(estimate)
+            job.refresh_from_db()
+            if job.status == Job.STATUS_APPROVED:
+                job = JobService.update_status(job.pk, Job.STATUS_IN_PROGRESS,
+                                               system_transition=True)
+        return job
+
+    @staticmethod
     def mark_work_reopened(job):
         """Pull a WORK_COMPLETE Job back to IN_PROGRESS when a new incomplete
         Task lands on it — work_complete means every task is terminal, and a

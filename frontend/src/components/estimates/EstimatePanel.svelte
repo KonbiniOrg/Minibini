@@ -3,6 +3,7 @@
   import { untrack } from 'svelte';
   import { api, errorMessage } from '../../lib/api.js';
   import { deliverablesVersion, notifyDeliverablesChanged } from '../../stores/deliverables.js';
+  import { estimateLinesVersion } from '../../stores/estimateLines.js';
   import { showError } from '../../stores/messages.js';
   import DocSubnav from '../jobs/DocSubnav.svelte';
   import DeliverablesEditModal from '../jobs/DeliverablesEditModal.svelte';
@@ -260,6 +261,18 @@
     if (v !== lastDeliverablesVersion) {
       lastDeliverablesVersion = v;
       if (jobId) untrack(() => loadDeliverables());
+    }
+  });
+
+  // Lines changed outside this panel (the job header's "Release to floor"
+  // bulk-declining the checklist): silent refetch so the rows swap their
+  // mint/decline buttons for "no work needed" + Undo without a reload.
+  let lastEstimateLinesVersion = $state(0);
+  $effect(() => {
+    const v = $estimateLinesVersion;
+    if (v !== lastEstimateLinesVersion) {
+      lastEstimateLinesVersion = v;
+      if (estimateId) untrack(() => loadEstimate({ silent: true }));
     }
   });
 

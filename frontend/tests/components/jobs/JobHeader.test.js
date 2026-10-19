@@ -12,6 +12,7 @@ import { get } from 'svelte/store';
 import { api } from '@/lib/api.js';
 import { user } from '@/stores/auth.js';
 import { overlayMessage, clearMessage } from '@/stores/messages.js';
+import { estimateLinesVersion } from '@/stores/estimateLines.js';
 import JobHeader from '@/components/jobs/JobHeader.svelte';
 
 const job = { job_id: 5, job_number: 'JOB-5', name: 'Widget', status: 'in_progress', can_manage: true };
@@ -61,33 +62,111 @@ describe('JobHeader status pill', () => {
     expect(select.value).toBe('in_progress');
   });
 
-  it('does not offer manual release-to-floor on an approved job with an accepted estimate', () => {
-    // Task 6: approved→in_progress is auto-release-only once an estimate
-    // has been accepted — the pill doesn't offer a manual "release to
-    // floor" gesture there.
+  // "Release to floor" (brought back 2026-10-18): offered on every approved,
+  // non-held job — with or without an accepted estimate. The gesture posts to
+  // the two-phase release-to-floor endpoint; when the accepted estimate still
+  // has unanswered checklist lines the first call reports the count and the
+  // pill asks "decline all?" before the confirmed call.
+  it('offers "Release to floor" on an approved job with an accepted estimate', () => {
     const approvedJob = { ...job, status: 'approved', has_accepted_estimate: true };
     const { getByRole } = render(JobHeader, { props: { job: approvedJob } });
     const select = getByRole('combobox');
-    expect(optionValues(select)).not.toContain('in_progress');
+    expect(optionValues(select)).toContain('in_progress');
+    expect(optionLabels(select)).toContain('Release to floor');
     expect(optionValues(select)).toContain('cancelled');
   });
 
-  it('offers manual release-to-floor on an approved job with NO accepted estimate', () => {
-    // Final-review fix (2026-08-16): a job that never went through
-    // acceptance (hand-approved directly, or carrying only a draft/dead
-    // estimate) has no checklist to auto-release it — the manual gesture
-    // stays available, mirroring JobService.update_job's guard.
+  it('offers "Release to floor" on an approved job with NO accepted estimate', () => {
     const approvedJob = { ...job, status: 'approved', has_accepted_estimate: false };
     const { getByRole } = render(JobHeader, { props: { job: approvedJob } });
     const select = getByRole('combobox');
     expect(optionValues(select)).toContain('in_progress');
+    expect(optionLabels(select)).toContain('Release to floor');
   });
 
-  it('patches approved -> in_progress when picked on an estimate-less approved job', async () => {
+  it('releases without a prompt when the endpoint has nothing to confirm', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    api.post.mockResolvedValueOnce({ message: 'Job released to the floor.' });
+    const onStatusChange = vi.fn();
     const approvedJob = { ...job, status: 'approved', has_accepted_estimate: false };
-    const { getByRole } = render(JobHeader, { props: { job: approvedJob } });
+    const { getByRole } = render(JobHeader, { props: { job: approvedJob, onStatusChange } });
     await fireEvent.change(getByRole('combobox'), { target: { value: 'in_progress' } });
-    expect(api.patch).toHaveBeenCalledWith('/api/jobs/5/', { status: 'in_progress' });
+    await Promise.resolve();
+    expect(api.post).toHaveBeenCalledTimes(1);
+    expect(api.post).toHaveBeenCalledWith('/api/jobs/5/release-to-floor/', {});
+    expect(api.patch).not.toHaveBeenCalled();
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(onStatusChange).toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  it('asks "decline all?" with the unanswered count, then posts the confirmed release', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    api.post
+      .mockResolvedValueOnce({ confirm_required: true, impact: { unanswered_lines: 3 } })
+      .mockResolvedValueOnce({ message: 'Job released to the floor.' });
+    const onStatusChange = vi.fn();
+    const approvedJob = { ...job, status: 'approved', has_accepted_estimate: true };
+    const { getByRole } = render(JobHeader, { props: { job: approvedJob, onStatusChange } });
+    await fireEvent.change(getByRole('combobox'), { target: { value: 'in_progress' } });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(confirmSpy).toHaveBeenCalledWith(
+      'There are 3 estimate lines without associated Tasks. Decline all?'
+    );
+    expect(api.post).toHaveBeenNthCalledWith(1, '/api/jobs/5/release-to-floor/', {});
+    expect(api.post).toHaveBeenNthCalledWith(2, '/api/jobs/5/release-to-floor/?confirm=true', {});
+    expect(onStatusChange).toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  it('bumps the estimate-lines store after a confirmed decline-all release, not after a plain one', async () => {
+    // The estimate panel (if it is the section on screen) holds a copy of
+    // the lines the confirmed call just declined — same version-store shape
+    // as deliverables.js, so it refetches without a page reload.
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    api.post
+      .mockResolvedValueOnce({ message: 'Job released to the floor.' })
+      .mockResolvedValueOnce({ confirm_required: true, impact: { unanswered_lines: 2 } })
+      .mockResolvedValueOnce({ message: 'Job released to the floor.' });
+    const approvedJob = { ...job, status: 'approved', has_accepted_estimate: true };
+    const { getByRole } = render(JobHeader, { props: { job: approvedJob } });
+    const before = get(estimateLinesVersion);
+
+    // Plain release (nothing to confirm): no lines changed, no bump.
+    await fireEvent.change(getByRole('combobox'), { target: { value: 'in_progress' } });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(get(estimateLinesVersion)).toBe(before);
+
+    // Confirmed decline-all: bump.
+    await fireEvent.change(getByRole('combobox'), { target: { value: 'in_progress' } });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(api.post).toHaveBeenCalledTimes(3);
+    expect(get(estimateLinesVersion)).toBe(before + 1);
+    confirmSpy.mockRestore();
+  });
+
+  it('does nothing further when the "decline all?" prompt is cancelled', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    api.post.mockResolvedValueOnce({ confirm_required: true, impact: { unanswered_lines: 1 } });
+    const onStatusChange = vi.fn();
+    const approvedJob = { ...job, status: 'approved', has_accepted_estimate: true };
+    const { getByRole } = render(JobHeader, { props: { job: approvedJob, onStatusChange } });
+    const select = getByRole('combobox');
+    await fireEvent.change(select, { target: { value: 'in_progress' } });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(confirmSpy).toHaveBeenCalledWith(
+      'There are 1 estimate lines without associated Tasks. Decline all?'
+    );
+    expect(api.post).toHaveBeenCalledTimes(1);
+    expect(onStatusChange).not.toHaveBeenCalled();
+    // The pill snaps back to the current status.
+    expect(select.value).toBe('approved');
+    confirmSpy.mockRestore();
   });
 
   it('does not offer Hold for pre-approval jobs', () => {
