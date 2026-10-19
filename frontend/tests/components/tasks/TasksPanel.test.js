@@ -1064,3 +1064,20 @@ describe('TasksPanel — degraded load notice', () => {
     await waitFor(() => expect(queryByRole('status')).toBeNull());
   });
 });
+
+describe('TasksPanel refetch (onJobChange chain)', () => {
+  it('keeps the panel on screen while the job-driven reload is in flight (no Loading flash)', async () => {
+    mockApi();
+    const job = makeJob({ can_manage: true });
+    const { findByRole, queryByRole, queryByText, rerender } = render(TasksPanel, { props: { job } });
+    await findByRole('button', { name: /add work/i });
+
+    // A mutation → onJobChange → a new job object arrives. The reload must
+    // not swap the table for a placeholder: the fetches here never settle.
+    api.get.mockImplementation(() => new Promise(() => {}));
+    await rerender({ job: { ...job } });
+
+    expect(queryByRole('button', { name: /add work/i })).toBeInTheDocument();
+    expect(queryByText('Loading...')).not.toBeInTheDocument();
+  });
+});

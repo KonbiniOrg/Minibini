@@ -216,7 +216,7 @@
     await Promise.all([loadInvoice({ silent: true }), loadSourcePool(), loadInvoices()]);
   }
 
-  // Value-keyed: the glue (JobInvoicePage) assigns a new `job` object on
+  // Value-keyed: the host (JobWorkspace, via InvoiceBody) assigns a new `job` object on
   // every loadJob() run, even when the job itself hasn't changed. Deriving
   // jobId memoizes on the value, so the effect below only reruns when the
   // job actually changes. The load functions read this derived (not
@@ -255,9 +255,17 @@
   // even in the empty state (no invoiceId yet, e.g. the "Add Deposit
   // Invoice" button before any invoice exists) — load off jobId, not
   // invoiceId.
+  // The list also follows the viewed document: Start Invoice / deposit
+  // creation navigate to a new doc without a remount (the job page is one
+  // persistent component), so the three-state deposit gate above would
+  // otherwise read a list that predates the draft it is standing on.
+  $effect(() => {
+    void invoiceId;
+    if (jobId) loadInvoices();
+  });
+
   $effect(() => {
     if (jobId) {
-      loadInvoices();
       loadCategories();
     }
   });
@@ -505,7 +513,7 @@
         {startingInvoice ? 'Starting…' : 'Start Invoice'}
       </button>
       <!-- This branch only renders when the job has zero invoices (see
-           JobInvoicePage's docId derivation — invoiceId is only null when
+           InvoiceBody's docId derivation — invoiceId is only null when
            there truly are none), so showDepositButton/depositButtonLabel
            here always resolve to state 1 ("Add Deposit Invoice") — reusing
            the same derived values as the version-bar placement below keeps

@@ -85,6 +85,24 @@ beforeEach(() => {
   api.delete?.mockReset?.();
 });
 
+describe('InvoicePanel document-list freshness', () => {
+  it('reloads the job\'s invoice list when the viewed document changes (e.g. after Start Invoice)', async () => {
+    // Start Invoice creates a draft and navigates to it; the panel stays
+    // mounted (the job page no longer remounts per route), so the list the
+    // deposit-button states derive from must follow the viewed document.
+    user.set({ permissions: [] });
+    const draft = makeInvoice({ invoice_number: null, display_number: 'Draft — JOB-9' });
+    mockApi(draft, { invoices: [] });
+    const { rerender, findByText } = render(InvoicePanel, { props: { job: JOB, invoiceId: null } });
+    await waitFor(() => expect(api.get.mock.calls.filter(([u]) => u.startsWith('/api/invoices/?job=')).length).toBe(1));
+
+    mockApi(draft, { invoices: [draft] });
+    await rerender({ job: JOB, invoiceId: 5 });
+    await findByText('Invoice: Draft — JOB-9');
+    expect(api.get.mock.calls.filter(([u]) => u.startsWith('/api/invoices/?job=')).length).toBe(1); // mockApi reset the mock: this is the post-change fetch
+  });
+});
+
 describe('InvoicePanel draft placeholder identity', () => {
   it('titles an unnumbered draft with the display placeholder', async () => {
     user.set({ permissions: [] });

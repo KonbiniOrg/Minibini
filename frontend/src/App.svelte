@@ -17,9 +17,9 @@
   import BusinessListPage from './routes/contacts/BusinessListPage.svelte';
   import BusinessDetailPage from './routes/contacts/BusinessDetailPage.svelte';
   import JobListPage from './routes/jobs/JobListPage.svelte';
-  import JobDetailPage from './routes/jobs/JobDetailPage.svelte';
   import JobRedirectToOverview from './routes/jobs/JobRedirectToOverview.svelte';
   import TaskDetailPage from './routes/jobs/TaskDetailPage.svelte';
+  import { jobWorkspaceRoutes } from './routes/jobs/jobWorkspaceRoutes.js';
   import SettingsPage from './routes/SettingsPage.svelte';
   import CatalogInventoryPage from './routes/catalog/CatalogInventoryPage.svelte';
   import CatalogServiceItemsPage from './routes/catalog/CatalogServiceItemsPage.svelte';
@@ -32,13 +32,6 @@
   import SearchPage from './routes/Search.svelte';
   import EstimateDetailPage from './routes/estimates/EstimateDetailPage.svelte';
   import EstimateWizardRedirect from './routes/estimates/EstimateWizardRedirect.svelte';
-  import JobTaskListPage from './routes/jobs/JobTaskListPage.svelte';
-  import JobShipmentsPage from './routes/jobs/JobShipmentsPage.svelte';
-  import JobEstimatePage from './routes/jobs/JobEstimatePage.svelte';
-  import JobInvoicePage from './routes/jobs/JobInvoicePage.svelte';
-  import JobHistoryPage from './routes/jobs/JobHistoryPage.svelte';
-  import JobPOsPage from './routes/jobs/JobPOsPage.svelte';
-  import JobEmailsPage from './routes/jobs/JobEmailsPage.svelte';
   import PackingListPrint from './routes/shipments/PackingListPrint.svelte';
   import PurchaseOrderListPage from './routes/purchaseorders/PurchaseOrderListPage.svelte';
   import PurchaseOrderDetailPage from './routes/purchaseorders/PurchaseOrderDetailPage.svelte';
@@ -51,7 +44,6 @@
   import EmailInboxPage from './routes/email/EmailInboxPage.svelte';
   import EmailDetailPage from './routes/email/EmailDetailPage.svelte';
   import ActivityPage from './routes/ActivityPage.svelte';
-  import JobChangeOrderPage from './routes/jobs/JobChangeOrderPage.svelte';
   import ChangeOrderRedirect from './routes/change-orders/ChangeOrderRedirect.svelte';
   import LoadState from './components/LoadState.svelte';
 
@@ -71,21 +63,13 @@
     '/jobs/new': wrap({ component: RedirectTo, props: { to: '/jobs/board' } }),
     '/jobs/board': JobBoardPage,
     '/schedule': SchedulePage,
-    '/jobs/:id': JobDetailPage,
+    // Every /jobs/:id[/section] route → the one persistent JobWorkspace
+    // (jobWorkspaceRoutes.js). Routes are exact-match, so the standalone
+    // entries below can sit alongside without ordering concerns.
+    ...jobWorkspaceRoutes,
     '/jobs/:id/edit': JobRedirectToOverview,
     '/jobs/:id/duplicate': JobRedirectToOverview,
-    '/jobs/:id/history': JobHistoryPage,
-    '/jobs/:jobId/shipments': JobShipmentsPage,
-    '/jobs/:jobId/estimate': JobEstimatePage,
-    '/jobs/:jobId/estimate/:docId': JobEstimatePage,
-    '/jobs/:jobId/change-order/:coId': JobChangeOrderPage,
-    '/jobs/:jobId/invoice': JobInvoicePage,
-    '/jobs/:jobId/invoice/:docId': JobInvoicePage,
-    '/jobs/:jobId/tasks': JobTaskListPage,
     '/jobs/:jobId/tasks/:taskId': TaskDetailPage,
-    '/jobs/:jobId/pos': JobPOsPage,
-    '/jobs/:jobId/emails': JobEmailsPage,
-    '/jobs/:id/tasklist': JobTaskListPage,
     '/shipments/:sid/print': PackingListPrint,
     '/estimates/:id/wizard': EstimateWizardRedirect,
     '/estimates/:id/send': wrap({ component: RedirectTo, props: { to: '/estimates/:id' } }),

@@ -503,6 +503,33 @@ Clear `formError`/`errors` at submit start and on open/cancel.
   that translate to the job-scoped URL (and, for the wizard variants,
   remember reconcile mode first) — so existing bookmarks and emitted
   links keep working.
+- All `#/jobs/:id[/section]` routes resolve to **one** component,
+  `routes/jobs/JobWorkspace.svelte`, registered through a single shared
+  `wrap()` object (`routes/jobs/jobWorkspaceRoutes.js`). svelte-spa-router
+  remounts whenever a route's component object changes, and every
+  `wrap()` call (or bare component entry) is a distinct object — sharing
+  one object is what keeps the shell mounted across rail clicks (issue
+  #511); the job is then silently revalidated on each in-workspace
+  navigation and re-assigned only if it changed, so freshness matches the
+  old remount-per-route layout without the flicker. The section *and* the route params come
+from `$location`, not the router's `params` prop, which lands a tick
+later and would hand a freshly-mounted body the previous section's id;
+  per-section bodies live in `routes/jobs/bodies/`. `onJobChange` still
+  flows callback-up to the workspace's `loadJob`, which hands a new `job`
+  object props-down; bodies key their reloads on that identity. Task
+  detail (`#/jobs/:jobId/tasks/:taskId`) stays a separate page.
+- **Convention — sibling routes that share chrome share one route object.**
+  `svelte-spa-router` remounts the page component whenever the matched
+  route's component object differs from the previous one, and *every*
+  entry in the route table is its own object (each `wrap()` call, and
+  each bare component entry, which the router wraps in a fresh closure).
+  So a group of routes meant to behave like tabs under one persistent
+  header — or to share any fetched context — must point at a single
+  shared `wrap({ component })` value and derive what to show from
+  `$location`/`params`, as `routes/jobs/jobWorkspaceRoutes.js` does.
+  Listing the same component several times, or calling `wrap()` per
+  route, silently gives you a full remount on every tab switch. (Known
+  latent case: `/`, `/profile`, `/help` → `Home` are three entries today — #515.)
 
 ### Material status vocabulary
 

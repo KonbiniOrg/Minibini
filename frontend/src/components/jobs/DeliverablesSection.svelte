@@ -18,8 +18,9 @@
   let error = $state(null);
   let modalOpen = $state(false);
 
+  // `loading` is first-load only: a job-driven reload keeps the current list
+  // on screen until the new data lands, so the band's height doesn't jump.
   async function load() {
-    loading = true;
     error = null;
     try {
       const [items, ed] = await Promise.all([

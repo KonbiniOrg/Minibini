@@ -294,7 +294,7 @@
     if (!needsDeliverables) goToSend();
   }
 
-  // Value-keyed: the glue (JobEstimatePage) assigns a new `job` object on
+  // Value-keyed: the host (JobWorkspace, via EstimateBody) assigns a new `job` object on
   // every loadJob() run, even when the job itself hasn't changed. Deriving
   // jobId memoizes on the value, so the effect below only reruns when the
   // job actually changes. The load functions read this derived (not
@@ -340,6 +340,10 @@
   });
 
   $effect(() => {
+    // Also re-run when the viewed estimate changes: a new version or CO is
+    // created-then-navigated-to without a remount (persistent job page), and
+    // the subnav must list it.
+    void estimateId;
     if (jobId) {
       loadVersions();
       loadChangeOrders();

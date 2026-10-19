@@ -1,6 +1,6 @@
 <script>
   // Change-order panel: the CO document surface hosted by the job workspace
-  // (routes/jobs/JobChangeOrderPage → JobShell → this), the same shape as
+  // (routes/jobs/JobWorkspace → JobShell → bodies/ChangeOrderBody → this), the same shape as
   // EstimatePanel / InvoicePanel. Owns CO-scoped loading, the toolbar +
   // status actions; the two edit surfaces are CODeliverablesSection (over
   // lib/changeOrderDiff's buildDeliverableRows) and COEditView (over the
@@ -223,9 +223,11 @@
     }
   });
 
-  // Nav list / categories / settings don't depend on the CO identity — load
-  // once per job.
+  // Nav list / categories / settings don't depend on the CO's content, but
+  // they are reloaded when the viewed CO changes: a CO created-then-
+  // navigated-to arrives without a remount (persistent job page).
   $effect(() => {
+    void coId;
     if (job?.job_id) {
       loadEstimatesForNav();
     }
