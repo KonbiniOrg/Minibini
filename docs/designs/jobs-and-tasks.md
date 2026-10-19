@@ -2254,6 +2254,16 @@ test in `frontend/tests/components/jobs/TaskDetailPage.test.js`:
   an infinite refetch loop (full task-page API fan-out at 4-5 req/s).
   General rule: `frontend/README.md` §"Loaders called from `$effect`
   are write-only". (Test: fetch count stays bounded after load.)
+- **A late response never overwrites the task in the URL** (2026-10-18).
+  Loads overlap: navigating task → task while the blep-activity refetch
+  of the previous task is still in flight (Start Work on A, then open
+  B). `loadTask`/`loadJobContext` capture the `taskId` they were started
+  for and drop their result if the route has moved on, so the slower
+  load can't win — before this, the page could land on A's task and job
+  (with Start Work hidden, since the session is on A) while the URL said
+  B. Found by `e2e/specs/production-lifecycle/sessions-and-actuals.spec.js`
+  §3. (Test: a slow previous-task response landing after the new task
+  renders leaves the new task on screen.)
 
 ### 10.2 Action visibility
 

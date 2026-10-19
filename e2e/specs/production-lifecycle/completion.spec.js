@@ -58,6 +58,17 @@ test.describe('worker side', () => {
 
     await test.step('Complete: the open timeslip closes with it', async () => {
       await page.locator('.actions').getByRole('button', { name: 'Complete' }).click();
+      // A counted (entered_qty) task prompts for its final quantity before
+      // closing — answer it so the flow under test (session closes, cascade
+      // advances the job) is exercised whichever shape of task the seed
+      // offered; the prompt itself is §6's settle-up test below.
+      const settle = page.getByRole('dialog').filter({
+        has: page.getByRole('heading', { name: 'Settle up quantity' }),
+      });
+      if (await settle.waitFor({ state: 'visible', timeout: 2000 }).then(() => true, () => false)) {
+        await settle.getByLabel(/^Quantity/).fill('1');
+        await settle.getByRole('button', { name: 'Complete task' }).click();
+      }
       await expect(page.getByText('Working on:')).toHaveCount(0);
       await expect.poll(async () =>
         (await jobDetail(job.job_id)).tasks.find((t) => t.task_id === task.task_id).status
@@ -77,8 +88,11 @@ test.describe('worker side', () => {
     for (;;) {
       // Approved/draft jobs are off-limits: approved is §1's backdrop and
       // the draft one carries §8's consumption material.
+      // materials: 'none' — completion refuses a task with pending
+      // (unconsumed) materials until a human decides, so such a candidate
+      // would 400 after the settle-up prompt.
       const candidate = findStartableTask(jobs, {
-        jobStatus: ['submitted', 'in_progress'], algorithm: 'entered_qty', used: scratch,
+        jobStatus: ['submitted', 'in_progress'], algorithm: 'entered_qty', materials: 'none', used: scratch,
       });
       if (!candidate) break;
       const enteredPending = pendingTasks(candidate.job)

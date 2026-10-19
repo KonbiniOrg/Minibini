@@ -128,39 +128,54 @@
   // dependency.
   let loadedTaskId = null;
 
+  // Stale-response guard: loads overlap (a navigation to another task while
+  // the session-activity refetch of the previous one is in flight), and the
+  // slower one must not win. Every load captures the task id it was started
+  // for and drops its result if the URL has moved on since.
+  const stillCurrent = (id) => String(id) === String(params.taskId);
+
   async function loadTask() {
+    const id = params.taskId;
     // Blank the page only on first load or when navigating to a different
     // task. Background refetches (blep activity, post-add refresh) must
     // not flip `loading` — that unmounts TaskActions mid-interaction and
     // destroys any open prompt modal (e.g. the stop-work session prompt).
-    if (loadedTaskId === null || String(loadedTaskId) !== String(params.taskId)) {
+    if (loadedTaskId === null || String(loadedTaskId) !== String(id)) {
       loading = true;
     }
     error = '';
     try {
-      task = await api.get(`/api/tasks/${params.taskId}/`);
-      loadedTaskId = params.taskId;
+      const fresh = await api.get(`/api/tasks/${id}/`);
+      if (!stillCurrent(id)) return;
+      task = fresh;
+      loadedTaskId = id;
       if (task?.job?.id) {
-        await loadJobContext(task.job.id);
+        await loadJobContext(task.job.id, id);
       }
     } catch (e) {
+      if (!stillCurrent(id)) return;
       error = errorMessage(e, 'Could not load task.');
     } finally {
-      loading = false;
+      if (stillCurrent(id)) loading = false;
     }
   }
 
-  async function loadJobContext(jobId) {
+  async function loadJobContext(jobId, forTaskId) {
     try {
-      job = await api.get(`/api/jobs/${jobId}/`);
+      const j = await api.get(`/api/jobs/${jobId}/`);
+      if (!stillCurrent(forTaskId)) return;
+      job = j;
       if (job.contact) {
         try {
-          contact = await api.get(`/api/contacts/${job.contact}/`);
+          const c = await api.get(`/api/contacts/${job.contact}/`);
+          if (!stillCurrent(forTaskId)) return;
+          contact = c;
         } catch (e) {
           contact = null;
         }
       }
     } catch (e) {
+      if (!stillCurrent(forTaskId)) return;
       job = null;
       contact = null;
     }
