@@ -12,6 +12,7 @@ import { get } from 'svelte/store';
 import { api } from '@/lib/api.js';
 import { user } from '@/stores/auth.js';
 import { overlayMessage, clearMessage } from '@/stores/messages.js';
+import { estimateLinesVersion } from '@/stores/estimateLines.js';
 import JobHeader from '@/components/jobs/JobHeader.svelte';
 
 const job = { job_id: 5, job_number: 'JOB-5', name: 'Widget', status: 'in_progress', can_manage: true };
@@ -116,6 +117,35 @@ describe('JobHeader status pill', () => {
     expect(api.post).toHaveBeenNthCalledWith(1, '/api/jobs/5/release-to-floor/', {});
     expect(api.post).toHaveBeenNthCalledWith(2, '/api/jobs/5/release-to-floor/?confirm=true', {});
     expect(onStatusChange).toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  it('bumps the estimate-lines store after a confirmed decline-all release, not after a plain one', async () => {
+    // The estimate panel (if it is the section on screen) holds a copy of
+    // the lines the confirmed call just declined — same version-store shape
+    // as deliverables.js, so it refetches without a page reload.
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    api.post
+      .mockResolvedValueOnce({ message: 'Job released to the floor.' })
+      .mockResolvedValueOnce({ confirm_required: true, impact: { unanswered_lines: 2 } })
+      .mockResolvedValueOnce({ message: 'Job released to the floor.' });
+    const approvedJob = { ...job, status: 'approved', has_accepted_estimate: true };
+    const { getByRole } = render(JobHeader, { props: { job: approvedJob } });
+    const before = get(estimateLinesVersion);
+
+    // Plain release (nothing to confirm): no lines changed, no bump.
+    await fireEvent.change(getByRole('combobox'), { target: { value: 'in_progress' } });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(get(estimateLinesVersion)).toBe(before);
+
+    // Confirmed decline-all: bump.
+    await fireEvent.change(getByRole('combobox'), { target: { value: 'in_progress' } });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(api.post).toHaveBeenCalledTimes(3);
+    expect(get(estimateLinesVersion)).toBe(before + 1);
     confirmSpy.mockRestore();
   });
 

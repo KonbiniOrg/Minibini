@@ -1,6 +1,7 @@
 <script>
   import { api, errorMessage } from '../../lib/api.js';
   import { showError } from '../../stores/messages.js';
+  import { notifyEstimateLinesChanged } from '../../stores/estimateLines.js';
   import FormMessage from '../FormMessage.svelte';
   import Modal from '../Modal.svelte';
   import JobEditModal from './JobEditModal.svelte';
@@ -212,6 +213,9 @@
         const n = first.impact?.unanswered_lines ?? 0;
         if (!confirm(`There are ${n} estimate lines without associated Tasks. Decline all?`)) return;
         await api.post(`/api/jobs/${job.job_id}/release-to-floor/?confirm=true`, {});
+        // The confirmed call declined estimate lines; a mounted EstimatePanel
+        // holds a copy of them and refetches on this bump (stores/estimateLines.js).
+        notifyEstimateLinesChanged();
       }
       if (onStatusChange) onStatusChange();
     } catch (err) {

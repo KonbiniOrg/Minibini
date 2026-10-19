@@ -261,10 +261,21 @@ test('Release to floor on an approved-but-unanswered job declines the rest; an a
     const detail = await api.get(`/api/jobs/${job.job_id}/`);
     expect(detail.status).toBe('approved');
 
-    await page.goto(`/#/jobs/${job.job_id}`);
+    // Drive it from the ESTIMATE page: the header pill is the same shell,
+    // and the rows below must swap to "no work needed" + Undo without a
+    // reload once the confirmed call declines them (RM, 2026-10-18 — the
+    // panel only reloaded on estimateId change; stores/estimateLines.js).
+    await page.goto(`/#/jobs/${job.job_id}/estimate/${estimate.estimate_id}`);
     const pill = page.locator('.job-header select');
     await expect(pill).toHaveValue('approved');
     await expect(pill.locator('option[value="in_progress"]')).toHaveText('Release to floor');
+    const rowA = page.locator('table.line-items-table tbody tr').filter({
+      has: page.locator('td.preserve-breaks', { hasText: lineA.description }),
+    });
+    await expect(rowA.getByRole('button', { name: 'No work needed' })).toBeVisible();
+    await expect(page.locator('.doc-warning')).toHaveText(
+      '2 line(s) need a work decision — the job starts automatically when all are answered.'
+    );
 
     // Cancel: the dialog names the two unanswered lines; nothing moves.
     const dialogs = [];
@@ -273,6 +284,7 @@ test('Release to floor on an approved-but-unanswered job declines the rest; an a
     await expect.poll(() => dialogs.length).toBe(1);
     expect(dialogs[0]).toBe('There are 2 estimate lines without associated Tasks. Decline all?');
     await expect(pill).toHaveValue('approved');
+    await expect(rowA.getByRole('button', { name: 'No work needed' })).toBeVisible();
     expect((await api.get(`/api/jobs/${job.job_id}/`)).status).toBe('approved');
     const lines = (await api.get(`/api/estimates/${estimate.estimate_id}/`)).line_items;
     expect(lines.find((li) => li.line_item_id === lineA.line_item_id).work_declined).toBe(false);
@@ -288,12 +300,11 @@ test('Release to floor on an approved-but-unanswered job declines the rest; an a
     expect(after.find((li) => li.line_item_id === lineA.line_item_id).work_declined).toBe(true);
     expect(after.find((li) => li.line_item_id === lineB.line_item_id).work_declined).toBe(true);
 
-    // The estimate's per-line Undo still works on a bulk-declined line.
-    await page.goto(`/#/jobs/${job.job_id}/estimate/${estimate.estimate_id}`);
-    const rowA = page.locator('table.line-items-table tbody tr').filter({
-      has: page.locator('td.preserve-breaks', { hasText: lineA.description }),
-    });
+    // No reload: the rows below the header already show the declines, the
+    // banner is gone, and the per-line Undo still works on a bulk-declined line.
     await expect(rowA.getByText('no work needed')).toBeVisible();
+    await expect(rowA.getByRole('button', { name: 'No work needed' })).toHaveCount(0);
+    await expect(page.locator('.doc-warning')).toHaveCount(0);
     await rowA.getByRole('button', { name: 'Undo' }).click();
     await expect(rowA.getByRole('button', { name: 'Generate work…' })).toBeVisible();
     await expect(page.locator('.doc-warning')).toHaveText('1 line(s) still need a work decision.');

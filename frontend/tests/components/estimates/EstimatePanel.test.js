@@ -15,6 +15,7 @@ import { api } from '@/lib/api.js';
 import { user } from '@/stores/auth.js';
 import { getJobWs, rememberMode } from '@/stores/jobWorkspace.js';
 import { deliverablesVersion, notifyDeliverablesChanged } from '@/stores/deliverables.js';
+import { notifyEstimateLinesChanged } from '@/stores/estimateLines.js';
 import EstimatePanel from '@/components/estimates/EstimatePanel.svelte';
 
 const JOB = { job_id: 9, job_number: 'JOB-9', name: 'Job', contact: null, can_manage: true };
@@ -769,6 +770,25 @@ describe('EstimatePanel canMint (Task 7)', () => {
     // Server-computed (EstimateLineItemSerializer.needs_work_decision).
     needs_work_decision: true,
   };
+
+  it('refetches the document when the estimate-lines store is bumped (header "Release to floor" declined the rest)', async () => {
+    // The job header's "Release to floor" bulk-declines unanswered lines
+    // from OUTSIDE this panel. The panel only reloads on estimateId change,
+    // so without the store bump the rows kept offering "Generate work…" /
+    // "No work needed" until a page refresh (RM, 2026-10-18).
+    user.set({ permissions: ['can_manage_jobs'] });
+    const est = makeEstimate({ can_manage: true, status: 'accepted', line_items: [UNANSWERED_LINE] });
+    mockApi(est);
+    const { findByRole, queryByRole } = render(EstimatePanel, { props: { job: JOB, estimateId: 7 } });
+    await findByRole('button', { name: 'Generate work…' });
+
+    // The server now says the line is declined.
+    est.line_items = [{ ...UNANSWERED_LINE, work_declined: true, needs_work_decision: false }];
+    notifyEstimateLinesChanged();
+
+    expect(await findByRole('button', { name: 'Undo' })).toBeInTheDocument();
+    expect(queryByRole('button', { name: 'Generate work…' })).toBeNull();
+  });
 
   it('offers "Generate work…" / "No work needed" on an accepted estimate for a can_manage_jobs holder', async () => {
     user.set({ permissions: ['can_manage_jobs'] });

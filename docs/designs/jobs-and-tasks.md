@@ -347,7 +347,9 @@ any one alone is sufficient:
   the first response into a `confirm()` — "There are N estimate lines
   without associated Tasks. Decline all?" — Cancel leaves everything as
   it was. Bulk-declined lines keep their per-line Undo on the estimate,
-  so a task for one can still be generated later. Permission:
+  so a task for one can still be generated later. After the confirmed
+  call the header bumps `stores/estimateLines.js` so a mounted
+  `EstimatePanel` refetches and shows the declines at once. Permission:
   `CanManageJobOrPM`. See `estimates-and-prices.md` §9a and
   `users-and-permissions.md`.
 
