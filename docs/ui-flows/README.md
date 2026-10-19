@@ -36,7 +36,7 @@ except flows that genuinely can't run in e2e (live QBO exchanges).
 | Estimate & work authoring | `/jobs/:id/estimate`, task-list Add Work, wizard | Add-Line-and-Work-Authoring.md | `add-line-and-work-authoring/` |
 | Change orders | `/jobs/:id/change-order/:coId` (send is a modal) | Change-Orders.md | — |
 | Invoice seeding & send | `/jobs/:id/invoice`, `/invoices/*` | Invoice-Seeding-and-Send.md | — |
-| Bills & payments | `/bills/*` | Bills.md | — |
+| Bills & payments | _(retired 2026-07-23 — bills live in QBO)_ | Bills.md (retirement note) | `bills-retired.spec.js` |
 | Expenses & reimbursements | `/expenses`, `/reimbursements/:id` | Expenses.md | `expenses/` (§1 only) |
 | Inventory | `/catalog`, `/catalog/earmarks` (§7 only) | Inventory.md | — |
 | Rate schemes & adjustments | `/catalog/service-items`, adjustments in estimate/invoice | Services-and-Adjustments.md | `settings/` (rate-scheme-modal, rate-scheme-presets — §1/§2 only) |
