@@ -476,7 +476,9 @@ Clear `formError`/`errors` at submit start and on open/cancel.
   hand-write a loading/error branch. `TasksPanel` degrades partially by
   design and shows a `role="status"` notice naming what failed; the one
   remaining silent site (`SchedulePage`) is logged in LATER.md.
-- No lite-content decisions yet: no `lite:`/`phone:` flags are set anywhere.
+- Lite-content decisions are just starting: the only `lite:`/`phone:` flags
+  set so far are on the Settings QBO sync log (`components/qbo/QBOSyncLog.svelte`,
+  2026-10-17); every other table renders identically in lite and full.
 - Lite still fetches full data; toggling density re-renders without a refetch.
 - Full reference: `docs/designs/architecture-and-conventions.md` §6.
 
@@ -486,25 +488,28 @@ Clear `formError`/`errors` at submit start and on open/cancel.
   pattern above: one `localStorage` key (`minibini_job_ws`), an
   LRU-capped map (50 jobs) instead of a key-per-job, so retention stays
   trivial. Per job it remembers which document each section (estimate,
-  invoice) last showed, each document's `lines`/`reconcile` mode (keyed
-  by document id, not section), and the job context band's
-  collapsed/expanded state.
+  invoice) last showed, each document's `edit`/`customer`/`reorder` mode
+  (keyed by document id — `est:`/`inv:`/`co:` + id — not section), and
+  the job context band's collapsed/expanded state.
 - The URL is always the source of truth for *what's currently
   displayed* (`#/jobs/:jobId/estimate/:docId`, etc.) — the store only
   answers "where did I leave off" when a bare section route or the
   context band mounts. `getJobWs(jobId)` reads the whole per-job
   record; `rememberSection` / `rememberMode` / `rememberBand` write one
   slice each.
-- Restoring a remembered `reconcile` mode is validated against the
-  document's live status (only offered on a draft) before being
-  applied — see `docs/designs/jobs-and-tasks.md` §9.6.
+- Restoring a remembered mode is validated at the read site: a
+  remembered `reorder` falls back to `edit` when the document can't be
+  edited (not a draft, or no manage rights), and the legacy values
+  `lines`/`reconcile` from the old two-mode panel normalize to `edit`
+  (`EstimatePanel` / `InvoicePanel`) — see `docs/designs/jobs-and-tasks.md`
+  §9.6.
 - Routes: every job section is a real route under `#/jobs/:jobId/…`
   (`estimate[/:docId]`, `invoice[/:docId]`, `tasks[/:taskId]`,
   `shipments`, `pos`, `emails`, `history`). Old top-level document
   routes (`#/estimates/:id`, `#/invoices/:id`, and their `/wizard`
   variants) still resolve — via small redirect-shim route components
   that translate to the job-scoped URL (and, for the wizard variants,
-  remember reconcile mode first) — so existing bookmarks and emitted
+  remember `edit` mode first) — so existing bookmarks and emitted
   links keep working.
 - All `#/jobs/:id[/section]` routes resolve to **one** component,
   `routes/jobs/JobWorkspace.svelte`, registered through a single shared
