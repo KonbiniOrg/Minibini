@@ -94,7 +94,11 @@ services:
 #        restart: true
   mysql:
     container_name: mysql
-    image: mariadb:latest
+    # Pinned: `latest` moving on Docker Hub made `docker compose pull` /
+    # `up --pull always` recreate this container, and the data went with it.
+    # Bump deliberately; a recreate is now safe because the data lives in
+    # the named volume below.
+    image: mariadb:11.8
     environment:
       - MYSQL_ROOT_PASSWORD=Ru5UPhae
       - MARIADB_DATABASE=minibini_db
@@ -102,6 +106,10 @@ services:
       - MARIADB_PASSWORD=Ru5UPhae
     ports:
       - '3306:3306'
+    volumes:
+      # Named volume so the database survives container recreation.
+      - minibini_db_data:/var/lib/mysql
+    restart: always
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--su-mysql", "--connect", "--innodb_initialized"]
       interval: 30s
@@ -131,3 +139,5 @@ services:
       - ./certbot/conf:/etc/letsencrypt
       - ./certbot/www:/var/www/certbot
 
+volumes:
+  minibini_db_data:
