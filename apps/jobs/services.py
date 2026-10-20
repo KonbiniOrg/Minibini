@@ -1479,6 +1479,38 @@ class TaskService:
         return task
 
     @staticmethod
+    def set_task_order(job, task_ids):
+        """Put the job's tasks in exactly the order of `task_ids` (issue
+        #513: drag-and-drop moves a task several places at once).
+
+        `task_ids` must name every task on the job once — a partial or
+        foreign list is refused rather than guessed at, so a stale client
+        can't silently drop a task to the end. Applied in one transaction;
+        per-instance save() (never QuerySet.update) so Task.save() runs.
+        """
+        _assert_job_not_frozen(job, 'reorder tasks on this job')
+        _assert_job_not_on_hold(job, 'reorder tasks on this job')
+
+        if not isinstance(task_ids, list) or not all(
+            isinstance(i, int) and not isinstance(i, bool) for i in task_ids
+        ):
+            raise ValidationError({'task_ids': ['Must be a list of task ids.']})
+        if len(set(task_ids)) != len(task_ids):
+            raise ValidationError({'task_ids': ['Each task may appear only once.']})
+
+        with transaction.atomic():
+            tasks = {t.pk: t for t in Task.objects.select_for_update().filter(job=job)}
+            if set(task_ids) != set(tasks):
+                raise ValidationError({'task_ids': [
+                    "Must list every task on this job, and only this job's tasks."
+                ]})
+            for position, task_id in enumerate(task_ids):
+                task = tasks[task_id]
+                if task.sort_order != position:
+                    task.sort_order = position
+                    task.save()
+
+    @staticmethod
     def assign(task, assignee_id, worker_queue=None, est_worker_time=None):
         """Assign (or unassign) a task to a worker.
 

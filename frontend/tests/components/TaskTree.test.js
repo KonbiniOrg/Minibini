@@ -167,14 +167,23 @@ describe('TaskTree', () => {
     expect(onEditTask).toHaveBeenCalledWith(expect.objectContaining({ task_id: 1 }));
   });
 
-  it('reorders a task via the callback when canManage', async () => {
-    const onReorder = vi.fn();
-    const { getAllByRole } = render(TaskTree, {
-      props: { tasks: [task({ task_id: 1, name: 'A' }), task({ task_id: 2, name: 'B' })], canManage: true, onReorder },
+  it('gives each task a drag handle, and no up/down arrows, when canManage (issue #513)', () => {
+    const { getByRole, queryByRole } = render(TaskTree, {
+      props: { tasks: [task({ task_id: 1, name: 'A' }), task({ task_id: 2, name: 'B' })], canManage: true, onReorder: vi.fn() },
     });
-    // first task's down-arrow is enabled; click it
-    await fireEvent.click(getAllByRole('button', { name: '▼' })[0]);
-    expect(onReorder).toHaveBeenCalledWith(1, 'down');
+    expect(getByRole('button', { name: 'Drag to reorder A' })).toBeInTheDocument();
+    expect(getByRole('button', { name: 'Drag to reorder B' })).toBeInTheDocument();
+    expect(queryByRole('button', { name: '▼' })).toBeNull();
+    expect(queryByRole('button', { name: '▲' })).toBeNull();
+  });
+
+  it('groups each task with its materials so they move together', () => {
+    const t = task({ task_id: 1, name: 'A', materials: [{ material_id: 9, description: 'Steel', quantity: '1', sell_price: '1', units: 'ea', consumption_state: 'pending' }] });
+    const { container } = render(TaskTree, { props: { tasks: [t], canManage: true, onReorder: vi.fn() } });
+    const group = container.querySelector('tbody[data-task-id="1"]');
+    expect(group).not.toBeNull();
+    expect(group.textContent).toContain('A');
+    expect(group.textContent).toContain('Steel');
   });
 
   it('shows management affordances when canManage is true and callbacks are wired', () => {
@@ -184,8 +193,7 @@ describe('TaskTree', () => {
     });
     expect(getByRole('button', { name: 'edit' })).toBeInTheDocument();
     expect(getByRole('button', { name: 'assign' })).toBeInTheDocument();
-    expect(getByRole('button', { name: '▼' })).toBeInTheDocument();
-    expect(getByRole('button', { name: '▲' })).toBeInTheDocument();
+    expect(getByRole('button', { name: 'Drag to reorder Cut' })).toBeInTheDocument();
   });
 
   it('opens edit/del/cancel to everyone but gates assign/reorder on canManage', () => {
@@ -202,8 +210,7 @@ describe('TaskTree', () => {
     expect(queryByRole('button', { name: 'cancel' })).toBeInTheDocument();
     // assign/reorder still manager-only
     expect(queryByRole('button', { name: 'assign' })).toBeNull();
-    expect(queryByRole('button', { name: '▼' })).toBeNull();
-    expect(queryByRole('button', { name: '▲' })).toBeNull();
+    expect(queryByRole('button', { name: /Drag to reorder/ })).toBeNull();
     // material add still available
     expect(queryByRole('button', { name: '+mat' })).toBeInTheDocument();
   });
@@ -217,8 +224,7 @@ describe('TaskTree', () => {
     expect(getByRole('button', { name: 'edit' })).toBeInTheDocument();
     expect(getByRole('button', { name: 'cancel' })).toBeInTheDocument();
     expect(getByRole('button', { name: 'assign' })).toBeInTheDocument();
-    expect(getByRole('button', { name: '▼' })).toBeInTheDocument();
-    expect(getByRole('button', { name: '▲' })).toBeInTheDocument();
+    expect(getByRole('button', { name: 'Drag to reorder Cut' })).toBeInTheDocument();
   });
 
   it('hides del when the task has bleps, even though edit still shows', () => {
@@ -273,7 +279,7 @@ describe('TaskTree', () => {
     expect(queryByRole('button', { name: 'edit' })).toBeInTheDocument();
     expect(queryByRole('button', { name: 'del' })).toBeInTheDocument();
     expect(queryByRole('button', { name: 'assign' })).toBeNull();
-    expect(queryByRole('button', { name: '▼' })).toBeNull();
+    expect(queryByRole('button', { name: /Drag to reorder/ })).toBeNull();
   });
 
   it('shows an INVOICED link instead of the status indicator on an invoiced task', () => {
@@ -544,15 +550,24 @@ describe('TaskTree null-guarded task ops (A3/C2), on-hold gating (B2), can_edit 
     expect(onCancelTask).toHaveBeenCalledWith(expect.objectContaining({ task_id: 1 }));
   });
 
-  it('renders reorder arrows only when onReorder is wired', () => {
+  it('renders drag handles only when onReorder is wired', () => {
     const two = [task(), task({ task_id: 2, name: 'Sand' })];
     const without = render(TaskTree, { props: { tasks: two, canManage: true } });
-    expect(without.queryByText('▲')).toBeNull();
+    expect(without.queryByRole('button', { name: /Drag to reorder/ })).toBeNull();
     without.unmount();
     const withReorder = render(TaskTree, {
       props: { tasks: two, canManage: true, onReorder: vi.fn() },
     });
-    expect(withReorder.queryAllByText('▲').length).toBeGreaterThan(0);
+    expect(withReorder.getAllByRole('button', { name: /Drag to reorder/ })).toHaveLength(2);
+  });
+
+  it('hides drag handles while the job is held or the tree is read-only (the server refuses both)', () => {
+    const two = [task(), task({ task_id: 2, name: 'Sand' })];
+    const held = render(TaskTree, { props: { tasks: two, canManage: true, jobOnHold: true, onReorder: vi.fn() } });
+    expect(held.queryByRole('button', { name: /Drag to reorder/ })).toBeNull();
+    held.unmount();
+    const ro = render(TaskTree, { props: { tasks: two, canManage: true, readonly: true, onReorder: vi.fn() } });
+    expect(ro.queryByRole('button', { name: /Drag to reorder/ })).toBeNull();
   });
 
   it('hides task-op buttons while the job is held but keeps procurement actions (B2)', () => {
@@ -715,5 +730,22 @@ describe('TaskRow Est Qty on hour-unit tasks', () => {
     const t = task({ est_worker_time: null, est_qty: '5', unit_label: 'pcs' });
     const { container } = render(TaskTree, { props: { tasks: [t], canManage: true } });
     expect(estQtyCell(container).textContent.trim()).toBe('5 pcs');
+  });
+});
+
+describe('TaskTree zebra parity across task groups (issue #513)', () => {
+  // Each task is its own <tbody>; a task row is striped exactly when its
+  // overall row position in the table is even, as in the old single tbody.
+  it('marks a task group odd-start when an odd number of rows precede it', () => {
+    const mat = (id) => ({ material_id: id, description: `M${id}`, quantity: '1', sell_price: '1', units: 'ea', consumption_state: 'pending' });
+    const tasks = [
+      task({ task_id: 1, name: 'A', materials: [] }),          // rows before: 0 → even
+      task({ task_id: 2, name: 'B', materials: [mat(1)] }),    // rows before: 1 → odd
+      task({ task_id: 3, name: 'C', materials: [] }),          // rows before: 3 → odd
+      task({ task_id: 4, name: 'D', materials: [] }),          // rows before: 4 → even
+    ];
+    const { container } = render(TaskTree, { props: { tasks, canManage: true } });
+    const odd = Array.from(container.querySelectorAll('tbody.task-group.odd-start')).map((t) => t.dataset.taskId);
+    expect(odd).toEqual(['2', '3']);
   });
 });

@@ -2,16 +2,13 @@
   // THE task row — one shared fragment for every task (tasks are one flat
   // level since the better-fees subtask removal, 2026-08).
   import TaskActivityIndicator from './TaskActivityIndicator.svelte';
+  import DragHandle from '../DragHandle.svelte';
   import {
     fmtMoney, fmtWorkerTime, taskTotalInfo, taskTotal, taskActual,
   } from '../../lib/taskTotals.js';
 
   let {
     task,
-    // Position among the job's tasks, for the reorder arrows' disabled
-    // state (the backend swap is job-scoped to match).
-    taskIdx = 0,
-    taskCount = 1,
     readonly = false,
     jobLocked = false,
     jobOnHold = false,
@@ -25,7 +22,10 @@
     onDeleteTask = null,
     onCancelTask = null,
     onAddMaterial = null,
-    onReorder = null,
+    // Drag-to-reorder (issue #513): the task group's sortable handleRef,
+    // passed only when this row may be dragged (TaskTree decides). Null =
+    // no handle.
+    dragHandle = null,
     // Bundle-selection checkbox (Task 3) — off by default so every other
     // consumer of this shared row renders unchanged.
     bundleMode = false,
@@ -112,6 +112,7 @@
     <td class="move-cell">{#if !isTerminal}<input type="radio" name="move-target" value={task.task_id} bind:group={selectedTaskId}>{/if}</td>
   {/if}
   <td>
+    {#if dragHandle}<DragHandle attach={dragHandle} label={`Drag to reorder ${task.name}`} />{/if}
     <button type="button" class="link-btn" onclick={() => onTaskClick(task)}>{task.name}</button>
     {#if awaitingMaterials}<span class="badge-awaiting" title="A pending material isn't in stock — bleps are refused until it arrives">waiting on materials</span>{/if}
   </td>
@@ -131,10 +132,6 @@
         {#if onAddMaterial && !jobOnHold}<button type="button" onclick={() => onAddMaterial(task)}>+mat</button>{/if}
       {:else if onDeleteTask && !jobOnHold && canDelete && !task.has_bleps}
         <button type="button" onclick={() => onDeleteTask(task)}>del</button>
-      {/if}
-      {#if canManage && onReorder}
-        <button type="button" onclick={() => onReorder(task.task_id, 'up')} disabled={taskIdx === 0}>&#9650;</button>
-        <button type="button" onclick={() => onReorder(task.task_id, 'down')} disabled={taskIdx === taskCount - 1}>&#9660;</button>
       {/if}
     </td>
   {:else if !readonly}

@@ -15,6 +15,9 @@
     "svelte-spa-router": "^4.0.0"
   },
   "devDependencies": {
+    "@dnd-kit-svelte/svelte": "^0.1.6",
+    "@dnd-kit/abstract": "^0.5.1",
+    "@dnd-kit/helpers": "^0.5.1",
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/svelte": "^5.3.1",

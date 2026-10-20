@@ -1428,9 +1428,15 @@ list). Tasks within a column are sorted by `worker_queue`. Drag-and-drop assigns
 - `POST /api/tasks/reorder/` — bulk update worker_queue from a list
 
 (Job-task-list reordering — `POST /api/jobs/{id}/reorder-tasks/` — is a
-different axis: it swaps `sort_order` within the job's flat task list
-(tasks are one level — better-fees spec §3). Pinned by
-`tests/test_task_reorder_peer_scope.py`.)
+different axis: it sets `sort_order` within the job's flat task list
+(tasks are one level — better-fees spec §3). Two body forms:
+`{task_ids: [...]}` sets the whole order at once (the Tasks tab's
+drag-and-drop, issue #513; `TaskService.set_task_order`, one transaction,
+must list every task on the job exactly once, else 400 on `task_ids`), and
+the older `{task_id, direction: 'up'|'down'}` swaps one step
+(`TaskService.reorder_tasks`). Both refuse a frozen or on-hold job. Pinned
+by `tests/test_task_reorder_peer_scope.py` and `tests/test_api_jobs.py`
+`JobReorderTasksTest`.)
 
 ### 8.5 Card composition
 
@@ -1829,6 +1835,20 @@ its own: task rows come from the shared
 both share with the grand-total footer lives in `lib/taskTotals.js` —
 so a row's total and the table's sum cannot diverge. TaskTree itself
 keeps only the expense rows, section headers, and the footer.
+
+**Drag-and-drop reorder (issue #513).** Tasks are reordered by dragging a
+grip handle (`components/DragHandle.svelte`) beside each task's name; the
+up/down arrows are gone. Each task and its material rows are one
+`<tbody class="task-group">`, so a drag moves the group, using dnd-kit
+(`@dnd-kit-svelte/svelte` sortable, vertical axis only). On drop,
+`lib/dragOrder.js` `nextOrder` turns the event into the new id order and
+`TaskTree`'s `onReorder(taskIds)` hands it to `TasksPanel`, which posts
+`{task_ids}`; the new order shows at once and the reload replaces it.
+Handles render only when `onReorder` is wired and the user may reorder
+(`canManage`, not read-only, not frozen, not on hold). Keyboard: focus the
+handle, Space picks up, arrows move, Space drops, Escape cancels. Splitting
+rows into per-task tbodies would restart `.data-table`'s zebra at every
+task, so `TaskTree` carries the parity across groups (`odd-start`).
 
 **Per-material status & actions.** Each material row carries a derived
 status chip — **Needs pricing / Needed / Ordered — PO-NNNN / Awaiting

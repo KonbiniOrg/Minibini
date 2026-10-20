@@ -361,6 +361,13 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
     @action(detail=True, methods=['post'], url_path='reorder-tasks')
     def reorder_tasks(self, request, pk=None):
         job = self.get_object()
+        # Full order (issue #513, drag-and-drop): `task_ids` lists every task
+        # on the job in its new order. The service's ValidationError renders
+        # through the central handler in contract shape.
+        if 'task_ids' in request.data:
+            TaskService.set_task_order(job, request.data.get('task_ids'))
+            return Response({'status': 'ok'})
+        # One step (the older up/down form): `task_id` + `direction`.
         task_id = request.data.get('task_id')
         direction = request.data.get('direction')
         if not task_id:

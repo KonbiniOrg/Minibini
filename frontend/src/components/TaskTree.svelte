@@ -5,6 +5,10 @@
   import { fmtMoney as fmt, taskTotal, materialTotal }
     from '../lib/taskTotals.js';
   import { canManageFinancials } from '../stores/permissions.js';
+  import { DragDropProvider } from '@dnd-kit-svelte/svelte';
+  import { useSortable } from '@dnd-kit-svelte/svelte/sortable';
+  import { RestrictToVerticalAxis } from '@dnd-kit/abstract/modifiers';
+  import { nextOrder } from '../lib/dragOrder.js';
 
   let {
     tasks = [],
@@ -26,6 +30,10 @@
     onDeleteTask = null,
     onAddMaterial = null,
     onEditMaterial = null,
+    // Drag-and-drop reorder (issue #513): called with the job's task ids in
+    // their new order after a drag that moved something. Handles render only
+    // when this is wired and the user may reorder (canManage, not read-only,
+    // not frozen, not on hold — the server refuses the last two).
     onReorder = null,
     onTaskClick = () => {},
     onAssignTask = () => {},
@@ -104,7 +112,87 @@
     onMoveMaterial, onEditMaterial, onConsumeMaterial, onRestockMaterial,
     onDrawMoreMaterial, onOrderMaterial, onMarkOnHand, onAttachExpense,
   });
+
+  // ── Drag-and-drop reorder ────────────────────────────────────────────
+  const canDrag = $derived(!!onReorder && canManage && !readonly && !jobLocked && !jobOnHold);
+  // The dropped order shows at once; the next `tasks` from the server
+  // replaces it (and undoes it if the save failed and the caller reloads).
+  let localOrder = $state(null);
+  $effect(() => { void tasks; localOrder = null; });
+  const orderedTasks = $derived.by(() => {
+    if (!localOrder) return tasks;
+    const byId = new Map(tasks.map((t) => [t.task_id, t]));
+    const list = localOrder.map((id) => byId.get(id)).filter(Boolean);
+    return list.length === tasks.length ? list : tasks;
+  });
+  // Each task's rows are their own <tbody> (so a drag moves the group), which
+  // restarts the shared .data-table zebra at every task. Carry the parity
+  // across groups instead: a task row is striped exactly when it would have
+  // been in the old single-tbody table (its overall row position is even).
+  // Material rows paint their own background, so only task rows need this.
+  const oddStart = $derived.by(() => {
+    const out = new Set();
+    let rowsBefore = 0;
+    for (const t of orderedTasks) {
+      if (rowsBefore % 2 === 1) out.add(t.task_id);
+      rowsBefore += 1 + (t.materials || []).length;
+    }
+    return out;
+  });
+
+  function handleDragEnd(event) {
+    const ids = orderedTasks.map((t) => t.task_id);
+    const next = nextOrder(ids, event);
+    if (!next) return;
+    localOrder = next;
+    onReorder(next);
+  }
 </script>
+
+{#snippet taskRows(task, dragHandle)}
+  <TaskRow
+    {task}
+    {readonly} {jobLocked} {jobOnHold} {canManage}
+    {showAssignee} {showStatus}
+    bind:selectedTaskId {dragHandle}
+    {...taskCallbacks}
+    {bundleMode}
+    bundleAtom={poolByKey?.get(`task:${task.task_id}`) ?? null}
+    bundleChecked={bundleSelected.includes(`task:${task.task_id}`)}
+    onToggleBundle={() => onToggleBundle(`task:${task.task_id}`)}
+    {bundleClaimedLabel}
+    {bundleClaimedTitle}
+  />
+  {#each (task.materials || []) as mat}
+    <MaterialRow
+      material={mat} ownerTask={task} ownerTerminal={isTerminal(task)}
+      indentClass="indent" {showAssignee} {showStatus}
+      {readonly} {jobLocked} {jobOnHold} {selectedTaskId}
+      {...materialCallbacks}
+      {bundleMode}
+      bundleAtom={poolByKey?.get(`material:${mat.material_id}`) ?? null}
+      bundleChecked={bundleSelected.includes(`material:${mat.material_id}`)}
+      onToggleBundle={() => onToggleBundle(`material:${mat.material_id}`)}
+      {bundleClaimedLabel}
+      {bundleClaimedTitle}
+    />
+  {/each}
+{/snippet}
+
+<!-- Each task and its materials are one <tbody>, so a drag moves the whole
+     group (a table may hold several tbodies). -->
+{#snippet sortableGroup(task, index)}
+  {@const { ref, handleRef, isDragging } = useSortable({ id: task.task_id, index: () => index })}
+  <tbody
+    class="task-group"
+    class:odd-start={oddStart.has(task.task_id)}
+    data-task-id={task.task_id}
+    data-dragging={isDragging.current}
+    {@attach ref}
+  >
+    {@render taskRows(task, handleRef)}
+  </tbody>
+{/snippet}
 
 {#snippet expenseRow(exp, deep)}
   <tr class="expense-row">
@@ -145,6 +233,13 @@
      title="Billed on this invoice">INVOICED</a>
 {/snippet}
 
+<DragDropProvider
+  modifiers={[
+    // @ts-expect-error @dnd-kit/abstract types (as in the dashboard-01 block)
+    RestrictToVerticalAxis,
+  ]}
+  onDragEnd={handleDragEnd}
+>
 <table class="data-table task-tree-table">
   <thead>
     <tr>
@@ -161,40 +256,14 @@
       {#if !readonly}<th>Actions</th>{/if}
     </tr>
   </thead>
+  {#each orderedTasks as task, index (task.task_id)}
+    {#if canDrag}
+      {@render sortableGroup(task, index)}
+    {:else}
+      <tbody class="task-group" class:odd-start={oddStart.has(task.task_id)} data-task-id={task.task_id}>{@render taskRows(task, null)}</tbody>
+    {/if}
+  {/each}
   <tbody>
-    {#each tasks as task, taskIdx}
-      <!-- Task row -->
-      <TaskRow
-        {task} {taskIdx} taskCount={tasks.length}
-        {readonly} {jobLocked} {jobOnHold} {canManage}
-        {showAssignee} {showStatus}
-        bind:selectedTaskId {onReorder}
-        {...taskCallbacks}
-        {bundleMode}
-        bundleAtom={poolByKey?.get(`task:${task.task_id}`) ?? null}
-        bundleChecked={bundleSelected.includes(`task:${task.task_id}`)}
-        onToggleBundle={() => onToggleBundle(`task:${task.task_id}`)}
-        {bundleClaimedLabel}
-        {bundleClaimedTitle}
-      />
-
-      <!-- Materials for this task -->
-      {#each (task.materials || []) as mat}
-        <MaterialRow
-          material={mat} ownerTask={task} ownerTerminal={isTerminal(task)}
-          indentClass="indent" {showAssignee} {showStatus}
-          {readonly} {jobLocked} {jobOnHold} {selectedTaskId}
-          {...materialCallbacks}
-          {bundleMode}
-          bundleAtom={poolByKey?.get(`material:${mat.material_id}`) ?? null}
-          bundleChecked={bundleSelected.includes(`material:${mat.material_id}`)}
-          onToggleBundle={() => onToggleBundle(`material:${mat.material_id}`)}
-          {bundleClaimedLabel}
-          {bundleClaimedTitle}
-        />
-      {/each}
-
-    {/each}
     {#if jobMaterials && jobMaterials.length}
       <tr class="job-materials-header">
         <td colspan={colCount}><strong>Materials (no task)</strong></td>
@@ -234,11 +303,16 @@
     </tr>
   </tfoot>
 </table>
+</DragDropProvider>
 
 <style>
   /* Base + green header come from the global .data-table class; just tighten padding. */
   .task-tree-table th { padding: 8px 10px; }
   .task-tree-table td { padding: 6px 10px; vertical-align: top; }
+  /* Zebra parity carried across task groups (see oddStart). */
+  .task-tree-table :global(tbody.odd-start > tr.task-row) { background: var(--doc-faint); }
+  /* The group being dragged lifts above its neighbours. */
+  .task-tree-table :global(tbody.task-group[data-dragging="true"]) { opacity: 0.85; }
   .text-right { text-align: right; }
   .est-label { color: #888; font-size: 11px; font-weight: normal; }
   .dim { color: #888; font-size: 13px; }

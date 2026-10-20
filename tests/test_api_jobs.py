@@ -644,6 +644,78 @@ class JobReorderTasksTest(TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
+    # ── Full order (drag-and-drop, 2026-10-19) ─────────────────────────────
+    # A drag can move a task several places at once, so the endpoint also
+    # takes the whole new order as `task_ids` and applies it atomically.
+
+    def _order(self):
+        return list(
+            Task.objects.filter(job=self.job)
+            .order_by('sort_order', 'pk').values_list('name', flat=True)
+        )
+
+    def test_full_order_moves_a_task_several_places_at_once(self):
+        response = self.client.post(
+            f'/api/jobs/{self.job.pk}/reorder-tasks/',
+            {'task_ids': [self.c.pk, self.a.pk, self.b.pk]},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(self._order(), ['C', 'A', 'B'])
+
+    def test_full_order_must_name_every_task_on_the_job(self):
+        response = self.client.post(
+            f'/api/jobs/{self.job.pk}/reorder-tasks/',
+            {'task_ids': [self.b.pk, self.a.pk]},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('task_ids', response.data)
+        self.assertEqual(self._order(), ['A', 'B', 'C'])
+
+    def test_full_order_rejects_a_task_from_another_job(self):
+        other = Job.objects.create(
+            job_number='C2-R-002', name='Other', contact=self.contact,
+        )
+        stranger = _stamp_task(other, self.scheme, 'X', sort_order=0)
+        response = self.client.post(
+            f'/api/jobs/{self.job.pk}/reorder-tasks/',
+            {'task_ids': [self.a.pk, self.b.pk, stranger.pk]},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('task_ids', response.data)
+        self.assertEqual(self._order(), ['A', 'B', 'C'])
+
+    def test_full_order_rejects_duplicates(self):
+        response = self.client.post(
+            f'/api/jobs/{self.job.pk}/reorder-tasks/',
+            {'task_ids': [self.a.pk, self.a.pk, self.b.pk, self.c.pk]},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('task_ids', response.data)
+
+    def test_full_order_rejects_a_non_list(self):
+        response = self.client.post(
+            f'/api/jobs/{self.job.pk}/reorder-tasks/',
+            {'task_ids': 'abc'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('task_ids', response.data)
+
+    def test_full_order_requires_can_manage_jobs(self):
+        worker = User.objects.create_user(username='r_worker2', password='pass')
+        self.client.force_authenticate(user=worker)
+        response = self.client.post(
+            f'/api/jobs/{self.job.pk}/reorder-tasks/',
+            {'task_ids': [self.c.pk, self.a.pk, self.b.pk]},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(self._order(), ['A', 'B', 'C'])
+
 
 class JobPatchValidationErrorTest(TestCase):
     """PATCH /api/jobs/{id}/ with a service-layer ValidationError returns 400, not 500."""
