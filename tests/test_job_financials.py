@@ -457,3 +457,62 @@ class SerializerExposureTests(FixtureTestCase):
         for f in ('estimated_amount', 'spent_amount', 'invoiced_amount',
                   'profit_amount'):
             self.assertIsNone(data[f])
+
+
+class ArchivedLaborTests(FixtureTestCase):
+    def setUp(self):
+        super().setUp()
+        self.contact = Contact.objects.first()
+        Configuration.objects.update_or_create(
+            key='average_labor_cost', defaults={'value': '50.00'})
+
+    def _task(self, job, status, unit, qty, source=Task.QTY_ENTERED):
+        return Task.objects.create(
+            job=job, name=f't-{unit}-{qty}', status=status, qty_source=source,
+            unit_label=unit, actual_qty=Decimal(str(qty)))
+
+    def _archived(self):
+        return Job.objects.create(
+            job_number=f'JOB-ARC-{Job.objects.count() + 1:04d}', name='Arc',
+            status=Job.STATUS_ARCHIVED, contact=self.contact,
+            completed_date=timezone.now())
+
+    def test_archived_hour_tasks_are_labor(self):
+        from apps.jobs.financials import spend_breakdown
+        job = self._archived()
+        self._task(job, Task.STATUS_COMPLETE, 'hour', 10)
+        self._task(job, Task.STATUS_CANCELLED, 'hour', 2)
+        self._task(job, Task.STATUS_COMPLETE, 'ea', 40)
+        self._task(job, Task.STATUS_COMPLETE, 'min', 90)
+        sb = spend_breakdown(job)
+        self.assertEqual(sb['labor_hours'], Decimal('12'))
+        self.assertEqual(sb['labor'], Decimal('600.00'))
+
+    def test_archived_without_hour_tasks_has_zero_labor(self):
+        from apps.jobs.financials import spend_breakdown
+        job = self._archived()
+        self._task(job, Task.STATUS_COMPLETE, 'ea', 5)
+        sb = spend_breakdown(job)
+        self.assertEqual(sb['labor_hours'], Decimal('0'))
+        self.assertEqual(sb['labor'], Decimal('0.00'))
+
+    def test_live_entered_hour_task_is_not_labor(self):
+        from apps.jobs.financials import spend_breakdown
+        job = _job(self.contact, status=Job.STATUS_APPROVED,
+                   start_date=timezone.now())
+        self._task(job, Task.STATUS_COMPLETE, 'hour', 8)
+        self.assertEqual(spend_breakdown(job)['labor_hours'], Decimal('0'))
+
+    def test_live_bleps_unchanged(self):
+        from apps.jobs.financials import spend_breakdown
+        user = User.objects.create_user(username='arc-live', password='x')
+        job = _job(self.contact, status=Job.STATUS_APPROVED,
+                   start_date=timezone.now())
+        task = self._task(job, Task.STATUS_IN_PROGRESS, 'hour', 0,
+                          source=Task.QTY_ELAPSED)
+        start = timezone.now() - timedelta(hours=2)
+        Blep.objects.create(task=task, user=user, start_time=start,
+                            end_time=start + timedelta(hours=2))
+        sb = spend_breakdown(job)
+        self.assertEqual(sb['labor_hours'], Decimal('2'))
+        self.assertEqual(sb['labor'], Decimal('100.00'))

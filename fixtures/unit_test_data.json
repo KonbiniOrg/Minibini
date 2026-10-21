@@ -267,6 +267,13 @@
     },
     {
         "model": "core.configuration",
+        "pk": "customer_financials_window_months",
+        "fields": {
+            "value": "12"
+        }
+    },
+    {
+        "model": "core.configuration",
         "pk": "blep_minimum_minutes",
         "fields": {
             "value": "1"

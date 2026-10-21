@@ -259,6 +259,10 @@ class CustomerFinancialsAPITest(BaseTestCase):
                             self.t_mid, start=self.t_last)
         self.closed_job = job(self.contact, 'JOB-CF-2', Job.STATUS_COMPLETED,
                               self.t_first)
+        # Created via objects.create, so completed_date isn't auto-stamped;
+        # closed jobs only join the rolling window with a recent one.
+        self.closed_job.completed_date = now - timedelta(days=30)
+        self.closed_job.save()
         # Marcus: a draft job with no start date (counts as open for the business).
         self.sibling_job = job(self.sibling, 'JOB-CF-3', Job.STATUS_DRAFT, self.t_mid)
 
@@ -338,3 +342,136 @@ class CustomerFinancialsAPITest(BaseTestCase):
         r = self.client.get(f'/api/businesses/{self.business.business_id}/')
         self.assertEqual(r.data['terms_name'], 'Net 30')
         self.assertEqual(r.data['terms'], terms.term_id)
+
+
+class CustomerFinancialsWindowTest(BaseTestCase):
+    """Rolling window over closed jobs for compute_customer_financials."""
+
+    def setUp(self):
+        super().setUp()
+        from django.utils import timezone
+        from apps.core.models import Configuration
+        self.client = APIClient()
+        self.client.force_authenticate(user=User.objects.get(username='admin'))
+        self.contact = Contact.objects.create(
+            first_name='Win', last_name='Dow', email='win@dow.test')
+        self.fixed = timezone.now()
+        Configuration.objects.update_or_create(
+            key='customer_financials_window_months', defaults={'value': '12'})
+        Configuration.objects.update_or_create(
+            key='average_labor_cost', defaults={'value': '50'})
+        self.n = 0
+
+    def _job(self, status, completed=None, **kw):
+        from apps.jobs.models import Job
+        self.n += 1
+        return Job.objects.create(
+            job_number=f'JOB-WIN-{self.n}', name='w', status=status,
+            contact=self.contact, completed_date=completed, **kw)
+
+    def _invoice(self, job, amount, status=None):
+        from decimal import Decimal
+        from apps.core.models import AccountingCategory
+        from apps.invoicing.models import Invoice, InvoiceLineItem
+        ac = AccountingCategory.objects.create(
+            code=f'WIN{self.n}{Invoice.objects.count()}', name='win')
+        inv = Invoice.objects.create(
+            job=job, invoice_number=f'WIN-{Invoice.objects.count() + 1}',
+            status=status or Invoice.STATUS_PAID)
+        InvoiceLineItem.objects.create(
+            invoice=inv, line_number=1, qty=1, price=Decimal(str(amount)),
+            accounting_category=ac, description='x')
+        return inv
+
+    def _roll(self):
+        from apps.jobs.models import Job
+        from apps.jobs.financials import compute_customer_financials
+        return compute_customer_financials(
+            Job.objects.filter(contact=self.contact), now=self.fixed)
+
+    def _ago(self, months):
+        from dateutil.relativedelta import relativedelta
+        return self.fixed - relativedelta(months=months)
+
+    def test_open_job_always_in_window(self):
+        from apps.jobs.models import Job
+        job = self._job(Job.STATUS_APPROVED, start_date=self._ago(30))
+        self._invoice(job, 100)
+        self.assertEqual(str(self._roll()['invoiced']), '100.00')
+
+    def test_closed_job_inside_window_in_and_outside_out(self):
+        from apps.jobs.models import Job
+        self._invoice(self._job(Job.STATUS_COMPLETED, self._ago(11)), 100)
+        self._invoice(self._job(Job.STATUS_COMPLETED, self._ago(13)), 1000)
+        self.assertEqual(str(self._roll()['invoiced']), '100.00')
+
+    def test_closed_job_on_the_cutoff_is_in(self):
+        from apps.jobs.models import Job
+        self._invoice(self._job(Job.STATUS_COMPLETED, self._ago(12)), 100)
+        self.assertEqual(str(self._roll()['invoiced']), '100.00')
+
+    def test_closed_job_with_null_completed_date_is_out(self):
+        from apps.jobs.models import Job
+        job = self._job(Job.STATUS_ARCHIVED, None)
+        self._invoice(job, 100)
+        r = self._roll()
+        self.assertEqual(str(r['invoiced']), '0.00')
+        self.assertFalse(r['includes_archived'])
+
+    def test_window_config_override_and_default(self):
+        from apps.core.models import Configuration
+        from apps.jobs.models import Job
+        self._invoice(self._job(Job.STATUS_COMPLETED, self._ago(4)), 100)
+        Configuration.objects.filter(
+            key='customer_financials_window_months').update(value='3')
+        r = self._roll()
+        self.assertEqual(r['window_months'], 3)
+        self.assertEqual(str(r['invoiced']), '0.00')
+        Configuration.objects.filter(
+            key='customer_financials_window_months').delete()
+        r = self._roll()
+        self.assertEqual(r['window_months'], 12)
+        self.assertEqual(str(r['invoiced']), '100.00')
+        Configuration.objects.create(
+            key='customer_financials_window_months', value='abc')
+        self.assertEqual(self._roll()['window_months'], 12)
+
+    def _archived_with_work(self, completed):
+        from decimal import Decimal
+        from apps.jobs.models import Job, Task
+        job = self._job(Job.STATUS_ARCHIVED, completed)
+        self._invoice(job, 1000)
+        Task.objects.create(
+            job=job, name='h', status=Task.STATUS_COMPLETE,
+            qty_source=Task.QTY_ENTERED, unit_label='hour',
+            actual_qty=Decimal('10'))
+        return job
+
+    def test_archived_in_window_counts_toward_invoiced_and_profit_and_sets_flag(self):
+        self._archived_with_work(self._ago(2))
+        r = self._roll()
+        self.assertEqual(str(r['invoiced']), '1000.00')
+        self.assertEqual(str(r['profit']), '500.00')
+        self.assertIs(r['includes_archived'], True)
+
+    def test_archived_outside_window_is_excluded(self):
+        self._archived_with_work(self._ago(13))
+        r = self._roll()
+        self.assertEqual(str(r['invoiced']), '0.00')
+        self.assertEqual(str(r['profit']), '0.00')
+        self.assertIs(r['includes_archived'], False)
+
+    def test_open_jobs_and_outstanding_ignore_the_window(self):
+        from apps.invoicing.models import Invoice
+        from apps.jobs.models import Job
+        job = self._job(Job.STATUS_APPROVED, start_date=self._ago(14))
+        self._invoice(job, 300, status=Invoice.STATUS_OPEN)
+        r = self._roll()
+        self.assertEqual(r['open_jobs'], 1)
+        self.assertEqual(str(r['outstanding']), '300.00')
+
+    def test_financials_endpoint_exposes_window_and_flag(self):
+        r = self.client.get(f'/api/contacts/{self.contact.contact_id}/financials/')
+        self.assertEqual(r.status_code, 200)
+        self.assertIsInstance(r.data['window_months'], int)
+        self.assertIsInstance(r.data['includes_archived'], bool)

@@ -38,6 +38,8 @@ def _financials_payload(rollup):
         'outstanding': str(rollup['outstanding']),
         'first_job_date': rollup['first_job_date'],
         'last_job_start': rollup['last_job_start'],
+        'window_months': rollup['window_months'],
+        'includes_archived': rollup['includes_archived'],
     }
 
 
