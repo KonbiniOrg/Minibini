@@ -38,7 +38,7 @@ test('a multi-line task description survives the round trip', async ({ page }) =
 
   // Reopen the saved task: the description comes back with both lines, and
   // the detail page preserves the break rather than collapsing it.
-  await page.getByRole('button', { name: `${stamp} task` }).click();
+  await page.getByRole('button', { name: `${stamp} task`, exact: true }).click();
   const shown = page.locator('.description');
   await expect(shown).toContainText('First pass: rough cut');
   await expect(shown).toContainText('Second pass: finish to 0.5mm');
