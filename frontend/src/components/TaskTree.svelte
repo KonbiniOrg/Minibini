@@ -252,7 +252,7 @@
       <th class="text-right">Est Qty</th>
       <th class="text-right">Actual</th>
       <th class="text-right">Sell Price</th>
-      <th class="text-right"><span class="est-label">(Est)</span><br>Total</th>
+      <th class="text-right"><span class="est-label">(Est)</span> Total</th>
       {#if !readonly}<th>Actions</th>{/if}
     </tr>
   </thead>
@@ -314,8 +314,46 @@
   /* The group being dragged lifts above its neighbours. */
   .task-tree-table :global(tbody.task-group[data-dragging="true"]) { opacity: 0.85; }
   .text-right { text-align: right; }
-  .est-label { color: #888; font-size: 11px; font-weight: normal; }
-  .dim { color: #888; font-size: 13px; }
+  /* Numbers ("2h 54m", "2.90 hour", "$85.00") stay on one line in this table's
+     task and material rows; the width they stop wasting goes to the Name
+     column, so names wrap less too. Scoped here, not app.css: MaterialRow and
+     .text-right are shared with other tables. */
+  .task-tree-table :global(td.text-right) { white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+  /* ── Readability pass (2026-10-21), scoped to this table ───────────────────
+     Shared pieces (MaterialRow, TaskActivityIndicator) are adjusted here, not
+     in their own files, because they also render in other views. Uses the
+     inert tokens in app.css. Rules: one body size, one secondary size, one
+     muted grey that passes AA on the yellow bands, bold only in headers,
+     tags are borderless pills and buttons are bordered rectangles. */
+  .task-tree-table { color: var(--text-fg); }
+  .task-tree-table th, .task-tree-table :global(td) { font-size: var(--text-sm); }
+  .task-tree-table :global(.material-row.consumed),
+  .task-tree-table :global(.material-row.released) { color: var(--text-muted); }
+  .task-tree-table :global(.material-marker) { color: var(--text-muted); }
+  .task-tree-table :global(.mat-status) {
+    /* Outlined pill, as shadcn's table badges (dashboard-01: Badge variant="outline"):
+       each status keeps its own coloured border; the round shape marks it a tag. */
+    border-radius: 999px; padding: 0 8px;
+    font-size: var(--text-sm); font-weight: normal;
+  }
+  .task-tree-table :global(.mat-consumed),
+  .task-tree-table :global(.mat-released) { color: var(--text-muted); border-color: #767676; }
+  /* Row buttons (edit / del / cancel / +mat, assign): body size, and a border
+     dark enough to see as a control (#767676 is 4.5:1 on white; #ccc was 1.6:1). */
+  .task-tree-table :global(.row-actions button),
+  .task-tree-table :global(.small-btn) {
+    font-size: var(--text-sm); padding: 2px 8px;
+    border: 1px solid #767676; border-radius: 4px; color: var(--text-fg);
+  }
+  .task-tree-table :global(.ta:not(.pill)) {
+    font-weight: normal; text-transform: none; letter-spacing: 0;
+    font-size: var(--text-sm);
+  }
+  /* Header labels on one line too ("Est Time", "Sell Price", "(Est) Total"). */
+  .task-tree-table th { white-space: nowrap; }
+  .est-label { color: var(--text-muted); font-size: var(--text-xs); font-weight: normal; }
+  .dim { color: var(--text-muted); font-size: var(--text-xs); }
   .indent { padding-left: 28px; }
   .indent-2 { padding-left: 48px; }
   /* Headerless radio column — just wide enough for the radio button. */
@@ -342,5 +380,5 @@
     max-width: 12em;
   }
   /* Buttons in the cell get the shared .row-actions look (app.css). */
-  .locked-note { font-size: 11px; color: #888; font-style: italic; }
+  .locked-note { font-size: var(--text-xs); color: var(--text-muted); font-style: italic; }
 </style>

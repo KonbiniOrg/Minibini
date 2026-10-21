@@ -27,7 +27,7 @@
     width: 18px; height: 20px; padding: 0; margin: 0 6px 0 -4px;
     vertical-align: middle;
     border: 0; border-radius: 3px; background: none;
-    color: #9ca3af; cursor: grab; touch-action: none;
+    color: var(--text-muted, #666); cursor: grab; touch-action: none;
   }
   .drag-handle:hover { color: #4b5563; background: #f0f0f0; }
   .drag-handle:active { cursor: grabbing; }

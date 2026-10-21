@@ -112,17 +112,23 @@
     <td class="move-cell">{#if !isTerminal}<input type="radio" name="move-target" value={task.task_id} bind:group={selectedTaskId}>{/if}</td>
   {/if}
   <td>
-    {#if dragHandle}<DragHandle attach={dragHandle} label={`Drag to reorder ${task.name}`} />{/if}
-    <button type="button" class="link-btn" onclick={() => onTaskClick(task)}>{task.name}</button>
-    {#if awaitingMaterials}<span class="badge-awaiting" title="A pending material isn't in stock — bleps are refused until it arrives">waiting on materials</span>{/if}
+    <!-- Handle beside the name, not inline with it: a long name wraps next to the
+         handle instead of dropping below it (the name button is one unbreakable box). -->
+    <div class="name-cell">
+      {#if dragHandle}<DragHandle attach={dragHandle} label={`Drag to reorder ${task.name}`} />{/if}
+      <div class="name-main">
+        <button type="button" class="link-btn" onclick={() => onTaskClick(task)}>{task.name}</button>
+        {#if awaitingMaterials}<span class="badge-awaiting" title="A pending material isn't in stock — bleps are refused until it arrives">waiting on materials</span>{/if}
+      </div>
+    </div>
   </td>
-  {#if showAssignee}<td>{task.assignee_name || ''} {#if !readonly && !isTerminal && canManage && !jobOnHold}<button type="button" class="small-btn" onclick={() => onAssignTask(task)}>assign</button>{/if}</td>{/if}
-  <td class="text-right">{fmtWorkerTime(task.est_worker_time)}</td>
+  {#if showAssignee}<td class="assignee-cell">{task.assignee_name || ''} {#if !readonly && !isTerminal && canManage && !jobOnHold}<button type="button" class="small-btn" onclick={() => onAssignTask(task)}>assign</button>{/if}</td>{/if}
+  <td class="text-right figure">{fmtWorkerTime(task.est_worker_time)}</td>
   {#if showStatus}<td>{#if task.invoice}<a class="badge-invoiced" href={`#/invoices/${task.invoice.id}`} title="Billed on this invoice">INVOICED</a>{:else}<TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason}<br><span class="blocked-reason preserve-breaks">{task.blocked_reason}</span>{/if}{/if}</td>{/if}
-  <td class="text-right">{withUnit(task.est_qty)}</td>
-  <td class="text-right">{withUnit(taskActual(task))}</td>
-  <td class="text-right">{fmtMoney(task.effective_rate)}</td>
-  <td class="text-right" class:est-total={taskTotalInfo(task).isEstimate}>{fmtMoney(taskTotal(task))}</td>
+  <td class="text-right figure">{withUnit(task.est_qty)}</td>
+  <td class="text-right figure">{withUnit(taskActual(task))}</td>
+  <td class="text-right figure">{fmtMoney(task.effective_rate)}</td>
+  <td class="text-right figure" class:est-total={taskTotalInfo(task).isEstimate}>{fmtMoney(taskTotal(task))}</td>
   {#if !readonly && !jobLocked}
     <td class="actions-cell row-actions">
       {#if !isTerminal}
@@ -145,10 +151,14 @@
   .move-cell { text-align: center; width: 24px; padding-left: 4px; padding-right: 4px; }
   /* Bundle-selection checkbox column (Task 3) — same footprint as move-cell. */
   .bundle-cell { text-align: center; width: 24px; padding-left: 4px; padding-right: 4px; }
-  .bundle-claimed { font-size: 11px; color: #888; font-style: italic; }
+  .bundle-claimed { font-size: var(--text-xs); color: var(--text-muted); font-style: italic; }
   .text-right { text-align: right; }
   td { padding: 6px 10px; vertical-align: top; }
-  .est-total { color: #888; }
+  .name-cell { display: flex; align-items: flex-start; }
+  /* Assignee and its "assign" button share one line; Name gives up the width. */
+  .assignee-cell { white-space: nowrap; }
+  .name-main { flex: 1; min-width: 0; }
+  .est-total { color: var(--text-muted); }
 
   .link-btn {
     background: none; border: none; padding: 0; margin: 0;
@@ -157,23 +167,24 @@
   }
   .link-btn:hover { color: #1e40af; }
   .small-btn {
-    font-size: 11px; padding: 1px 5px; margin-left: 4px;
-    cursor: pointer; border: 1px solid #ccc; background: #fff; border-radius: 3px;
+    /* A button: bordered, white, hover — never pill-shaped, so it can't read as a tag. */
+    margin-left: 4px; cursor: pointer;  /* size, border, colour: TaskTree's row-button rule */
   }
   .small-btn:hover { background: #f0f0f0; }
 
   .badge-awaiting {
     display: inline-block;
     margin-left: 6px;
-    padding: 1px 6px;
-    font-size: 11px;
-    border-radius: 3px;
+    /* A tag: outlined pill (shadcn table-badge style) — the round shape sets it apart from buttons. */
+    padding: 0 8px;
+    font-size: var(--text-sm);
+    border-radius: 999px;
     background: #fef3c7;
     border: 1px solid #d97706;
     color: #92400e;
     white-space: nowrap;
   }
-  .blocked-reason { font-size: 11px; color: #991b1b; }
+  .blocked-reason { font-size: var(--text-xs); color: #991b1b; }
   .actions-cell { max-width: 12em; }
   /* .badge-invoiced and .row-actions come from app.css. */
 </style>
