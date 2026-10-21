@@ -118,13 +118,13 @@
       {#if dragHandle}<DragHandle attach={dragHandle} label={`Drag to reorder ${task.name}`} />{/if}
       <div class="name-main">
         <button type="button" class="link-btn" onclick={() => onTaskClick(task)}>{task.name}</button>
-        {#if awaitingMaterials}<span class="badge-awaiting" title="A pending material isn't in stock — bleps are refused until it arrives">waiting on materials</span>{/if}
+        {#if awaitingMaterials}<span class="badge-awaiting" title="A pending material isn't in stock — bleps are refused until it arrives">Waiting on materials</span>{/if}
       </div>
     </div>
   </td>
   {#if showAssignee}<td class="assignee-cell">{task.assignee_name || ''} {#if !readonly && !isTerminal && canManage && !jobOnHold}<button type="button" class="small-btn" onclick={() => onAssignTask(task)}>assign</button>{/if}</td>{/if}
   <td class="text-right figure">{fmtWorkerTime(task.est_worker_time)}</td>
-  {#if showStatus}<td>{#if task.invoice}<a class="badge-invoiced" href={`#/invoices/${task.invoice.id}`} title="Billed on this invoice">INVOICED</a>{:else}<TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason}<br><span class="blocked-reason preserve-breaks">{task.blocked_reason}</span>{/if}{/if}</td>{/if}
+  {#if showStatus}<td>{#if task.invoice}<a class="badge-invoiced" href={`#/invoices/${task.invoice.id}`} title="Billed on this invoice">Invoiced</a>{:else}<TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason}<br><span class="blocked-reason preserve-breaks">{task.blocked_reason}</span>{/if}{/if}</td>{/if}
   <td class="text-right figure">{withUnit(task.est_qty)}</td>
   <td class="text-right figure">{withUnit(taskActual(task))}</td>
   <td class="text-right figure">{fmtMoney(task.effective_rate)}</td>
@@ -133,11 +133,11 @@
     <td class="actions-cell row-actions">
       {#if !isTerminal}
         {#if onEditTask && !jobOnHold && canEditTask}<button type="button" onclick={() => onEditTask(task)}>edit</button>{/if}
-        {#if onDeleteTask && !jobOnHold && canDelete && !task.has_bleps}<button type="button" onclick={() => onDeleteTask(task)}>del</button>{/if}
+        {#if onDeleteTask && !jobOnHold && canDelete && !task.has_bleps}<button type="button" class="danger" onclick={() => onDeleteTask(task)}>del</button>{/if}
         {#if onCancelTask && !jobOnHold && canCancel}<button type="button" onclick={() => onCancelTask(task)}>cancel</button>{/if}
         {#if onAddMaterial && !jobOnHold}<button type="button" onclick={() => onAddMaterial(task)}>+mat</button>{/if}
       {:else if onDeleteTask && !jobOnHold && canDelete && !task.has_bleps}
-        <button type="button" onclick={() => onDeleteTask(task)}>del</button>
+        <button type="button" class="danger" onclick={() => onDeleteTask(task)}>del</button>
       {/if}
     </td>
   {:else if !readonly}
@@ -151,7 +151,7 @@
   .move-cell { text-align: center; width: 24px; padding-left: 4px; padding-right: 4px; }
   /* Bundle-selection checkbox column (Task 3) — same footprint as move-cell. */
   .bundle-cell { text-align: center; width: 24px; padding-left: 4px; padding-right: 4px; }
-  .bundle-claimed { font-size: var(--text-xs); color: var(--text-muted); font-style: italic; }
+  .bundle-claimed { font-size: var(--text-sm); color: var(--text-muted); font-style: italic; }
   .text-right { text-align: right; }
   td { padding: 6px 10px; vertical-align: top; }
   .name-cell { display: flex; align-items: flex-start; }
@@ -162,15 +162,11 @@
 
   .link-btn {
     background: none; border: none; padding: 0; margin: 0;
-    color: #1d4ed8; cursor: pointer; font: inherit;  /* page font (Verdana), not the button default */
+    color: #1d4ed8; cursor: pointer; font: inherit;  /* the table's font, not the button default */
     text-decoration: underline; text-align: left;
   }
   .link-btn:hover { color: #1e40af; }
-  .small-btn {
-    /* A button: bordered, white, hover — never pill-shaped, so it can't read as a tag. */
-    margin-left: 4px; cursor: pointer;  /* size, border, colour: TaskTree's row-button rule */
-  }
-  .small-btn:hover { background: #f0f0f0; }
+  /* Buttons (incl. .small-btn) are styled by TaskTree's table-wide button rule. */
 
   .badge-awaiting {
     display: inline-block;
@@ -184,7 +180,6 @@
     color: #92400e;
     white-space: nowrap;
   }
-  .blocked-reason { font-size: var(--text-xs); color: #991b1b; }
-  .actions-cell { max-width: 12em; }
+  .blocked-reason { font-size: var(--text-sm); color: #991b1b; }
   /* .badge-invoiced and .row-actions come from app.css. */
 </style>

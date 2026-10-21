@@ -205,10 +205,10 @@
     {#if showAssignee}<td></td>{/if}
     <td></td>
     {#if showStatus}<td>{#if exp.invoice}{@render invoicedLink(exp.invoice)}{/if}</td>{/if}
-    <td class="text-right">-</td>
-    <td class="text-right">-</td>
+    <td class="text-right figure">-</td>
+    <td class="text-right figure">-</td>
     <td></td>
-    <td class="text-right">{fmt(exp.amount)}</td>
+    <td class="text-right figure">{fmt(exp.amount)}</td>
     {#if !readonly}
       <td class="actions-cell row-actions">
         {#if exp.invoice}
@@ -217,10 +217,10 @@
           <button type="button" onclick={() => onEditExpense(exp)}>edit</button>
           {#if onRejectExpense && $canManageFinancials
                && exp.payment_method === 'personal' && exp.status === 'submitted'}
-            <button type="button" onclick={() => onRejectExpense(exp)}>reject</button>
+            <button type="button" class="danger" onclick={() => onRejectExpense(exp)}>reject</button>
           {/if}
           {#if onDeleteExpense && $canManageFinancials}
-            <button type="button" onclick={() => onDeleteExpense(exp)}>delete</button>
+            <button type="button" class="danger" onclick={() => onDeleteExpense(exp)}>delete</button>
           {/if}
         {/if}
       </td>
@@ -230,7 +230,7 @@
 
 {#snippet invoicedLink(inv)}
   <a class="badge-invoiced" href={`#/invoices/${inv.id}`} use:link
-     title="Billed on this invoice">INVOICED</a>
+     title="Billed on this invoice">Invoiced</a>
 {/snippet}
 
 <DragDropProvider
@@ -299,7 +299,7 @@
   <tfoot>
     <tr class="grand-total-row">
       <td colspan={colCount - 1} class="text-right"><strong>Grand Total</strong></td>
-      <td class="text-right"><strong>{fmt(grandTotal)}</strong></td>
+      <td class="text-right figure"><strong>{fmt(grandTotal)}</strong></td>
     </tr>
   </tfoot>
 </table>
@@ -307,7 +307,7 @@
 
 <style>
   /* Base + green header come from the global .data-table class; just tighten padding. */
-  .task-tree-table th { padding: 8px 10px; }
+  .task-tree-table th { padding: 8px 10px; font-size: var(--text-sm); white-space: nowrap; }
   .task-tree-table td { padding: 6px 10px; vertical-align: top; }
   /* Zebra parity carried across task groups (see oddStart). */
   .task-tree-table :global(tbody.odd-start > tr.task-row) { background: var(--doc-faint); }
@@ -318,7 +318,7 @@
      task and material rows; the width they stop wasting goes to the Name
      column, so names wrap less too. Scoped here, not app.css: MaterialRow and
      .text-right are shared with other tables. */
-  .task-tree-table :global(td.text-right) { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .task-tree-table :global(.material-row td.text-right) { white-space: nowrap; font-variant-numeric: tabular-nums; }  /* = .figure; MaterialRow is shared, so applied from here */
 
   /* ── Readability pass (2026-10-21), scoped to this table ───────────────────
      Shared pieces (MaterialRow, TaskActivityIndicator) are adjusted here, not
@@ -329,10 +329,20 @@
   /* Inter in this table only: much narrower than the page's Verdana, so cells
      wrap less; buttons inherit it (font-family: inherit below). */
   .task-tree-table { color: var(--text-fg); font-family: var(--font-sans); }
-  .task-tree-table th, .task-tree-table :global(td) { font-size: var(--text-sm); }
+  .task-tree-table :global(td) { font-size: var(--text-sm); }
   .task-tree-table :global(.material-row.consumed),
   .task-tree-table :global(.material-row.released) { color: var(--text-muted); }
   .task-tree-table :global(.material-marker) { color: var(--text-muted); }
+  /* One text size across the table (Inter freed the room): MaterialRow's notes,
+     code chip, and stock figures come up from 11px to the body size. The ●
+     marker stays small — it's a bullet, not text. */
+  .task-tree-table :global(.bundle-claimed),
+  .task-tree-table :global(.mat-code),
+  .task-tree-table :global(.avail-ok),
+  .task-tree-table :global(.avail-short) { font-size: var(--text-sm); }
+  /* Shared badges from app.css (INVOICED link: 11px bold caps; pill status: 13px). */
+  .task-tree-table :global(.badge-invoiced) { font-size: var(--text-sm); font-weight: normal; }
+  .task-tree-table :global(.status-badge) { font-size: var(--text-sm); }
   .task-tree-table :global(.mat-status) {
     /* Outlined pill, as shadcn's table badges (dashboard-01: Badge variant="outline"):
        each status keeps its own coloured border; the round shape marks it a tag. */
@@ -343,27 +353,49 @@
   .task-tree-table :global(.mat-released) { color: var(--text-muted); border-color: #767676; }
   /* Row buttons (edit / del / cancel / +mat, assign): body size, and a border
      dark enough to see as a control (#767676 is 4.5:1 on white; #ccc was 1.6:1). */
-  .task-tree-table :global(.row-actions button),
-  .task-tree-table :global(.small-btn) {
-    font-family: inherit; font-size: var(--text-sm); padding: 1px 5px; margin: 2px 4px 2px 0;  /* vertical gap for wrapped rows of buttons */
-    border: 1px solid #767676; border-radius: 4px; color: var(--text-fg);
+  /* Every button in the table (row actions, assign, Order / Attach expense /
+     Mark on-hand / Set pricing, Move…) — except the task-name link and the
+     drag handle, which are buttons in markup but not styled as buttons. */
+  .task-tree-table :global(button:not(.link-btn):not(.drag-handle)) {
+    /* shadcn Button variant="outline" size="sm": fixed 28px height, soft
+       border (#8f8f8f, 3.3:1 — visible as a control), white, grey on hover. */
+    display: inline-flex; align-items: center; box-sizing: border-box; height: 28px;
+    font-family: inherit; font-size: var(--text-sm); line-height: 1;
+    padding: 0 10px; margin: 2px 4px 2px 0;
+    border: 1px solid #8f8f8f; border-radius: 6px; background: #fff;
+    color: var(--text-fg); cursor: pointer;
   }
-  /* All of a row's buttons on one line; the old 12em cap pushed +mat to a
-     second line. Tight padding keeps the column narrow. */
+  .task-tree-table :global(button:not(.link-btn):not(.drag-handle):hover) { background: #f4f4f5; }
+  .task-tree-table :global(button:not(.link-btn):not(.drag-handle):disabled) { opacity: 0.5; cursor: default; }
+  /* shadcn variant="destructive": red tint for del / delete / reject. */
+  .task-tree-table :global(button.danger:not(.link-btn):not(.drag-handle)) { color: #b91c1c; background: #fef2f2; border-color: #f87171; }
+  .task-tree-table :global(button.danger:not(.link-btn):not(.drag-handle):hover) { background: #fee2e2; }
   /* Actions column shrinks to its content (width: 1%); leftover width goes to Name.
      Task rows' four short buttons stay on one line and set that width; material
      and expense rows (longer buttons: "draw more", "mark used") wrap inside it
      instead of widening the whole column. */
-  .task-tree-table :global(td.actions-cell) { max-width: none; width: 1%; }
+  .task-tree-table :global(td.actions-cell) { width: 1%; }
   .task-tree-table :global(tr.task-row td.actions-cell) { white-space: nowrap; }
+  /* Task status as an outlined pill with its coloured dot inside — the same
+     family as the material status pills, so the Status column reads as one
+     kind of tag (shadcn's table status: Badge variant="outline" + icon). */
   .task-tree-table :global(.ta:not(.pill)) {
     font-weight: normal; text-transform: none; letter-spacing: 0;
     font-size: var(--text-sm);
+    border: 1px solid color-mix(in srgb, var(--ta-color) 60%, #fff);
+    border-radius: 999px; padding: 0 8px;
+    /* Label in body colour, colour only on the dot and border (shadcn pattern);
+       the status colours as text failed contrast (Unstarted #94a3b8 ≈ 2.6:1). */
+    color: var(--text-fg);
   }
-  /* Header labels on one line too ("Est Time", "Sell Price", "(Est) Total"). */
-  .task-tree-table th { white-space: nowrap; }
-  .est-label { color: var(--text-muted); font-size: var(--text-xs); font-weight: normal; }
-  .dim { color: var(--text-muted); font-size: var(--text-xs); }
+  /* Sentence case for the two shared labels this table can't edit at the
+     source (MaterialRow / materialStatus.js render them in other views too). */
+  .task-tree-table :global(.badge-invoiced),
+  .task-tree-table :global(.mat-on-hand) { display: inline-block; text-transform: lowercase; }
+  .task-tree-table :global(.badge-invoiced)::first-letter,
+  .task-tree-table :global(.mat-on-hand)::first-letter { text-transform: uppercase; }
+  .est-label { color: var(--text-muted); font-size: var(--text-sm); font-weight: normal; }
+  .dim { color: var(--text-muted); font-size: var(--text-sm); }
   .indent { padding-left: 28px; }
   .indent-2 { padding-left: 48px; }
   /* Headerless radio column — just wide enough for the radio button. */
@@ -386,9 +418,6 @@
     color: var(--doc-accent); padding-top: 8px;
   }
 
-  .actions-cell {
-    max-width: 12em;
-  }
   /* Buttons in the cell get the shared .row-actions look (app.css). */
-  .locked-note { font-size: var(--text-xs); color: var(--text-muted); font-style: italic; }
+  .locked-note { font-size: var(--text-sm); color: var(--text-muted); font-style: italic; }
 </style>

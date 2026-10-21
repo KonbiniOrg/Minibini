@@ -1504,7 +1504,8 @@ class TaskService:
                 raise ValidationError({'task_ids': [
                     "Must list every task on this job, and only this job's tasks."
                 ]})
-            for position, task_id in enumerate(task_ids):
+            # 1-based, as Task.save() numbers new tasks — so only moved tasks save.
+            for position, task_id in enumerate(task_ids, start=1):
                 task = tasks[task_id]
                 if task.sort_order != position:
                     task.sort_order = position

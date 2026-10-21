@@ -100,7 +100,7 @@ describe('TaskTree', () => {
                     consumption_state: 'pending', inventory_item: 7, qty_on_hand: '1.00' }],
     });
     const { getByText } = render(TaskTree, { props: { tasks: [t], canManage: true } });
-    expect(getByText('waiting on materials')).toBeInTheDocument();
+    expect(getByText('Waiting on materials')).toBeInTheDocument();
   });
 
   it('no badge when the pending material is in stock, freeform, or the task is not started', () => {
@@ -122,7 +122,7 @@ describe('TaskTree', () => {
     const { queryByText } = render(TaskTree, {
       props: { tasks: [inStock, freeform, notStarted], canManage: true },
     });
-    expect(queryByText('waiting on materials')).toBeNull();
+    expect(queryByText('Waiting on materials')).toBeNull();
   });
 
   it('labels the return action "restock" only when stock is on hand', () => {
@@ -282,19 +282,19 @@ describe('TaskTree', () => {
     expect(queryByRole('button', { name: /Drag to reorder/ })).toBeNull();
   });
 
-  it('shows an INVOICED link instead of the status indicator on an invoiced task', () => {
+  it('shows an Invoiced link instead of the status indicator on an invoiced task', () => {
     const t = task({ status: 'complete', invoice: { id: 7, number: 'INV-7' } });
     const { getByRole, queryByText } = render(TaskTree, { props: { tasks: [t] } });
-    const link = getByRole('link', { name: 'INVOICED' });
+    const link = getByRole('link', { name: 'Invoiced' });
     expect(link.getAttribute('href')).toBe('#/invoices/7');
     // The normal status label ("Complete") is replaced, not shown alongside.
     expect(queryByText('Complete')).toBeNull();
   });
 
-  it('shows the status indicator (no INVOICED link) on an uninvoiced complete task', () => {
+  it('shows the status indicator (no Invoiced link) on an uninvoiced complete task', () => {
     const t = task({ status: 'complete', invoice: null });
     const { queryByRole, getByText } = render(TaskTree, { props: { tasks: [t] } });
-    expect(queryByRole('link', { name: 'INVOICED' })).toBeNull();
+    expect(queryByRole('link', { name: 'Invoiced' })).toBeNull();
     expect(getByText('Complete')).toBeInTheDocument();
   });
 
@@ -701,7 +701,7 @@ describe('TaskTree task rows are one shared fragment (TaskRow)', () => {
                     inventory_item: 7, qty_on_hand: '1.00' }],
     });
     const { queryAllByText } = render(TaskTree, { props: { tasks: [t], canManage: true } });
-    expect(queryAllByText('waiting on materials').length).toBe(1);
+    expect(queryAllByText('Waiting on materials').length).toBe(1);
   });
 });
 
