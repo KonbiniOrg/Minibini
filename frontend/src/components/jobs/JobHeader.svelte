@@ -1,13 +1,17 @@
 <script>
   import { isClosedJob, jobStatusLabel } from '../../lib/jobStatus.js';
   import { api, errorMessage } from '../../lib/api.js';
-  import { showError } from '../../stores/messages.js';
+  import { showError, showSuccess } from '../../stores/messages.js';
+  import { triageError } from '../../lib/errorTriage.js';
+  import { canManageJobs as canManageJobsAtom } from '../../stores/permissions.js';
+  import { push } from 'svelte-spa-router';
   import { notifyEstimateLinesChanged } from '../../stores/estimateLines.js';
   import FormMessage from '../FormMessage.svelte';
   import Modal from '../Modal.svelte';
   import JobEditModal from './JobEditModal.svelte';
   import DuplicateJobModal from './DuplicateJobModal.svelte';
   import FrozenPartyBanner from '../FrozenPartyBanner.svelte';
+  import ArchivedJobBanner from './ArchivedJobBanner.svelte';
   import ChangeContactModal from '../ChangeContactModal.svelte';
 
   const {
@@ -223,6 +227,46 @@
       showError(errorMessage(e, 'Failed to release the hold.'));
     }
   }
+
+  // Delete… on an archived job: atom-gated (not the per-job can_manage, which
+  // a PM-only user also has), two-phase like the contact delete.
+  const IMPACT_LABELS = [
+    ['tasks', 'task(s)'], ['materials', 'material(s)'], ['deliverables', 'deliverable(s)'],
+    ['shipments', 'shipment(s)'], ['estimates', 'estimate(s)'], ['invoices', 'invoice(s)'],
+    ['history_rows', 'history row(s)'],
+  ];
+  let deleteImpact = $state(null);
+  let deleting = $state(false);
+
+  async function requestDelete() {
+    try {
+      const result = await api.delete(`/api/jobs/${job.job_id}/`);
+      if (result && result.confirm_required) {
+        deleteImpact = result.impact || {};
+      } else {
+        showSuccess('Job deleted.');
+        push(`/contacts/${job.contact}`);
+      }
+    } catch (e) {
+      const t = triageError(e);
+      showError(t.overlay || t.message);
+    }
+  }
+
+  async function confirmDelete() {
+    deleting = true;
+    try {
+      await api.delete(`/api/jobs/${job.job_id}/?confirm=true`);
+      deleteImpact = null;
+      showSuccess('Job deleted.');
+      push(`/contacts/${job.contact}`);
+    } catch (e) {
+      const t = triageError(e);
+      showError(t.overlay || t.message);
+    } finally {
+      deleting = false;
+    }
+  }
 </script>
 
 <div class="job-header">
@@ -234,7 +278,9 @@
         {#if job.contact_is_active === false}<span class="status-badge status-inactive">inactive</span>{/if}
       {/if}
     </p>
-    {#if job.contact_is_active === false}
+    {#if job.status === 'archived'}
+      <ArchivedJobBanner />
+    {:else if job.contact_is_active === false}
       <FrozenPartyBanner kind="job" partyName={contact?.name ?? job.contact_name} partyHref={`#/contacts/${job.contact}`}
         businessName={job.contact_business_name} businessActive={!!job.contact_business_is_active}
         onChangeContact={canManageJobs ? () => { swapOpen = true; } : null} />
@@ -245,6 +291,9 @@
           <button type="button" class="edit-link header-action" onclick={() => { editOpen = true; }}>Edit</button>
         {/if}
         <button type="button" class="edit-link header-action" onclick={() => { dupOpen = true; }}>Duplicate…</button>
+      {/if}
+      {#if job.status === 'archived' && $canManageJobsAtom}
+        <button type="button" class="edit-link header-action danger" onclick={requestDelete}>Delete…</button>
       {/if}
       {#if showStatusSelect}
         <span class="status-select-wrapper">
@@ -334,6 +383,21 @@
   open={dupOpen}
   onClose={() => { dupOpen = false; }}
 />
+
+<Modal open={deleteImpact != null} onSave={confirmDelete} onCancel={() => { deleteImpact = null; }}
+  busy={deleting} maxWidth="480px" label="Delete job">
+  <h3>Delete {job.job_number}?</h3>
+  <p>This cannot be undone.</p>
+  <ul class="impact">
+    {#each IMPACT_LABELS as [key, label] (key)}
+      <li>{deleteImpact?.[key] ?? 0} {label}</li>
+    {/each}
+  </ul>
+  <div class="modal-actions">
+    <button type="button" onclick={() => { deleteImpact = null; }} disabled={deleting}>Cancel</button>
+    <button type="button" class="danger" onclick={confirmDelete} disabled={deleting}>{deleting ? 'Deleting…' : 'Delete job'}</button>
+  </div>
+</Modal>
 
 <style>
   /* Fixed-height banner: the left titleblock is a hard three-line budget

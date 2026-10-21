@@ -525,9 +525,13 @@ export function spendBlock({ job, overview, scopeTotal = 0 }) {
 
   // Frozen — terminal job: the same three figures as settled facts.
   if (CLOSED_JOB_STATUSES.has(status)) {
+    // An archived job's hours were imported, not tracked here — say so.
+    const laborText = status === 'archived'
+      ? `${labor} labor (${fmtHours(spend.labor_hours)} hours imported)`
+      : `${labor} labor`;
     return {
       state: 'frozen',
-      frozenText: `${labor} labor · ${materials} materials · ${totalStr} total`,
+      frozenText: `${laborText} · ${materials} materials · ${totalStr} total`,
       href,
     };
   }
@@ -543,7 +547,7 @@ export function spendBlock({ job, overview, scopeTotal = 0 }) {
     state: 'active',
     href,
     stats: [
-      { label: 'Labor', value: labor, sub: `${fmtHours(spend.labor_hours)} hours` },
+      { label: 'Labor', value: labor, sub: `${fmtHours(spend.labor_hours)} hours${status === 'archived' ? ' (imported)' : ''}` },
       { label: 'Materials', value: materials, sub: 'bought so far' },
       totalStat,
     ],

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, within } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({
-  api: { patch: vi.fn(), post: vi.fn(), get: vi.fn() },
+  api: { patch: vi.fn(), post: vi.fn(), get: vi.fn(), delete: vi.fn() },
   errorMessage: (e, fallback) =>
     e?.data?.detail || e?.message || fallback || 'Something went wrong.',
 }));
@@ -10,6 +10,7 @@ vi.mock('svelte-spa-router', () => ({ push: vi.fn() }));
 
 import { get } from 'svelte/store';
 import { api } from '@/lib/api.js';
+import { push } from 'svelte-spa-router';
 import { user } from '@/stores/auth.js';
 import { overlayMessage, clearMessage } from '@/stores/messages.js';
 import { estimateLinesVersion } from '@/stores/estimateLines.js';
@@ -32,6 +33,8 @@ beforeEach(() => {
   api.post.mockResolvedValue({});
   api.get.mockReset();
   api.get.mockResolvedValue([]);
+  api.delete.mockReset();
+  push.mockReset();
   user.set({ permissions: ['can_manage_jobs'] });
   clearMessage();
 });
@@ -455,5 +458,52 @@ describe('JobHeader frozen banner', () => {
     expect(api.patch).toHaveBeenCalledWith('/api/jobs/5/', { contact: 9 });
     await new Promise((r) => setTimeout(r, 0));
     expect(onStatusChange).toHaveBeenCalled();
+  });
+});
+
+describe('JobHeader archived treatment', () => {
+  const archived = { ...job, status: 'archived', contact: 7 };
+  const impact = { tasks: 2, materials: 1, deliverables: 1, shipments: 1, estimates: 1, invoices: 1, history_rows: 9 };
+
+  it('shows the archived banner', () => {
+    const { getByText } = render(JobHeader, { props: { job: archived } });
+    expect(getByText(/imported as a historical record/)).toBeTruthy();
+  });
+
+  it('archived banner wins over the frozen-party banner', () => {
+    const { queryByText, getByText } = render(JobHeader, { props: { job: { ...archived, contact_is_active: false } } });
+    expect(getByText(/imported as a historical record/)).toBeTruthy();
+    expect(queryByText('Frozen:')).toBeNull();
+  });
+
+  it('offers Delete… to the atom holder on an archived job', () => {
+    const { getByRole } = render(JobHeader, { props: { job: archived } });
+    expect(getByRole('button', { name: 'Delete…' })).toBeTruthy();
+  });
+
+  it('hides Delete… from a PM-only user (can_manage without the atom)', () => {
+    user.set({ permissions: [] });
+    const { queryByRole } = render(JobHeader, { props: { job: archived } });
+    expect(queryByRole('button', { name: 'Delete…' })).toBeNull();
+  });
+
+  it('hides Delete… on a non-archived closed job', () => {
+    const { queryByRole } = render(JobHeader, { props: { job: { ...job, status: 'completed' } } });
+    expect(queryByRole('button', { name: 'Delete…' })).toBeNull();
+  });
+
+  it('two-phase deletes: impact dialog, then confirmed delete and navigate', async () => {
+    api.delete.mockResolvedValueOnce({ confirm_required: true, impact });
+    api.delete.mockResolvedValueOnce({ message: 'deleted' });
+    const { getByRole } = render(JobHeader, { props: { job: archived } });
+    await fireEvent.click(getByRole('button', { name: 'Delete…' }));
+    expect(api.delete).toHaveBeenCalledWith('/api/jobs/5/');
+    const dialog = await within(document.body).findByRole('dialog', { name: 'Delete job' });
+    for (const t of ['2 task(s)', '1 material(s)', '1 deliverable(s)', '1 shipment(s)', '1 estimate(s)', '1 invoice(s)', '9 history row(s)']) {
+      expect(within(dialog).getByText(t)).toBeTruthy();
+    }
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Delete job' }));
+    expect(api.delete).toHaveBeenLastCalledWith('/api/jobs/5/?confirm=true');
+    expect(push).toHaveBeenCalledWith('/contacts/7');
   });
 });
