@@ -1476,11 +1476,13 @@ def assign_est_quantities(c):
         algo = fields.get('qty_source')
         if algo == 'elapsed_time':
             fields['est_qty'] = f'{_duration_hours(fields.get("est_worker_time")):.2f}'
+            c.invented_est_qty.add(f['pk'])
         elif algo == 'entered_qty':
             if fields.get('est_qty') in (None, ''):
                 hours = _duration_hours(fields.get('est_worker_time'))
                 pieces = max(1, round(float(hours) * random.randint(2, 6)))
                 fields['est_qty'] = f'{Decimal(pieces):.2f}'
+                c.invented_est_qty.add(f['pk'])
 
 
 def _emit_estimate_line_item_source(c, li_pk, source_type, source_pk):

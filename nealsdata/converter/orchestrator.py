@@ -2,7 +2,7 @@
 import json
 import random
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from nealsdata.converter.loaders import ExcelDataLoader, KanbanCsvLoader
@@ -32,10 +32,14 @@ def _is_active_card(card):
 class NealsDataConverter:
     def __init__(self, excel_path, csv_path, output_path,
                  limit=100, verbose=False, seed_path=None,
-                 all_vendors=False):
+                 all_vendors=False, now=None):
         self.loader = ExcelDataLoader(excel_path, verbose=verbose)
         self.csv_loader = KanbanCsvLoader(csv_path)
         self.output_path = output_path
+        # One run clock: every 'today' decision (expiry, archival cutoff)
+        # reads this, so a run is reproducible and testable.
+        self.now = now or datetime.now(timezone.utc)
+        self.invented_est_qty = set()   # jobs.task pks whose est_qty the converter invented
         self.limit = limit
         # Vendors: by default a vendor Business exists only because a Bill
         # of theirs synthesized a PO (build_purchasing creates it on demand).

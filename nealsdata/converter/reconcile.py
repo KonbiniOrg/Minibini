@@ -7,7 +7,7 @@ vs. date invariants, task status derived from job status, etc.).
 
 Each pass is a ``_pass_*`` helper. ``reconcile(c)`` runs them in order.
 """
-from datetime import date, timedelta
+from datetime import timedelta
 
 from nealsdata.converter import parsing as P
 
@@ -73,7 +73,7 @@ def reconcile(c):
 
 def _pass_estimate_version_chains(c, index):
     """Pass 1: every version below the highest is superseded; link parents."""
-    today_str = date.today().strftime('%Y-%m-%d')
+    today_str = c.now.date().strftime('%Y-%m-%d')
     for versions in c.estimates.values():
         if len(versions) < 2:
             continue
@@ -153,7 +153,7 @@ def _pass_estimate_expiry(c, index):
     estimate-stage jobs (draft/submitted); a job already in progress keeps
     its Kanban Stage status.
     """
-    cutoff = date.today() - timedelta(days=_EXPIRE_DAYS)
+    cutoff = c.now.date() - timedelta(days=_EXPIRE_DAYS)
     for base_ref, versions in c.estimates.items():
         if not versions:
             continue

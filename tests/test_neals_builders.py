@@ -3020,3 +3020,45 @@ class SpineActiveCardPolicyTest(unittest.TestCase):
                             stage='In Progress') for i in range(1, 5)]
         c = self._converter(cards, [f['External ID'] for f in cards], limit=2)
         self.assertEqual(len(c.select_spine()), 4)
+
+
+class RunClockTest(unittest.TestCase):
+    def test_now_defaults_to_aware_utc_and_is_injectable(self):
+        from datetime import datetime, timezone as tz
+        c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
+        self.assertIsNotNone(c.now.tzinfo)
+        fixed = datetime(2030, 1, 15, tzinfo=tz.utc)
+        self.assertEqual(NealsDataConverter('/dev/null', '/dev/null',
+                                            output_path='/tmp/x.json', now=fixed).now, fixed)
+
+    def _expiry_status(self, now):
+        c = NealsDataConverter('/dev/null', '/dev/null',
+                               output_path='/tmp/x.json', now=now)
+        c.add_fixture('estimates.estimate', 1, {
+            'status': 'open', 'created_date': '2029-12-01T00:00:00Z',
+            'closed_date': None})
+        c.estimates = {'EST-1': [{'est_pk': 1, 'version': 1, 'status': 'open',
+                                  'created_date': '2029-12-01'}]}
+        index = {(f['model'], f.get('pk')): f for f in c.fixture_data}
+        reconcile._pass_estimate_expiry(c, index)
+        return index[('estimates.estimate', 1)]['fields']['status']
+
+    def test_expiry_uses_run_clock(self):
+        from datetime import datetime, timezone as tz
+        self.assertEqual(self._expiry_status(datetime(2030, 1, 15, tzinfo=tz.utc)),
+                         'expired')
+        self.assertEqual(self._expiry_status(datetime(2029, 12, 20, tzinfo=tz.utc)),
+                         'open')
+
+
+class EstQtyProvenanceTest(unittest.TestCase):
+    def test_records_invented_est_qty(self):
+        c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
+        c.add_fixture('jobs.task', 1, {'qty_source': 'elapsed_time', 'est_qty': None,
+                                       'est_worker_time': '02:00:00'})
+        c.add_fixture('jobs.task', 2, {'qty_source': 'entered_qty', 'est_qty': '4.00',
+                                       'est_worker_time': '02:00:00'})
+        c.add_fixture('jobs.task', 3, {'qty_source': 'entered_qty', 'est_qty': None,
+                                       'est_worker_time': '02:00:00'})
+        build.assign_est_quantities(c)
+        self.assertEqual(c.invented_est_qty, {1, 3})
