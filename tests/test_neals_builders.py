@@ -2020,6 +2020,91 @@ class DocumentCounterReconcileTest(unittest.TestCase):
         self.assertEqual(appstate['po_counter'], '0')
 
 
+class ArchivedJobHistoryTest(unittest.TestCase):
+    """build_history gives archived jobs exactly what ArchiveImportService leaves."""
+
+    NOW = datetime(2026, 10, 21, 12, 0, tzinfo=timezone.utc)
+    NOW_S = NOW.isoformat()
+
+    def _converter(self):
+        c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json',
+                               now=self.NOW)
+        return c
+
+    def _rows(self, c, job_objs):
+        models = ('core.jobhistory', 'core.crmhistory', 'core.purchasinghistory')
+        out = []
+        for r in c.fixture_data:
+            if r['model'] not in models:
+                continue
+            f = r['fields']
+            if (f['object_type'], f['object_id']) in job_objs:
+                self.assertIsNone(f['user'])
+                out.append((f['entry_type'], f['object_type'], f['object_id'],
+                            f['changes'], f['text'], f['timestamp']))
+        return sorted(out, key=lambda t: (t[5], t[0], t[1], t[2], t[4]))
+
+    def _build(self, c, start_date, completed_date, status, checklist, outcome):
+        c.add_fixture('jobs.job', 1, {
+            'created_date': '2020-01-01T00:00:00+00:00', 'start_date': start_date,
+            'completed_date': completed_date, 'status': 'archived'})
+        c.add_fixture('jobs.task', 2, {'job': 1})
+        c.add_fixture('estimates.estimate', 3, {'job': 1, 'created_date': '2020-01-02T00:00:00+00:00'})
+        c.add_fixture('inventory.material', 4, {'job': 1})
+        c.add_fixture('invoicing.invoice', 7, {'job': 1, 'created_date': '2020-02-01T00:00:00+00:00'})
+        c.archived_job_pks = {1}
+        c.archived_outcome = {1: outcome}
+        c.jobs['K1'] = {'job_pk': 1, 'card': {'Checklist': checklist}}
+        build.build_history(c)
+
+    def _audits(self):
+        return [('audit', t, i, {'_created': True}, '', self.NOW_S)
+                for t, i in (('job', 1), ('task', 2), ('material', 4),
+                             ('estimate', 3), ('invoice', 7))]
+
+    def test_completed_archive_rows(self):
+        c = self._converter()
+        self._build(c, '2020-01-05T00:00:00+00:00', '2020-03-01T00:00:00+00:00',
+                    'archived', '[X] Picked up/Delivered', 'completed')
+        objs = {('job', 1), ('task', 2), ('material', 4), ('estimate', 3), ('invoice', 7)}
+        expected = self._audits() + [
+            ('action', 'job', 1, {'_action': 'Created'}, '', '2020-01-01T00:00:00+00:00'),
+            ('action', 'job', 1, {'_action': 'Started'}, '', '2020-01-05T00:00:00+00:00'),
+            ('action', 'job', 1, {'_action': 'Completed'}, '', '2020-03-01T00:00:00+00:00'),
+            ('note', 'job', 1, {}, 'Picked up/Delivered (Kanban checklist)',
+             '2020-03-01T00:00:00+00:00'),
+            ('action', 'job', 1, {'_action': 'Imported from Kanban'}, '', self.NOW_S),
+        ]
+        key = lambda t: (t[5], t[0], t[1], t[2], t[4])
+        self.assertEqual(self._rows(c, objs), sorted(expected, key=key))
+
+    def test_rejected_archive_rows(self):
+        c = self._converter()
+        self._build(c, None, '2020-03-01T00:00:00+00:00', 'archived',
+                    '[ ] Picked up/Delivered', 'rejected')
+        objs = {('job', 1), ('task', 2), ('material', 4), ('estimate', 3), ('invoice', 7)}
+        expected = self._audits() + [
+            ('action', 'job', 1, {'_action': 'Created'}, '', '2020-01-01T00:00:00+00:00'),
+            ('action', 'job', 1, {'_action': 'Rejected'}, '', '2020-03-01T00:00:00+00:00'),
+            ('action', 'job', 1, {'_action': 'Imported from Kanban'}, '', self.NOW_S),
+        ]
+        key = lambda t: (t[5], t[0], t[1], t[2], t[4])
+        self.assertEqual(self._rows(c, objs), sorted(expected, key=key))
+
+    def test_live_jobs_unchanged(self):
+        c = self._converter()
+        c.add_fixture('jobs.job', 1, {'created_date': '2025-03-01T00:00:00+00:00', 'status': 'rejected'})
+        c.add_fixture('estimates.estimate', 10, {'job': 1, 'status': 'expired'})
+        c.archived_job_pks = {99}
+        c.archived_outcome = {}
+        build.build_history(c)
+        labels = [r['fields']['changes'].get('_action') for r in c.fixture_data
+                  if r['model'] == 'core.jobhistory' and r['fields']['object_type'] == 'estimate']
+        self.assertIn('Expired', labels)
+        self.assertNotIn(self.NOW_S, [r['fields']['timestamp'] for r in c.fixture_data
+                                      if r['model'] == 'core.jobhistory'])
+
+
 class BuildHistoryUnitTest(unittest.TestCase):
     """Dataset-independent: drives build_history off a hand-built fixture list."""
 

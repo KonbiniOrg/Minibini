@@ -3087,6 +3087,30 @@ def build_purchasing(c):
               f'{consumed} materials consumed; {len(earmarks)} earmarks')
 
 
+def _archived_job_history(c, job_pk, job_fields, related, card, emit):
+    """Emit what ArchiveImportService leaves behind for one archived Job: a
+    ``_created`` audit per created record at the run clock, then the backdated
+    job action rows, then (checked pickup marker) the pickup note."""
+    now_s = c.now.isoformat()
+    emit('job', job_pk, now_s, 'audit', {'_created': True})
+    for model, rows in related.items():
+        for f in rows:
+            emit(_HISTORY_TRACKED_MODELS[model], f['pk'], now_s, 'audit', {'_created': True})
+
+    def action(text, when):
+        emit('job', job_pk, when, 'action', {'_action': text})
+
+    completed = job_fields.get('completed_date')
+    action('Created', job_fields.get('created_date') or _HISTORY_FALLBACK_DATE)
+    if job_fields.get('start_date'):
+        action('Started', job_fields['start_date'])
+    action(c.archived_outcome[job_pk].capitalize(), completed)
+    action('Imported from Kanban', now_s)
+    if card is not None and P.has_pickup_done(card):
+        emit('job', job_pk, completed, 'note', {},
+             text='Picked up/Delivered (Kanban checklist)')
+
+
 def build_history(c):
     """Emit HistoryEntry rows for every history-tracked object, ordered to match
     the real job lifecycle.
@@ -3108,7 +3132,7 @@ def build_history(c):
     """
     from collections import defaultdict
 
-    def emit(object_type, object_id, timestamp, entry_type, changes):
+    def emit(object_type, object_id, timestamp, entry_type, changes, text=''):
         model = _HISTORY_TABLE[object_type]
         c.add_fixture(model, c.next_pk(model), {
             'entry_type': entry_type,
@@ -3117,7 +3141,7 @@ def build_history(c):
             'user': None,
             'timestamp': timestamp,
             'changes': changes,
-            'text': '',
+            'text': text,
         })
 
     # Group tracked objects by Job; Contact/Business have no Job.
@@ -3147,7 +3171,12 @@ def build_history(c):
     # clamped tail chains +1s past the boundary, at most seconds beyond the
     # dataset-now instant — negligible next to real wall-clock now).
     now = _dataset_now(c)
+    card_by_job = {info['job_pk']: info.get('card') for info in c.jobs.values()}
     for job_pk, job_f in jobs.items():
+        if job_pk in c.archived_job_pks:
+            _archived_job_history(c, job_pk, job_f['fields'], by_job.get(job_pk, {}),
+                                  card_by_job.get(job_pk), emit)
+            continue
         base_str = job_f['fields'].get('created_date') or _HISTORY_FALLBACK_DATE
         base_dt = _parse_dt(base_str)
         events = sorted(_job_timeline(job_pk, job_f['fields'], by_job.get(job_pk, {})),
