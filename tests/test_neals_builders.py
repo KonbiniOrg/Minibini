@@ -3384,6 +3384,8 @@ class ArchivedJobsDownstreamSkipTest(unittest.TestCase):
         _random.seed(1)
         c = self._c()
         arch = self._job(c, 'in_progress', archived=True)
+        # Restore the live status so only the archived guard can exclude it.
+        self._fields(c, 'jobs.job', arch)['status'] = 'in_progress'
         live = self._job(c, 'in_progress')
         at = self._task(c, arch, 'pending')
         lt = self._task(c, live, 'pending')
@@ -3420,6 +3422,8 @@ class ArchivedJobsDownstreamSkipTest(unittest.TestCase):
         # earmark or raise QOH; the live twin earmarks.
         c = self._c()
         arch = self._job(c, 'approved', archived=True)
+        # Restore the live status so only the archived guard can exclude it.
+        self._fields(c, 'jobs.job', arch)['status'] = 'approved'
         live = self._job(c, 'approved')
         ip = c.next_pk('inventory.inventoryitem')
         c.add_fixture('inventory.inventoryitem', ip, {
