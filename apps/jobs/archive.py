@@ -52,8 +52,11 @@ class ArchiveImportService:
             with transaction.atomic():
                 job = S._create_job(payload, user)
                 tasks = S._create_tasks(job, payload.get('tasks') or [])
-                S._create_deliverables(job, payload.get('deliverables') or [])
+                deliverables = S._create_deliverables(job, payload.get('deliverables') or [])
                 S._create_materials(job, payload.get('materials') or [], tasks)
+                S._create_estimates(job, payload.get('estimates') or [])
+                S._create_invoices(job, payload.get('invoices') or [])
+                S._create_shipments(job, payload.get('shipments') or [], deliverables)
                 # Inside the atomic block so a rollback discards these rows too.
                 S._flush_history(ctx, user)
                 S._write_history(job, payload, user, ctx)
@@ -169,20 +172,35 @@ class ArchiveImportService:
         return obj
 
     @staticmethod
-    def _rows(payload, key, errors):
+    def _rows(payload, key, errors, *, path=None):
+        """``(index, row)`` for each dict in ``payload[key]``; ``path`` is the
+        error-path prefix for nested lists (defaults to ``key``)."""
+        path = path or key
         rows = payload.get(key)
         if rows is None:
             return []
         if not isinstance(rows, list):
-            _add(errors, key, 'Must be a list.')
+            _add(errors, path, 'Must be a list.')
             return []
         good = []
         for i, row in enumerate(rows):
             if isinstance(row, dict):
                 good.append((i, row))
             else:
-                _add(errors, f'{key}[{i}]', 'Must be an object.')
+                _add(errors, f'{path}[{i}]', 'Must be an object.')
         return good
+
+    @staticmethod
+    def _document_statuses():
+        from apps.deliverables.models import Shipment
+        from apps.estimates.models import Estimate
+        from apps.invoicing.models import Invoice
+        return {
+            'estimates': (Estimate.STATUS_ACCEPTED, Estimate.STATUS_REJECTED,
+                          Estimate.STATUS_EXPIRED),
+            'invoices': (Invoice.STATUS_PAID, Invoice.STATUS_CANCELLED),
+            'shipments': (Shipment.STATUS_PICKED_UP,),
+        }
 
     # ------------------------------------------------------------- validate
     @staticmethod
@@ -285,7 +303,142 @@ class ArchiveImportService:
                 _add(errors, f'{p}.task',
                      f'Task index {idx!r} does not match any of the {n_tasks} task(s) in this payload.')
 
+        S._validate_documents(payload, errors)
+        S._validate_shipments(payload, errors)
         return errors
+
+    @staticmethod
+    def _validate_lines(row, path, errors):
+        """A document's ``lines``: ``{description, qty, units, price,
+        accounting_category, is_comment}``. Comment lines carry no money."""
+        from apps.core.models import AccountingCategory
+        S = ArchiveImportService
+        for j, line in S._rows(row, 'lines', errors, path=f'{path}.lines'):
+            lp = f'{path}.lines[{j}]'
+            S._coerce_str(line.get('description'), f'{lp}.description', errors)
+            if line.get('units') is not None:
+                S._coerce_str(line.get('units'), f'{lp}.units', errors,
+                              max_length=50, required=True)
+            qty = S._coerce_decimal(line.get('qty'), f'{lp}.qty', errors)
+            price = S._coerce_decimal(line.get('price'), f'{lp}.price', errors)
+            S._resolve(AccountingCategory, line.get('accounting_category'),
+                       f'{lp}.accounting_category', errors, 'accounting category')
+            is_comment = line.get('is_comment', False)
+            if not isinstance(is_comment, bool):
+                _add(errors, f'{lp}.is_comment', 'Must be true or false.')
+            elif is_comment:
+                if qty:
+                    _add(errors, f'{lp}.qty', 'A comment line cannot have a quantity.')
+                if price:
+                    _add(errors, f'{lp}.price', 'A comment line cannot have a price.')
+
+    @staticmethod
+    def _validate_documents(payload, errors):
+        """Estimates and invoices: settled status, a number unique in the DB
+        and within the payload (spec §3.9), dates, lines."""
+        from apps.estimates.models import Estimate
+        from apps.invoicing.models import Invoice
+        S = ArchiveImportService
+        statuses = S._document_statuses()
+        specs = (
+            ('estimates', 'estimate_number', 'estimate',
+             lambda n: Estimate.objects.filter(estimate_number=n, version=1).exists(),
+             ('created_date', 'sent_date', 'closed_date', 'expiration_date')),
+            ('invoices', 'invoice_number', 'invoice',
+             lambda n: Invoice.objects.filter(invoice_number=n).exists(),
+             ('created_date', 'sent_date', 'closed_date')),
+        )
+        for key, num_field, label, taken, date_fields in specs:
+            allowed = statuses[key]
+            seen = set()
+            accepted = 0
+            for i, row in S._rows(payload, key, errors):
+                p = f'{key}[{i}]'
+                np = f'{p}.{num_field}'
+                number = row.get(num_field)
+                if _blank(number):
+                    _add(errors, np, 'This field is required.')
+                else:
+                    before = len(errors.get(np, []))
+                    number = S._coerce_str(number, np, errors, max_length=50)
+                    if len(errors.get(np, [])) == before:
+                        if number in seen:
+                            _add(errors, np, f'{label.capitalize()} number {number} appears '
+                                             f'more than once in this payload.')
+                        elif taken(number):
+                            _add(errors, np, f'An {label} numbered {number} already exists.')
+                        seen.add(number)
+                status = row.get('status')
+                if _blank(status):
+                    _add(errors, f'{p}.status', 'This field is required.')
+                elif status not in allowed:
+                    _add(errors, f'{p}.status',
+                         f'An archived {label} must be {" or ".join(allowed)}, not {status!r}.')
+                elif status == Estimate.STATUS_ACCEPTED and key == 'estimates':
+                    accepted += 1
+                for f in date_fields:
+                    S._coerce_dt(row.get(f), f'{p}.{f}', errors)
+                S._validate_lines(row, p, errors)
+            if accepted > 1:
+                _add(errors, 'estimates', 'At most one accepted estimate.')
+
+    @staticmethod
+    def _validate_shipments(payload, errors):
+        """Picked-up shipments of this payload's deliverables; total shipped
+        per deliverable never exceeds its ``qty_ordered``."""
+        S = ArchiveImportService
+        deliverables = payload.get('deliverables')
+        deliverables = deliverables if isinstance(deliverables, list) else []
+        scratch = {}
+        ordered = [
+            S._coerce_decimal(d.get('qty_ordered'), '', scratch) if isinstance(d, dict) else None
+            for d in deliverables
+        ]
+        n = len(deliverables)
+        shipped = {}
+        allowed = S._document_statuses()['shipments']
+        for i, row in S._rows(payload, 'shipments', errors):
+            p = f'shipments[{i}]'
+            status = row.get('status')
+            if status is not None and status not in allowed:
+                _add(errors, f'{p}.status',
+                     f'An archived shipment must be picked up, not {status!r}.')
+            if _blank(row.get('picked_up_date')):
+                _add(errors, f'{p}.picked_up_date', 'This field is required.')
+            else:
+                S._coerce_dt(row.get('picked_up_date'), f'{p}.picked_up_date', errors)
+            S._coerce_dt(row.get('prepared_date'), f'{p}.prepared_date', errors)
+            S._coerce_str(row.get('notes'), f'{p}.notes', errors)
+            items = S._rows(row, 'items', errors, path=f'{p}.items')
+            if not items and f'{p}.items' not in errors:
+                _add(errors, f'{p}.items', 'A shipment needs at least one item.')
+            in_this = set()
+            for j, item in items:
+                ip = f'{p}.items[{j}]'
+                idx = item.get('deliverable')
+                if (idx is None or isinstance(idx, bool) or not isinstance(idx, int)
+                        or not 0 <= idx < n):
+                    _add(errors, f'{ip}.deliverable',
+                         f'Deliverable index {idx!r} does not match any of the {n} '
+                         f'deliverable(s) in this payload.')
+                    idx = None
+                elif idx in in_this:
+                    _add(errors, f'{ip}.deliverable',
+                         'This deliverable is already in this shipment.')
+                    idx = None
+                else:
+                    in_this.add(idx)
+                if _blank(item.get('qty')):
+                    _add(errors, f'{ip}.qty', 'This field is required.')
+                    continue
+                qty = S._coerce_decimal(item.get('qty'), f'{ip}.qty', errors, positive=True)
+                if qty is None or idx is None or ordered[idx] is None:
+                    continue
+                shipped[idx] = shipped.get(idx, Decimal('0')) + qty
+                if shipped[idx] > ordered[idx]:
+                    _add(errors, f'{ip}.qty',
+                         f'Ships {shipped[idx]} in total of deliverable {idx}, '
+                         f'which only ordered {ordered[idx]}.')
 
     # --------------------------------------------------------------- create
     @staticmethod
@@ -370,6 +523,86 @@ class ArchiveImportService:
                 released_qty=zero,
                 cost_source=Material.COST_SOURCE_IMPORTED,
             ))
+        return out
+
+    @staticmethod
+    def _create_lines(model, parent_field, parent, rows):
+        S = ArchiveImportService
+        scratch = {}
+        zero = Decimal('0.00')
+        for n, line in enumerate(rows, start=1):
+            model.objects.create(**{
+                parent_field: parent,
+                'line_number': n,
+                'description': line.get('description') or '',
+                'qty': S._coerce_decimal(line.get('qty'), '', scratch) or zero,
+                'units': line.get('units') or 'none',
+                'price': S._coerce_decimal(line.get('price'), '', scratch) or zero,
+                'accounting_category_id': line.get('accounting_category') or None,
+                'is_comment': bool(line.get('is_comment', False)),
+            })
+
+    @staticmethod
+    def _dates(row, fields):
+        S = ArchiveImportService
+        scratch = {}
+        return {f: S._coerce_dt(row.get(f), '', scratch) for f in fields}
+
+    @staticmethod
+    def _create_estimates(job, rows):
+        """Created straight at a settled status: Estimate.save's status hooks
+        (crystallisation, claim release, job status) fire only on a *change*."""
+        from apps.estimates.models import Estimate, EstimateLineItem
+        S = ArchiveImportService
+        out = []
+        for e in rows:
+            dates = S._dates(e, ('created_date', 'sent_date', 'closed_date', 'expiration_date'))
+            dates['created_date'] = dates['created_date'] or timezone.now()
+            est = Estimate.objects.create(
+                job=job, estimate_number=e['estimate_number'], version=1,
+                status=e['status'], **dates)
+            S._create_lines(EstimateLineItem, 'estimate', est, e.get('lines') or [])
+            out.append(est)
+        return out
+
+    @staticmethod
+    def _create_invoices(job, rows):
+        """Created at ``paid``/``cancelled``: ``_maybe_complete_job`` and claim
+        release fire only on a status change. ``Invoice.save`` runs ``clean()``
+        but not ``full_clean`` — number uniqueness rests on ``_validate``."""
+        from apps.invoicing.models import Invoice, InvoiceLineItem
+        S = ArchiveImportService
+        out = []
+        for v in rows:
+            dates = S._dates(v, ('created_date', 'sent_date', 'closed_date'))
+            dates['created_date'] = dates['created_date'] or timezone.now()
+            if v['status'] == Invoice.STATUS_PAID and dates['closed_date'] is None:
+                dates['closed_date'] = dates['created_date']
+            inv = Invoice.objects.create(
+                job=job, invoice_number=v['invoice_number'], status=v['status'], **dates)
+            S._create_lines(InvoiceLineItem, 'invoice', inv, v.get('lines') or [])
+            out.append(inv)
+        return out
+
+    @staticmethod
+    def _create_shipments(job, rows, deliverables):
+        from apps.deliverables.models import Shipment, ShipmentItem
+        S = ArchiveImportService
+        scratch = {}
+        out = []
+        for i, sh in enumerate(rows):
+            dates = S._dates(sh, ('picked_up_date', 'prepared_date'))
+            shipment = Shipment.objects.create(
+                job=job, sequence=i + 1, status=Shipment.STATUS_PICKED_UP,
+                picked_up_date=dates['picked_up_date'],
+                prepared_date=dates['prepared_date'] or dates['picked_up_date'],
+                notes=sh.get('notes') or '',
+            )
+            for item in sh['items']:
+                ShipmentItem.objects.create(
+                    shipment=shipment, deliverable=deliverables[item['deliverable']],
+                    qty=S._coerce_decimal(item['qty'], '', scratch))
+            out.append(shipment)
         return out
 
     # -------------------------------------------------------------- history

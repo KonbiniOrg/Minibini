@@ -298,3 +298,226 @@ class HistoryTests(ArchiveImportTestBase):
         with self.assertRaises(ValidationError):
             self.create({'job_number': 'OLD-C2'})
         self.assertIs(get_history_context(), sentinel)
+
+
+class DocumentTests(ArchiveImportTestBase):
+    """Task 8b — settled estimates, invoices and picked-up shipments (§5.4-5.6)."""
+
+    def base(self, number, **extra):
+        return {'job_number': number, 'contact': self.contact.pk, **extra}
+
+    def test_estimates_created_without_side_effects(self):
+        from apps.estimates.models import Estimate, EstimateLineItemSource
+        sources_before = EstimateLineItemSource.objects.count()
+        earmarks_before = Earmark.objects.count()
+        created = (timezone.now() - timedelta(days=300)).replace(microsecond=0)
+        sent = created + timedelta(days=1)
+        closed = created + timedelta(days=5)
+        job = self.create(self.base('OLD-E1', estimates=[
+            {'estimate_number': 'EST-OLD-1', 'status': 'accepted',
+             'created_date': created, 'sent_date': sent.isoformat(), 'closed_date': closed,
+             'expiration_date': created + timedelta(days=30),
+             'lines': [
+                 {'description': 'Cabinet', 'qty': '2', 'units': 'each', 'price': '500.00',
+                  'accounting_category': self.category.pk},
+                 {'description': 'Walnut finish', 'is_comment': True},
+             ]},
+            {'estimate_number': 'EST-OLD-2', 'status': 'rejected',
+             'lines': [{'description': 'Alt', 'qty': 1, 'price': 900}]},
+        ]))
+        job.refresh_from_db()
+        self.assertEqual(job.status, Job.STATUS_ARCHIVED)
+        ests = {e.estimate_number: e for e in Estimate.objects.filter(job=job)}
+        self.assertEqual(set(ests), {'EST-OLD-1', 'EST-OLD-2'})
+        acc = ests['EST-OLD-1']
+        self.assertEqual(acc.status, Estimate.STATUS_ACCEPTED)
+        self.assertEqual(ests['EST-OLD-2'].status, Estimate.STATUS_REJECTED)
+        for e in ests.values():
+            self.assertEqual(e.version, 1)
+            self.assertIsNone(e.parent)
+            self.assertTrue(e.public_token)
+        self.assertEqual(acc.created_date, created)
+        self.assertEqual(acc.sent_date, sent)
+        self.assertEqual(acc.closed_date, closed)
+        lines = list(acc.estimatelineitem_set.order_by('line_number'))
+        self.assertEqual([l.line_number for l in lines], [1, 2])
+        self.assertEqual(lines[0].qty, Decimal('2.00'))
+        self.assertEqual(lines[0].price, Decimal('500.00'))
+        self.assertEqual(lines[0].units, 'each')
+        self.assertEqual(lines[0].accounting_category, self.category)
+        self.assertTrue(lines[1].is_comment)
+        self.assertEqual(lines[1].qty, Decimal('0.00'))
+        self.assertEqual(EstimateLineItemSource.objects.count(), sources_before)
+        self.assertEqual(Earmark.objects.count(), earmarks_before)
+        self.assertEqual(job.tasks.count(), 0)  # acceptance crystallised nothing
+        self.assertEqual(len(_created_audits('estimate', acc.pk)), 1)
+
+        self.assertErrorKeys(self.base('OLD-E2', estimates=[
+            {'estimate_number': 'EST-D', 'status': 'draft'}]), 'estimates[0].status')
+        d = self.assertErrorKeys(self.base('OLD-E3', estimates=[
+            {'estimate_number': 'EST-A1', 'status': 'accepted'},
+            {'estimate_number': 'EST-A2', 'status': 'accepted'}]), 'estimates')
+        self.assertEqual(set(d), {'estimates'})
+        self.assertErrorKeys(self.base('OLD-E4', estimates=[
+            {'estimate_number': 'EST-C', 'status': 'rejected',
+             'lines': [{'description': 'note', 'is_comment': True, 'price': '5'}]}]),
+            'estimates[0].lines[0].price')
+        self.assertEqual(Job.objects.filter(job_number__in=['OLD-E2', 'OLD-E3', 'OLD-E4']).count(), 0)
+
+    def test_estimate_number_collision(self):
+        from apps.estimates.models import Estimate
+        live = Job.objects.create(job_number='LIVE-E', contact=self.contact)
+        Estimate.objects.create(job=live, estimate_number='EST-DUP', version=1)
+        counts = (Job.objects.count(), Estimate.objects.count())
+        d = self.assertErrorKeys(self.base('OLD-EC', estimates=[
+            {'estimate_number': 'EST-DUP', 'status': 'expired'}]), 'estimates[0].estimate_number')
+        self.assertEqual(set(d), {'estimates[0].estimate_number'})
+        d = self.assertErrorKeys(self.base('OLD-EC', estimates=[
+            {'estimate_number': 'EST-SAME', 'status': 'expired'},
+            {'estimate_number': 'EST-SAME', 'status': 'rejected'}]), 'estimates[1].estimate_number')
+        self.assertNotIn('estimates[0].estimate_number', d)
+        self.assertErrorKeys(self.base('OLD-EC', estimates=[{'status': 'expired'}]),
+                             'estimates[0].estimate_number')
+        self.assertEqual((Job.objects.count(), Estimate.objects.count()), counts)
+
+    def test_invoices_created_settled(self):
+        from apps.invoicing.models import Invoice, InvoiceLineItemSource
+        sources_before = InvoiceLineItemSource.objects.count()
+        created = (timezone.now() - timedelta(days=200)).replace(microsecond=0)
+        job = self.create(self.base('OLD-I1', invoices=[
+            {'invoice_number': '1001', 'status': 'paid', 'created_date': created,
+             'sent_date': created + timedelta(days=1),
+             'lines': [{'description': 'Cabinets', 'qty': 1, 'price': '1200.00',
+                        'accounting_category': self.category.pk}]},
+            {'invoice_number': '1002', 'status': 'cancelled',
+             'lines': [{'description': 'Wrong', 'qty': 1, 'price': 50}]},
+        ]))
+        job.refresh_from_db()
+        self.assertEqual(job.status, Job.STATUS_ARCHIVED)
+        paid = Invoice.objects.get(invoice_number='1001')
+        cancelled = Invoice.objects.get(invoice_number='1002')
+        self.assertEqual(paid.job, job)
+        self.assertEqual(paid.status, Invoice.STATUS_PAID)
+        self.assertEqual(paid.created_date, created)
+        self.assertEqual(paid.closed_date, created)
+        self.assertEqual(paid.sent_date, created + timedelta(days=1))
+        self.assertEqual(paid.display_number, '1001')
+        self.assertIsNone(paid.qbo_id)
+        self.assertEqual(cancelled.status, Invoice.STATUS_CANCELLED)
+        self.assertIsNone(cancelled.closed_date)
+        line = paid.invoicelineitem_set.get()
+        self.assertEqual((line.line_number, line.price), (1, Decimal('1200.00')))
+        self.assertEqual(InvoiceLineItemSource.objects.count(), sources_before)
+        self.assertEqual(len(_created_audits('invoice', paid.pk)), 1)
+
+        self.assertErrorKeys(self.base('OLD-I2', invoices=[
+            {'invoice_number': '2001', 'status': 'open'}]), 'invoices[0].status')
+        self.assertErrorKeys(self.base('OLD-I3', invoices=[{'status': 'paid'}]),
+                             'invoices[0].invoice_number')
+        counts = (Job.objects.count(), Invoice.objects.count(), JobHistory.objects.count())
+        d = self.assertErrorKeys(self.base('OLD-I4', invoices=[
+            {'invoice_number': '1001', 'status': 'paid'}]), 'invoices[0].invoice_number')
+        self.assertEqual(set(d), {'invoices[0].invoice_number'})
+        self.assertErrorKeys(self.base('OLD-I5', invoices=[
+            {'invoice_number': '3001', 'status': 'paid'},
+            {'invoice_number': '3001', 'status': 'cancelled'}]), 'invoices[1].invoice_number')
+        self.assertEqual((Job.objects.count(), Invoice.objects.count(), JobHistory.objects.count()),
+                         counts)
+
+    def test_shipments_picked_up_with_items(self):
+        from apps.deliverables.models import Shipment, ShipmentItem
+        picked = (timezone.now() - timedelta(days=100)).replace(microsecond=0)
+        prepared = picked - timedelta(days=2)
+        deliverables = [{'description': 'Cabinet', 'qty_ordered': 2},
+                        {'description': 'Shelf', 'qty_ordered': '4'}]
+        job = self.create(self.base('OLD-S1', deliverables=deliverables, shipments=[
+            {'picked_up_date': picked, 'notes': 'First load',
+             'items': [{'deliverable': 0, 'qty': 1}, {'deliverable': 1, 'qty': '4'}]},
+            {'status': 'picked_up', 'picked_up_date': picked + timedelta(days=7),
+             'prepared_date': prepared + timedelta(days=7),
+             'items': [{'deliverable': 0, 'qty': 1}]},
+        ]))
+        ships = list(Shipment.objects.filter(job=job).order_by('sequence'))
+        self.assertEqual([s.sequence for s in ships], [1, 2])
+        for s in ships:
+            self.assertEqual(s.status, Shipment.STATUS_PICKED_UP)
+        self.assertEqual(ships[0].picked_up_date, picked)
+        self.assertEqual(ships[0].prepared_date, picked)
+        self.assertEqual(ships[0].notes, 'First load')
+        self.assertEqual(ships[1].prepared_date, prepared + timedelta(days=7))
+        cab = job.deliverables.get(description='Cabinet')
+        shelf = job.deliverables.get(description='Shelf')
+        self.assertEqual(
+            {(i.deliverable_id, i.qty) for i in ShipmentItem.objects.filter(shipment=ships[0])},
+            {(cab.pk, Decimal('1.00')), (shelf.pk, Decimal('4.00'))})
+        self.assertEqual(ShipmentItem.objects.get(shipment=ships[1]).deliverable, cab)
+        self.assertEqual(len(_created_audits('shipment', ships[0].pk)), 1)
+
+        counts = (Job.objects.count(), Shipment.objects.count())
+        self.assertErrorKeys(self.base('OLD-S2', deliverables=deliverables, shipments=[
+            {'status': 'prepared', 'picked_up_date': picked,
+             'items': [{'deliverable': 0, 'qty': 1}]}]), 'shipments[0].status')
+        self.assertErrorKeys(self.base('OLD-S3', deliverables=deliverables, shipments=[
+            {'items': [{'deliverable': 0, 'qty': 1}]}]), 'shipments[0].picked_up_date')
+        d = self.assertErrorKeys(self.base('OLD-S4', deliverables=deliverables, shipments=[
+            {'picked_up_date': picked, 'items': [{'deliverable': 0, 'qty': 2}]},
+            {'picked_up_date': picked, 'items': [{'deliverable': 0, 'qty': 1}]}]),
+            'shipments[1].items[0].qty')
+        self.assertEqual(set(d), {'shipments[1].items[0].qty'})
+        self.assertErrorKeys(self.base('OLD-S5', deliverables=deliverables, shipments=[
+            {'picked_up_date': picked, 'items': [{'deliverable': 9, 'qty': 1}]}]),
+            'shipments[0].items[0].deliverable')
+        self.assertErrorKeys(self.base('OLD-S6', deliverables=deliverables, shipments=[
+            {'picked_up_date': picked, 'items': [{'deliverable': 0, 'qty': 0}]}]),
+            'shipments[0].items[0].qty')
+        self.assertErrorKeys(self.base('OLD-S7', deliverables=deliverables, shipments=[
+            {'picked_up_date': picked, 'items': []}]), 'shipments[0].items')
+        self.assertEqual((Job.objects.count(), Shipment.objects.count()), counts)
+
+    def test_full_payload_round_trip(self):
+        from apps.deliverables.models import Shipment
+        from apps.estimates.models import Estimate
+        from apps.invoicing.models import Invoice
+        from apps.jobs.financials import compute_job_financials, spend_breakdown
+        from apps.jobs.services import JobService
+        created = (timezone.now() - timedelta(days=90)).replace(microsecond=0)
+        job = self.create(self.base(
+            'OLD-FULL', name='Kitchen', created_date=created,
+            start_date=created + timedelta(days=3), completed_date=created + timedelta(days=30),
+            outcome='Completed', source='Paper',
+            notes=[{'text': 'All good'}],
+            tasks=[{'name': 'Build', 'unit_label': 'hour', 'actual_qty': '12.5', 'rate': '80'},
+                   {'name': 'Parts', 'unit_label': 'piece', 'actual_qty': '3'}],
+            deliverables=[{'description': 'Cabinet', 'qty_ordered': 2}],
+            materials=[{'description': 'Glue', 'quantity': 1, 'unit_cost': '4.00',
+                        'accounting_category': self.category.pk, 'task': 0}],
+            estimates=[{'estimate_number': 'EST-FULL', 'status': 'accepted',
+                        'lines': [{'description': 'Kitchen', 'qty': 1, 'price': 1500}]}],
+            invoices=[
+                {'invoice_number': 'INV-FULL-1', 'status': 'paid',
+                 'lines': [{'description': 'Deposit', 'qty': 1, 'price': '700.00'},
+                           {'description': 'Balance', 'qty': 2, 'price': '400.00'},
+                           {'description': 'Thanks', 'is_comment': True}]},
+                {'invoice_number': 'INV-FULL-2', 'status': 'cancelled',
+                 'lines': [{'description': 'Void', 'qty': 1, 'price': '999.00'}]},
+            ],
+            shipments=[{'picked_up_date': created + timedelta(days=29),
+                        'items': [{'deliverable': 0, 'qty': 2}]}],
+        ))
+        job.refresh_from_db()
+        self.assertEqual(job.status, Job.STATUS_ARCHIVED)
+        fin = compute_job_financials(job)
+        self.assertEqual(fin['invoiced'], Decimal('1500.00'))
+        self.assertEqual(spend_breakdown(job)['labor_hours'], Decimal('12.50'))
+
+        counts = (Estimate.objects.count(), Invoice.objects.count(), Shipment.objects.count())
+        dup = JobService.duplicate_job(job, contact=job.contact, path='estimate')
+        self.assertEqual(dup.status, Job.STATUS_DRAFT)
+        self.assertEqual(sorted(dup.tasks.values_list('name', flat=True)), ['Build', 'Parts'])
+        self.assertEqual(list(dup.materials.values_list('description', flat=True)), ['Glue'])
+        self.assertEqual(list(dup.deliverables.values_list('description', flat=True)), ['Cabinet'])
+        self.assertFalse(Estimate.objects.filter(job=dup).exists())
+        self.assertFalse(Invoice.objects.filter(job=dup).exists())
+        self.assertFalse(Shipment.objects.filter(job=dup).exists())
+        self.assertEqual(
+            (Estimate.objects.count(), Invoice.objects.count(), Shipment.objects.count()), counts)
