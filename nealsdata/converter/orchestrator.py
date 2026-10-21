@@ -40,6 +40,7 @@ class NealsDataConverter:
         # reads this, so a run is reproducible and testable.
         self.now = now or datetime.now(timezone.utc)
         self.invented_est_qty = set()   # jobs.task pks whose est_qty the converter invented
+        self.line_est_qty = {}          # jobs.task pk -> est_qty taken from its estimate line
         self.archived_job_pks = set()   # jobs reshaped to 'archived' by archive_old_jobs
         self.archived_outcome = {}      # {job_pk: 'completed' | 'rejected' | 'cancelled'}
         self.limit = limit
@@ -188,5 +189,5 @@ class NealsDataConverter:
         counts = Counter(row['model'] for row in self.fixture_data)
         for model, n in sorted(counts.items()):
             print(f'  {n:6} {model}')
-        print(f'  {len(c.archived_job_pks)} jobs archived (completed/rejected on or before {build.archive_cutoff(c.now):%Y-%m-%d})')
+        print(f'  {len(c.archived_job_pks)} jobs archived (completed/rejected/cancelled on or before {build.archive_cutoff(c.now):%Y-%m-%d})')
         print(f'  {c.fake_deliverable_count} jobs got a synthetic \'Fake Deliverable\' (review these)')

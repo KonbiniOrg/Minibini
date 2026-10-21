@@ -1860,9 +1860,22 @@ class ConvertEndToEndTest(unittest.TestCase):
                 self.assertTrue(cd is None or cd > cutoff, f['fields']['job_number'])
         # nothing invented survives on an archive
         for f in c.fixture_data:
-            if f['model'] in ('deliverables.deliverable', 'deliverables.shipment', 'jobs.blep',
-                              'inventory.earmark', 'purchasing.purchaseorderlineitem'):
+            if f['model'] in ('deliverables.deliverable', 'deliverables.shipment',
+                              'inventory.earmark'):
                 self.assertNotIn(f['fields'].get('job'), archived, f['model'])
+        # bleps and PO lines carry no `job`: resolve it through their task
+        task_job = {f['pk']: f['fields'].get('job')
+                    for f in c.fixture_data if f['model'] == 'jobs.task'}
+        for f in c.fixture_data:
+            fl = f['fields']
+            if f['model'] == 'jobs.blep':
+                self.assertNotIn(task_job.get(fl['task']), archived, 'blep on archived job')
+            elif f['model'] == 'purchasing.purchaseorderlineitem':
+                self.assertNotIn(task_job.get(fl.get('task')), archived,
+                                 'PO line on archived job task')
+            elif f['model'] == 'inventory.material' and fl.get('job') in archived:
+                # the material side of the PO link is nulled on an archive
+                self.assertIsNone(fl.get('po_line_item'), 'archived material keeps PO line')
 
 
 @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
@@ -3183,6 +3196,19 @@ class EstQtyProvenanceTest(unittest.TestCase):
         build.assign_est_quantities(c)
         self.assertEqual(c.invented_est_qty, {1, 3})
 
+    def test_build_line_item_tasks_records_line_qty(self):
+        from unittest import mock
+        c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
+        c.cut_task = {}
+        lines = [{'description': 'Hours', 'qty': Decimal('3')},
+                 {'description': 'Plain', 'qty': Decimal('9')}]
+        billing = iter([('task', None, []), ('plain', None, None)])
+        with mock.patch.object(build, '_line_billing', lambda c_, li: next(billing)), \
+                mock.patch.object(build, '_stamp_money_block', lambda *a: {}):
+            build._build_line_item_tasks(c, 'B1', 1, lines)
+        task_pk = next(f['pk'] for f in c.fixture_data if f['model'] == 'jobs.task')
+        self.assertEqual(c.line_est_qty, {task_pk: '3.00'})
+
 
 class ArchiveOldJobsTest(unittest.TestCase):
     """archive_old_jobs reshapes old completed/rejected jobs into archived jobs."""
@@ -3307,6 +3333,15 @@ class ArchiveOldJobsTest(unittest.TestCase):
         build.archive_old_jobs(c, self.CUTOFF)
         self.assertEqual(c.archived_job_pks, {no_card})
         self.assertEqual(self._job(c, stale_card)['status'], 'work_complete')
+
+    def test_line_derived_elapsed_task_keeps_line_qty(self):
+        c = self._c()
+        jp = self._add_job(c, 'completed', '2025-06-01T00:00:00+00:00')
+        pk = self._add_task(c, jp, qty_source='elapsed_time', est_qty='7.50')
+        c.invented_est_qty.add(pk)
+        c.line_est_qty[pk] = '3.00'
+        build.archive_old_jobs(c, self.CUTOFF)
+        self.assertEqual(self._row(c, 'jobs.task', pk)['est_qty'], '3.00')
 
     def test_task_quantities(self):
         c = self._c()

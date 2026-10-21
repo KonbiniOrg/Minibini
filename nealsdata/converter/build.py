@@ -1404,6 +1404,7 @@ def _build_line_item_tasks(c, base_ref, job_pk, task_lines, start_sort=0):
         }
         fields.update(_stamp_money_block(c, scheme_pk, active_modifiers))
         c.add_fixture('jobs.task', task_pk, fields)
+        c.line_est_qty[task_pk] = fields['est_qty']
         if base_ref not in c.cut_task and 'cut' in name.lower():
             c.cut_task[base_ref] = task_pk
     return sort_order
@@ -1490,7 +1491,9 @@ def archive_old_jobs(c, cutoff):
             fl['status'] = 'archived'
             fl['project_manager'] = None
         elif m == 'jobs.task' and fl.get('job') in outcome:
-            if f['pk'] in c.invented_est_qty:
+            if f['pk'] in c.line_est_qty:
+                fl['est_qty'] = c.line_est_qty[f['pk']]   # the estimate line's own quantity
+            elif f['pk'] in c.invented_est_qty:
                 fl['est_qty'] = None
             fl.update({
                 'qty_source': 'entered_qty', 'est_worker_time': None,

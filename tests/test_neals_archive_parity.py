@@ -38,7 +38,8 @@ LIFECYCLE_ACTIONS = {'Created', 'Started'}
 TWIN_SUFFIX = '-P'
 
 JOB_FIELDS = ('name', 'description', 'customer_po_number', 'due_date', 'created_date',
-              'start_date', 'completed_date', 'project_manager_id', 'status', 'on_hold')
+              'start_date', 'completed_date', 'project_manager_id', 'status', 'on_hold',
+              'hold_reason')
 TASK_FIELDS = ('name', 'description', 'sort_order', 'status', 'qty_source', 'unit_label',
                'rate', 'est_qty', 'actual_qty', 'est_worker_time', 'accounting_category_id',
                'service_item_id', 'source_scheme_id', 'active_modifiers', 'assignee_id',
@@ -51,7 +52,11 @@ ESTIMATE_FIELDS = ('version', 'status', 'created_date', 'sent_date', 'closed_dat
 INVOICE_FIELDS = ('status', 'created_date', 'sent_date', 'closed_date', 'qbo_id',
                   'qbo_payment_status', 'qbo_amount_paid')
 LINE_FIELDS = ('description', 'qty', 'units', 'price', 'accounting_category_id',
-               'is_comment', 'line_number')
+               'is_comment', 'line_number', 'inventory_item_id', 'adjustment_service_id',
+               'adjustment_percent')
+# Fields the importer never sets but converter builders can write; per model.
+ESTIMATE_LINE_EXTRA = ('work_declined', 'per_unit', 'is_material', 'service_item_id')
+INVOICE_LINE_EXTRA = ('agreement_estimate_line_id', 'agreement_co_line_id')
 
 
 def _tasks(job):
@@ -178,7 +183,8 @@ class _ParityChecks:
             return {f: getattr(obj, f) for f in fields}
 
         def lines(doc):
-            return [pick(li, LINE_FIELDS) for li in _line_items(doc)]
+            extra = ESTIMATE_LINE_EXTRA if isinstance(doc, Estimate) else INVOICE_LINE_EXTRA
+            return [pick(li, LINE_FIELDS + extra) for li in _line_items(doc)]
 
         tasks = _tasks(job)
         task_index = {t.pk: i for i, t in enumerate(tasks)}
@@ -226,8 +232,13 @@ class _ParityChecks:
             'history': sorted(history),
         }
 
+    require_archives = False
+
     def _assert_round_trips(self):
         archived = list(Job.objects.filter(status=Job.STATUS_ARCHIVED).order_by('pk'))
+        if not archived and not self.require_archives:
+            # Time-based rule over regenerated inputs: zero archives is legitimate.
+            self.skipTest('no archived jobs at this clock')
         self.assertGreater(len(archived), 0)
         zero = dict.fromkeys(('deliverables', 'shipments', 'bleps', 'earmarks',
                               'estimate_line_sources', 'invoice_line_sources'), 0)
@@ -266,6 +277,8 @@ class FarFutureParityTest(_ParityChecks, TestCase):
     """The same parity over a conversion run with a far-future clock, so every
     closed job archives — breadth converted.json's handful of old jobs lacks
     (materials, superseded estimate chains, cancelled tasks)."""
+
+    require_archives = True
 
     @classmethod
     def setUpTestData(cls):

@@ -589,9 +589,10 @@ archives on converted data. What that means per record:
 - **Tasks**: kept with their reconciled `complete` / `cancelled` status. The
   money block is plain values (`qty_source='entered_qty'`, rate, unit label,
   accounting category); `source_scheme`, `service_item` and
-  `active_modifiers` are cleared. `est_qty` is kept only when it came from an
-  estimate line's own quantity; if `assign_est_quantities` invented it (the
-  pks are in `c.invented_est_qty`) it is nulled. `est_worker_time`,
+  `active_modifiers` are cleared. A line-derived task (pk in `c.line_est_qty`) keeps
+  its estimate line's own quantity even when `assign_est_quantities`
+  overwrote it on a live job; only a quantity the converter invented (pk in
+  `c.invented_est_qty`, no line quantity) is nulled. `est_worker_time`,
   `actual_qty`, `assignee` and `worker_queue` are always null.
 - **Materials**: kept, marked `consumed` / `imported`, nothing released, no PO
   line. A link to a converter-minted `LOT-*` transient lot is cleared and the
