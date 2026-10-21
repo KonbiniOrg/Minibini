@@ -1429,14 +1429,16 @@ list). Tasks within a column are sorted by `worker_queue`. Drag-and-drop assigns
 
 (Job-task-list reordering — `POST /api/jobs/{id}/reorder-tasks/` — is a
 different axis: it sets `sort_order` within the job's flat task list
-(tasks are one level — better-fees spec §3). Two body forms:
-`{task_ids: [...]}` sets the whole order at once (the Tasks tab's
-drag-and-drop, issue #513; `TaskService.set_task_order`, one transaction,
-must list every task on the job exactly once, else 400 on `task_ids`), and
-the older `{task_id, direction: 'up'|'down'}` swaps one step
-(`TaskService.reorder_tasks`). Both refuse a frozen or on-hold job. Pinned
-by `tests/test_task_reorder_peer_scope.py` and `tests/test_api_jobs.py`
-`JobReorderTasksTest`.)
+(tasks are one level — better-fees spec §3). The body is
+`{task_ids: [...]}`, the whole order at once (the Tasks tab's drag-and-drop,
+issue #513). `TaskService.set_task_order` checks the job isn't frozen or on
+hold, then calls the shared `ReorderService.set_order` (`apps/core/services.py`):
+the list must name every task on the job exactly once (else 400 on
+`task_ids`); rows are locked and saved per instance, numbered from 1, and only
+tasks whose position changed are saved. The old one-step
+`{task_id, direction}` form was removed with the arrows. Pinned by
+`tests/test_bundling_services.py` `ReorderServiceSetOrderTest` and
+`tests/test_api_jobs.py` `JobReorderTasksTest`.)
 
 ### 8.5 Card composition
 
@@ -1840,15 +1842,33 @@ keeps only the expense rows, section headers, and the footer.
 grip handle (`components/DragHandle.svelte`) beside each task's name; the
 up/down arrows are gone. Each task and its material rows are one
 `<tbody class="task-group">`, so a drag moves the group, using dnd-kit
-(`@dnd-kit-svelte/svelte` sortable, vertical axis only). On drop,
-`lib/dragOrder.js` `nextOrder` turns the event into the new id order and
-`TaskTree`'s `onReorder(taskIds)` hands it to `TasksPanel`, which posts
-`{task_ids}`; the new order shows at once and the reload replaces it.
+(`@dnd-kit-svelte/svelte` sortable, vertical axis only) through the shared
+`components/SortableList.svelte`, which owns the provider, the optimistic
+order, and the drop → new id order (`lib/dragOrder.js` `nextOrder`). Pointer
+drags use in-place feedback (`'move'`) so the group stays in the table and
+keeps its column widths; keyboard drags keep dnd-kit's default feedback,
+which keyboard sorting needs. `TaskTree`'s `onReorder(taskIds)` hands the
+order to `TasksPanel`, which posts `{task_ids}` and reloads the job (other
+tabs share the job object, so the reload keeps them current).
 Handles render only when `onReorder` is wired and the user may reorder
 (`canManage`, not read-only, not frozen, not on hold). Keyboard: focus the
 handle, Space picks up, arrows move, Space drops, Escape cancels. Splitting
 rows into per-task tbodies would restart `.data-table`'s zebra at every
-task, so `TaskTree` carries the parity across groups (`odd-start`).
+task, so the table stripes alternate task groups in CSS
+(`tbody.task-group:nth-of-type(even) > tr.task-row`).
+
+**Table exemplar (design-system workstream).** The Tasks table is the first
+table with the readability conventions other tables will adopt one at a time:
+Inter via `--font-sans`; one 14px text size (`--text-sm`) for cells, headers,
+tags, and buttons; muted text `--text-muted` (#666, AA on the yellow bands);
+bold only in headers; status tags as outlined pills (label in body colour,
+colour on dot and border); buttons in the style of shadcn's Button
+`outline`/`sm` (28px), `class="danger"` for destructive ones; numbers in
+`.figure` cells that don't wrap; the Actions column shrinks to its buttons.
+The tokens and `.figure` live in `app.css` and are inert until used; every
+rule that applies them is scoped to `.task-tree-table`, so no other table
+changes. Shared pieces (MaterialRow, TaskActivityIndicator, `.row-actions`,
+badges) are adjusted from the table's side, not in their own files.
 
 **Per-material status & actions.** Each material row carries a derived
 status chip — **Needs pricing / Needed / Ordered — PO-NNNN / Awaiting
