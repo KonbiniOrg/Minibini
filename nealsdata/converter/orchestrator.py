@@ -40,6 +40,8 @@ class NealsDataConverter:
         # reads this, so a run is reproducible and testable.
         self.now = now or datetime.now(timezone.utc)
         self.invented_est_qty = set()   # jobs.task pks whose est_qty the converter invented
+        self.archived_job_pks = set()   # jobs reshaped to 'archived' by archive_old_jobs
+        self.archived_outcome = {}      # {job_pk: 'completed' | 'rejected' | 'cancelled'}
         self.limit = limit
         # Vendors: by default a vendor Business exists only because a Bill
         # of theirs synthesized a PO (build_purchasing creates it on demand).

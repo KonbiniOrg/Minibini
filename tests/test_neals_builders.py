@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from decimal import Decimal
 from nealsdata.converter import build
 from nealsdata.converter import parsing as P
@@ -3062,3 +3063,229 @@ class EstQtyProvenanceTest(unittest.TestCase):
                                        'est_worker_time': '02:00:00'})
         build.assign_est_quantities(c)
         self.assertEqual(c.invented_est_qty, {1, 3})
+
+
+class ArchiveOldJobsTest(unittest.TestCase):
+    """archive_old_jobs reshapes old completed/rejected jobs into archived jobs."""
+
+    CUTOFF = datetime(2026, 4, 21, tzinfo=timezone.utc)
+
+    def _c(self):
+        c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json',
+                               now=datetime(2026, 10, 21, tzinfo=timezone.utc))
+        c.jobs = {}
+        return c
+
+    def _add_job(self, c, status, completed_date, checklist=''):
+        pk = c.next_pk('jobs.job')
+        c.add_fixture('jobs.job', pk, {
+            'job_number': f'JOB{pk}', 'name': 'j', 'contact': 1, 'status': status,
+            'created_date': '2025-01-01T00:00:00+00:00',
+            'start_date': '2025-01-01T00:00:00+00:00', 'due_date': None,
+            'completed_date': completed_date, 'project_manager': 7,
+            'customer_po_number': '', 'description': '', 'accent_color': '#f97066',
+        })
+        c.jobs[f'BASE{pk}'] = {'job_pk': pk, 'card': {'Checklist': checklist}}
+        return pk
+
+    def _add_task(self, c, job_pk, **over):
+        pk = c.next_pk('jobs.task')
+        fields = {
+            'job': job_pk, 'name': 't', 'description': '', 'est_qty': '2.00',
+            'est_worker_time': '01:00:00', 'actual_qty': '1.00',
+            'status': 'complete', 'blocked_reason': '', 'worker_queue': 3,
+            'assignee': 4, 'parent_task': None, 'sort_order': 1,
+            'source_scheme': 5, 'qty_source': 'elapsed_time', 'rate': '90.00',
+            'unit_label': 'hr', 'accounting_category': 2,
+            'active_modifiers': [{'key': 'rush', 'label': 'Rush', 'percent': '10'}],
+        }
+        fields.update(over)
+        c.add_fixture('jobs.task', pk, fields)
+        return pk
+
+    def _add_lot(self, c):
+        pk = c.next_pk('inventory.inventoryitem')
+        c.add_fixture('inventory.inventoryitem', pk, {'code': 'LOT-x', 'name': 'lot'})
+        return pk
+
+    def _add_pli(self, c):
+        pk = c.next_pk('inventory.inventoryitem')
+        c.add_fixture('inventory.inventoryitem', pk, {'code': 'MDF.75', 'name': 'MDF'})
+        return pk
+
+    def _add_material(self, c, job_pk, inventory_item, **over):
+        pk = c.next_pk('inventory.material')
+        fields = {
+            'job': job_pk, 'task': None, 'description': 'm', 'quantity': '3.00',
+            'units': 'ea', 'unit_cost': '10.00', 'sell_price': '20.00',
+            'accounting_category': 1, 'inventory_item': inventory_item,
+            'cost_source': 'entered', 'consumption_state': 'pending',
+            'released_qty': '1.00', 'po_line_item': 9,
+        }
+        fields.update(over)
+        c.add_fixture('inventory.material', pk, fields)
+        return pk
+
+    def _add_deliverable(self, c, job_pk, description='Widget'):
+        pk = c.next_pk('deliverables.deliverable')
+        c.add_fixture('deliverables.deliverable', pk, {
+            'job': job_pk, 'description': description, 'qty_ordered': '1.00',
+            'units': 'ea', 'sort_order': 10})
+        return pk
+
+    def _add_source(self, c, li_pk, source_type, source_pk):
+        pk = c.next_pk('estimates.estimatelineitemsource')
+        c.add_fixture('estimates.estimatelineitemsource', pk, {
+            'estimate_line_item': li_pk, 'source_type': source_type,
+            'source_pk': source_pk})
+        return pk
+
+    def _add_invoice(self, c, job_pk, status, qbo_amount_paid):
+        pk = c.next_pk('invoicing.invoice')
+        c.add_fixture('invoicing.invoice', pk, {
+            'job': job_pk, 'invoice_number': f'I{pk}', 'status': status,
+            'created_date': '2025-02-01T00:00:00+00:00',
+            'sent_date': '2025-02-02T00:00:00+00:00',
+            'closed_date': '2025-03-01T00:00:00+00:00',
+            'qbo_id': '55', 'qbo_payment_status': 'paid',
+            'qbo_amount_paid': qbo_amount_paid})
+        return pk
+
+    def _row(self, c, model, pk):
+        for f in c.fixture_data:
+            if f['model'] == model and f['pk'] == pk:
+                return f['fields']
+        return None
+
+    def _job(self, c, pk):
+        return self._row(c, 'jobs.job', pk)
+
+    def test_archives_completed_and_rejected_at_or_before_cutoff(self):
+        c = self._c()
+        old_completed = self._add_job(c, 'completed', '2026-04-21T00:00:00+00:00')
+        old_rejected = self._add_job(c, 'rejected', '2025-12-01T00:00:00+00:00')
+        recent = self._add_job(c, 'completed', '2026-04-22T00:00:00+00:00')
+        wc = self._add_job(c, 'work_complete', None)
+        ip = self._add_job(c, 'in_progress', None)
+        build.archive_old_jobs(c, self.CUTOFF)
+        self.assertEqual(c.archived_job_pks, {old_completed, old_rejected})
+        self.assertEqual(c.archived_outcome,
+                         {old_completed: 'completed', old_rejected: 'rejected'})
+        self.assertEqual(self._job(c, old_completed)['status'], 'archived')
+        self.assertEqual(self._job(c, old_completed)['project_manager'], None)
+        self.assertEqual(self._job(c, old_completed)['completed_date'],
+                         '2026-04-21T00:00:00+00:00')
+        self.assertEqual(self._job(c, recent)['status'], 'completed')
+        self.assertEqual(self._job(c, recent)['project_manager'], 7)
+        self.assertEqual(self._job(c, wc)['status'], 'work_complete')
+        self.assertEqual(self._job(c, ip)['status'], 'in_progress')
+
+    def test_archives_on_reconciled_completed_date_whatever_its_source(self):
+        c = self._c()
+        no_card = self._add_job(c, 'completed', '2025-06-01T00:00:00+00:00')
+        stale_card = self._add_job(c, 'work_complete', None)
+        c.jobs[f'BASE{stale_card}']['card']['Archived at'] = '2024-01-01'
+        build.archive_old_jobs(c, self.CUTOFF)
+        self.assertEqual(c.archived_job_pks, {no_card})
+        self.assertEqual(self._job(c, stale_card)['status'], 'work_complete')
+
+    def test_task_quantities(self):
+        c = self._c()
+        jp = self._add_job(c, 'completed', '2025-06-01T00:00:00+00:00')
+        invented = self._add_task(c, jp)
+        c.invented_est_qty.add(invented)
+        entered = self._add_task(c, jp, qty_source='entered_qty', est_qty='4.00')
+        other = self._add_task(c, jp, status='pending')
+        build.archive_old_jobs(c, self.CUTOFF)
+        self.assertIsNone(self._row(c, 'jobs.task', invented)['est_qty'])
+        self.assertEqual(self._row(c, 'jobs.task', entered)['est_qty'], '4.00')
+        for pk, status in ((invented, 'complete'), (entered, 'complete'),
+                           (other, 'pending')):
+            t = self._row(c, 'jobs.task', pk)
+            self.assertEqual(t['qty_source'], 'entered_qty')
+            for k in ('est_worker_time', 'actual_qty', 'assignee',
+                      'worker_queue', 'source_scheme', 'service_item'):
+                self.assertIsNone(t[k], k)
+            self.assertEqual(t['active_modifiers'], [])
+            self.assertEqual(t['rate'], '90.00')
+            self.assertEqual(t['unit_label'], 'hr')
+            self.assertEqual(t['accounting_category'], 2)
+            self.assertEqual(t['status'], status)
+
+    def test_materials_and_lots(self):
+        c = self._c()
+        jp = self._add_job(c, 'completed', '2025-06-01T00:00:00+00:00')
+        task = self._add_task(c, jp)
+        pli = self._add_pli(c)
+        lot = self._add_lot(c)
+        a = self._add_material(c, jp, pli, task=task)
+        b = self._add_material(c, jp, lot)
+        build.archive_old_jobs(c, self.CUTOFF)
+        ma = self._row(c, 'inventory.material', a)
+        self.assertEqual(ma['inventory_item'], pli)
+        self.assertEqual(ma['consumption_state'], 'consumed')
+        self.assertEqual(ma['cost_source'], 'imported')
+        self.assertEqual(ma['released_qty'], '0.00')
+        self.assertIsNone(ma['po_line_item'])
+        self.assertEqual((ma['unit_cost'], ma['quantity'], ma['units'], ma['task']),
+                         ('10.00', '3.00', 'ea', task))
+        self.assertIsNone(self._row(c, 'inventory.material', b)['inventory_item'])
+        self.assertIsNone(self._row(c, 'inventory.inventoryitem', lot))
+        self.assertIsNotNone(self._row(c, 'inventory.inventoryitem', pli))
+
+    def test_shared_transient_lot_survives(self):
+        c = self._c()
+        old = self._add_job(c, 'completed', '2025-06-01T00:00:00+00:00')
+        live = self._add_job(c, 'in_progress', None)
+        lot = self._add_lot(c)
+        a = self._add_material(c, old, lot)
+        b = self._add_material(c, live, lot)
+        build.archive_old_jobs(c, self.CUTOFF)
+        self.assertIsNone(self._row(c, 'inventory.material', a)['inventory_item'])
+        self.assertEqual(self._row(c, 'inventory.material', b)['inventory_item'], lot)
+        self.assertIsNotNone(self._row(c, 'inventory.inventoryitem', lot))
+        self.assertEqual(self._row(c, 'inventory.material', b)['consumption_state'],
+                         'pending')
+
+    def test_deliverables_sources_and_invoices(self):
+        c = self._c()
+        old = self._add_job(c, 'completed', '2025-06-01T00:00:00+00:00')
+        live = self._add_job(c, 'in_progress', None)
+        c.fake_deliverable_count = 2
+        d1 = self._add_deliverable(c, old, 'Fake Deliverable')
+        d2 = self._add_deliverable(c, old, 'Real')
+        d3 = self._add_deliverable(c, live, 'Fake Deliverable')
+        t_old = self._add_task(c, old)
+        m_old = self._add_material(c, old, None)
+        t_live = self._add_task(c, live)
+        s1 = self._add_source(c, 1, 'task', t_old)
+        s2 = self._add_source(c, 2, 'material', m_old)
+        s3 = self._add_source(c, 3, 'task', t_live)
+        # a material source whose pk is not one of the archived job's materials
+        s4 = self._add_source(c, 4, 'material', m_old + 1000)
+        i_old = self._add_invoice(c, old, 'paid', '100.00')
+        i_live = self._add_invoice(c, live, 'open', '5.00')
+        build.archive_old_jobs(c, self.CUTOFF)
+        self.assertIsNone(self._row(c, 'deliverables.deliverable', d1))
+        self.assertIsNone(self._row(c, 'deliverables.deliverable', d2))
+        self.assertIsNotNone(self._row(c, 'deliverables.deliverable', d3))
+        self.assertEqual(c.fake_deliverable_count, 1)
+        M = 'estimates.estimatelineitemsource'
+        self.assertIsNone(self._row(c, M, s1))
+        self.assertIsNone(self._row(c, M, s2))
+        self.assertIsNotNone(self._row(c, M, s3))
+        self.assertIsNotNone(self._row(c, M, s4))
+        inv = self._row(c, 'invoicing.invoice', i_old)
+        self.assertIsNone(inv['qbo_amount_paid'])
+        self.assertIsNone(inv['qbo_id'])
+        self.assertEqual(inv['qbo_payment_status'], '')
+        self.assertEqual(inv['status'], 'paid')
+        self.assertEqual(inv['closed_date'], '2025-03-01T00:00:00+00:00')
+        live_inv = self._row(c, 'invoicing.invoice', i_live)
+        self.assertEqual((live_inv['qbo_amount_paid'], live_inv['qbo_id']),
+                         ('5.00', '55'))
+
+    def test_cutoff_helper(self):
+        self.assertEqual(
+            build.archive_cutoff(datetime(2026, 10, 21, 12, tzinfo=timezone.utc)),
+            datetime(2026, 4, 21, 12, tzinfo=timezone.utc))

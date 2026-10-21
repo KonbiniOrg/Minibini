@@ -13,6 +13,8 @@ from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 from decimal import Decimal
 
+from dateutil.relativedelta import relativedelta
+
 from nealsdata.converter import parsing as P
 
 # Mirrors apps.contacts' phone-digit stripping (converter stays standalone).
@@ -1443,6 +1445,94 @@ def assign_project_managers(c):
         if f['fields'].get('status') == 'draft':
             continue
         f['fields']['project_manager'] = random.choice(pool)
+
+
+_ARCHIVE_AFTER_MONTHS = 6
+_ARCHIVABLE_JOB_STATUSES = ('completed', 'rejected', 'cancelled')
+
+
+def archive_cutoff(now):
+    """Jobs finished at or before this instant become archived."""
+    return now - relativedelta(months=_ARCHIVE_AFTER_MONTHS)
+
+
+def archive_old_jobs(c, cutoff):
+    """Reshape completed/rejected/cancelled jobs finished at or before
+    `cutoff` into read-only `archived` jobs carrying only translated data,
+    matching what ArchiveImportService would create. Selection looks only at
+    the reconciled completed_date. Sets c.archived_job_pks / c.archived_outcome.
+    """
+    fx = c.fixture_data
+    outcome = {}
+    for f in fx:
+        if f['model'] != 'jobs.job':
+            continue
+        fl = f['fields']
+        done = _aware(fl.get('completed_date'))
+        if (fl.get('status') in _ARCHIVABLE_JOB_STATUSES
+                and done is not None and done <= cutoff):
+            outcome[f['pk']] = fl['status']
+    c.archived_outcome = outcome
+    c.archived_job_pks = set(outcome)
+    if not outcome:
+        return
+
+    atoms = set()          # (source_type, source_pk)
+    candidate_lots = set()
+    drop = set()           # (model, pk) rows to remove
+    for f in fx:
+        fl = f['fields']
+        m = f['model']
+        if m == 'jobs.job' and f['pk'] in outcome:
+            fl['status'] = 'archived'
+            fl['project_manager'] = None
+        elif m == 'jobs.task' and fl.get('job') in outcome:
+            if f['pk'] in c.invented_est_qty:
+                fl['est_qty'] = None
+            fl.update({
+                'qty_source': 'entered_qty', 'est_worker_time': None,
+                'actual_qty': None, 'assignee': None, 'worker_queue': None,
+                'source_scheme': None, 'active_modifiers': [],
+                'service_item': None,
+            })
+            atoms.add(('task', f['pk']))
+        elif m == 'inventory.material' and fl.get('job') in outcome:
+            lot = fl.get('inventory_item')
+            if lot is not None:
+                candidate_lots.add(lot)
+            fl.update({
+                'consumption_state': 'consumed', 'cost_source': 'imported',
+                'released_qty': '0.00', 'po_line_item': None,
+            })
+            atoms.add(('material', f['pk']))
+        elif m == 'invoicing.invoice' and fl.get('job') in outcome:
+            fl.update({'qbo_amount_paid': None, 'qbo_id': None,
+                       'qbo_payment_status': ''})
+        elif m == 'deliverables.deliverable' and fl.get('job') in outcome:
+            drop.add((m, f['pk']))
+            if fl.get('description') == 'Fake Deliverable':
+                c.fake_deliverable_count -= 1
+
+    # Archived materials are unlinked from their lots only when the lot is a
+    # transient one; real catalog items stay linked.
+    lot_codes = {f['pk']: f['fields'].get('code', '') for f in fx
+                 if f['model'] == 'inventory.inventoryitem'}
+    transient = {pk for pk in candidate_lots
+                 if lot_codes.get(pk, '').startswith('LOT-')}
+    for f in fx:
+        if (f['model'] == 'inventory.material' and f['fields'].get('job') in outcome
+                and f['fields'].get('inventory_item') in transient):
+            f['fields']['inventory_item'] = None
+    still_used = {f['fields'].get('inventory_item') for f in fx
+                  if f['model'] == 'inventory.material'}
+    for pk in transient - still_used:
+        drop.add(('inventory.inventoryitem', pk))
+    for f in fx:
+        if (f['model'] == 'estimates.estimatelineitemsource'
+                and (f['fields'].get('source_type'),
+                     f['fields'].get('source_pk')) in atoms):
+            drop.add((f['model'], f['pk']))
+    c.fixture_data = [f for f in fx if (f['model'], f['pk']) not in drop]
 
 
 def _duration_hours(duration_str):
