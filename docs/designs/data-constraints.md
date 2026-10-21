@@ -802,8 +802,9 @@ refuses every user-driven write except delete):
 - No transition into or out of `archived`.
 - Tasks: `complete` or `cancelled`, `qty_source = entered_qty`.
 - Invoices: `paid` or `cancelled`, `invoice_number` non-null.
-- Estimates: `accepted` / `rejected` / `expired`, at most one `accepted`,
-  `version = 1`, no parent; no `EstimateLineItemSource` / `InvoiceLineItemSource`
+- Estimates: latest version `accepted` / `rejected` / `expired`, at most one `accepted`,
+  version chains allowed: lower versions `superseded` with `parent` linked;
+  no `EstimateLineItemSource` / `InvoiceLineItemSource`
   rows.
 - Shipments: `picked_up` only; per-deliverable shipped ≤ `qty_ordered`.
 - Materials: `consumption_state = consumed`, `cost_source = imported`; no

@@ -379,7 +379,7 @@ class ArchiveImportService:
         statuses = S._document_statuses()
         specs = (
             ('estimates', 'estimate_number', 'estimate',
-             lambda n: Estimate.objects.filter(estimate_number=n, version=1).exists(),
+             lambda n: Estimate.objects.filter(estimate_number=n).exists(),
              ('created_date', 'sent_date', 'closed_date', 'expiration_date')),
             ('invoices', 'invoice_number', 'invoice',
              lambda n: Invoice.objects.filter(invoice_number=n).exists(),
@@ -387,12 +387,26 @@ class ArchiveImportService:
         )
         for key, num_field, label, taken, date_fields in specs:
             allowed = statuses[key]
+            if key == 'estimates':
+                allowed = allowed + (Estimate.STATUS_SUPERSEDED,)
             seen = set()
             accepted = 0
+            chains = {}  # casefolded number -> [(index, version, status)]
             for i, row in S._rows(payload, key, errors):
                 p = f'{key}[{i}]'
                 np = f'{p}.{num_field}'
                 number = row.get(num_field)
+                version = 1
+                version_ok = True
+                if key == 'estimates':
+                    raw_version = row.get('version', 1)
+                    if (isinstance(raw_version, bool) or not isinstance(raw_version, int)
+                            or raw_version < 1):
+                        _add(errors, f'{p}.version', 'Must be a whole number, 1 or more.')
+                        version_ok = False
+                    else:
+                        version = raw_version
+                number_ok = False
                 if _blank(number):
                     _add(errors, np, 'This field is required.')
                 else:
@@ -402,25 +416,53 @@ class ArchiveImportService:
                         # Case/whitespace-insensitive, matching MySQL's
                         # collation on the unique column.
                         key_ = number.strip().casefold()
-                        if key_ in seen:
+                        seen_key = (key_, version)
+                        if seen_key in seen:
                             _add(errors, np, f'{label.capitalize()} number {number} appears '
                                              f'more than once in this payload.')
                         elif taken(number):
                             _add(errors, np, f'An {label} numbered {number} already exists.')
-                        seen.add(key_)
+                        else:
+                            number_ok = True
+                        seen.add(seen_key)
                 status = row.get('status')
                 if _blank(status):
                     _add(errors, f'{p}.status', 'This field is required.')
                 elif status not in allowed:
                     _add(errors, f'{p}.status',
                          f'An archived {label} must be {" or ".join(allowed)}, not {status!r}.')
-                elif status == Estimate.STATUS_ACCEPTED and key == 'estimates':
-                    accepted += 1
+                elif key == 'estimates':
+                    if status == Estimate.STATUS_ACCEPTED:
+                        accepted += 1
+                    if number_ok and version_ok:
+                        chains.setdefault(key_, []).append((i, version, status))
                 for f in date_fields:
                     S._coerce_dt(row.get(f), f'{p}.{f}', errors)
                 S._validate_lines(row, p, errors)
+            for members in chains.values():
+                S._validate_chain(members, errors)
             if accepted > 1:
                 _add(errors, 'estimates', 'At most one accepted estimate.')
+
+    @staticmethod
+    def _validate_chain(members, errors):
+        """Rows sharing an estimate number: versions 1..k, lower versions
+        superseded, the highest settled."""
+        from apps.estimates.models import Estimate
+        members = sorted(members, key=lambda m: m[1])
+        for pos, (i, version, _status) in enumerate(members, start=1):
+            if version != pos:
+                _add(errors, f'estimates[{i}].version',
+                     'Estimate versions must be contiguous from 1.')
+                return
+        *lower, (top_i, _top_v, top_status) = members
+        for i, _v, status in lower:
+            if status != Estimate.STATUS_SUPERSEDED:
+                _add(errors, f'estimates[{i}].status',
+                     'Lower versions of an estimate must be superseded.')
+        if top_status == Estimate.STATUS_SUPERSEDED:
+            _add(errors, f'estimates[{top_i}].status',
+                 'The latest version of an estimate must be accepted, rejected or expired.')
 
     @staticmethod
     def _validate_shipments(payload, errors):
@@ -595,12 +637,26 @@ class ArchiveImportService:
         from apps.estimates.models import Estimate, EstimateLineItem
         S = ArchiveImportService
         out = []
-        for e in rows:
-            dates = S._dates(e, ('created_date', 'sent_date', 'closed_date', 'expiration_date'))
+        fields = ('created_date', 'sent_date', 'closed_date', 'expiration_date')
+        ordered = sorted(rows, key=lambda r: (r['estimate_number'].strip().casefold(),
+                                              r.get('version', 1)))
+        previous = None
+        for n, e in enumerate(ordered):
+            dates = S._dates(e, fields)
             dates['created_date'] = dates['created_date'] or timezone.now()
+            version = e.get('version', 1)
+            parent = None
+            if (previous is not None and version > 1
+                    and previous.estimate_number.strip().casefold()
+                    == e['estimate_number'].strip().casefold()):
+                parent = previous
+            if e['status'] == Estimate.STATUS_SUPERSEDED and dates['closed_date'] is None:
+                successor = S._dates(ordered[n + 1], fields)['created_date'] if n + 1 < len(ordered) else None
+                dates['closed_date'] = successor or dates['created_date']
             est = Estimate.objects.create(
-                job=job, estimate_number=e['estimate_number'], version=1,
-                status=e['status'], **dates)
+                job=job, estimate_number=e['estimate_number'], version=version,
+                parent=parent, status=e['status'], **dates)
+            previous = est
             S._create_lines(EstimateLineItem, 'estimate', est, e.get('lines') or [])
             out.append(est)
         return out

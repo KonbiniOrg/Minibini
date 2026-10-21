@@ -380,6 +380,79 @@ class DocumentTests(ArchiveImportTestBase):
                              'estimates[0].estimate_number')
         self.assertEqual((Job.objects.count(), Estimate.objects.count()), counts)
 
+    def test_version_chain_creates_superseded_parents(self):
+        from apps.estimates.models import Estimate
+        created = (timezone.now() - timedelta(days=400)).replace(microsecond=0)
+        job = self.create(self.base('OLD-V1', estimates=[
+            {'estimate_number': 'EST-V', 'version': 1, 'status': 'superseded',
+             'created_date': created, 'lines': [{'description': 'a', 'qty': 1, 'price': 10}]},
+            {'estimate_number': 'EST-V', 'version': 2, 'status': 'superseded',
+             'created_date': created + timedelta(days=3), 'closed_date': created + timedelta(days=9),
+             'lines': [{'description': 'b', 'qty': 1, 'price': 20}]},
+            {'estimate_number': 'EST-V', 'version': 3, 'status': 'accepted',
+             'created_date': created + timedelta(days=10),
+             'lines': [{'description': 'c', 'qty': 1, 'price': 30}]},
+        ]))
+        v = {e.version: e for e in Estimate.objects.filter(job=job)}
+        self.assertEqual(set(v), {1, 2, 3})
+        self.assertEqual(v[1].status, Estimate.STATUS_SUPERSEDED)
+        self.assertEqual(v[2].status, Estimate.STATUS_SUPERSEDED)
+        self.assertEqual(v[3].status, Estimate.STATUS_ACCEPTED)
+        self.assertIsNone(v[1].parent)
+        self.assertEqual(v[2].parent, v[1])
+        self.assertEqual(v[3].parent, v[2])
+        # superseded without closed_date defaults to the successor's created_date
+        self.assertEqual(v[1].closed_date, v[2].created_date)
+        self.assertEqual(v[2].closed_date, created + timedelta(days=9))
+        self.assertEqual(v[3].estimatelineitem_set.count(), 1)
+
+    def test_version_chain_validation(self):
+        def chain(*rows):
+            return [{'estimate_number': 'EST-X', **r} for r in rows]
+        # non-contiguous
+        self.assertErrorKeys(self.base('OLD-V2', estimates=chain(
+            {'version': 1, 'status': 'superseded'}, {'version': 3, 'status': 'accepted'})),
+            'estimates[1].version')
+        # duplicate (number, version)
+        self.assertErrorKeys(self.base('OLD-V3', estimates=chain(
+            {'version': 1, 'status': 'superseded'}, {'version': 1, 'status': 'accepted'})),
+            'estimates[1].estimate_number')
+        # lower version not superseded
+        self.assertErrorKeys(self.base('OLD-V4', estimates=chain(
+            {'version': 1, 'status': 'rejected'}, {'version': 2, 'status': 'accepted'})),
+            'estimates[0].status')
+        # highest version superseded
+        self.assertErrorKeys(self.base('OLD-V5', estimates=chain(
+            {'version': 1, 'status': 'superseded'}, {'version': 2, 'status': 'superseded'})),
+            'estimates[1].status')
+        # a lone version-1 estimate may not be superseded
+        self.assertErrorKeys(self.base('OLD-V6', estimates=chain(
+            {'version': 1, 'status': 'superseded'})), 'estimates[0].status')
+        # bad version values
+        self.assertErrorKeys(self.base('OLD-V7', estimates=chain(
+            {'version': 0, 'status': 'accepted'})), 'estimates[0].version')
+        self.assertErrorKeys(self.base('OLD-V8', estimates=chain(
+            {'version': 'two', 'status': 'accepted'})), 'estimates[0].version')
+        self.assertEqual(Job.objects.filter(job_number__startswith='OLD-V').count(), 0)
+
+    def test_number_taken_at_any_version_is_refused(self):
+        from apps.estimates.models import Estimate
+        live = Job.objects.create(job_number='LIVE-V', contact=self.contact)
+        Estimate.objects.create(job=live, estimate_number='EST-T', version=2)
+        self.assertErrorKeys(self.base('OLD-V9', estimates=[
+            {'estimate_number': 'EST-T', 'status': 'expired'}]), 'estimates[0].estimate_number')
+
+    def test_two_chains_in_one_payload(self):
+        from apps.estimates.models import Estimate
+        job = self.create(self.base('OLD-V10', estimates=[
+            {'estimate_number': 'EST-P', 'version': 1, 'status': 'superseded'},
+            {'estimate_number': 'EST-Q', 'version': 1, 'status': 'rejected'},
+            {'estimate_number': 'EST-P', 'version': 2, 'status': 'accepted'},
+        ]))
+        p2 = Estimate.objects.get(job=job, estimate_number='EST-P', version=2)
+        self.assertEqual(p2.parent.estimate_number, 'EST-P')
+        self.assertIsNone(Estimate.objects.get(job=job, estimate_number='EST-Q').parent)
+
     def test_invoices_created_settled(self):
         from apps.invoicing.models import Invoice, InvoiceLineItemSource
         sources_before = InvoiceLineItemSource.objects.count()
