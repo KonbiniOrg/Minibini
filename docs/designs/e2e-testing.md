@@ -37,6 +37,15 @@ FLUSH PRIVILEGES;
 (Docker/remote-MySQL developers: repeat the GRANT for
 `'minibini_user'@'%'` to match however their dev grant is written.)
 
+Only if you run several checkouts in parallel with `MINIBINI_SLOT` (§4.1),
+also grant the per-slot e2e schemas and Django test DBs, once:
+
+```sql
+GRANT ALL PRIVILEGES ON `minibini\_e2e\_s%`.* TO 'minibini_user'@'localhost';
+GRANT ALL PRIVILEGES ON `test\_minibini\_db\_s%`.* TO 'minibini_user'@'localhost';
+FLUSH PRIVILEGES;
+```
+
 No Django settings change is needed: `minibini/settings.py` reads
 `DATABASE_NAME` from the environment, so every E2E invocation of Django
 runs with `DATABASE_NAME=minibini_e2e` — the dev database is untouchable
@@ -63,7 +72,9 @@ e2e/
 ├── playwright.config.js    # webServer, projects, baseURL, trace settings
 ├── seed/
 │   ├── prepare_seed.py     # fixtures/playwright/seed.json → rebased.json
-│   ├── reset_db.sh         # drop/create minibini_e2e, migrate, load rebased seed
+│   ├── reset_db.sh         # drop/create the e2e DB, migrate, load rebased seed
+│   ├── ensure_db.sh        # create the e2e DB if missing (before Django starts; §4.1)
+│   ├── db_guard.sh         # DATABASE_NAME guard sourced by both scripts above
 │   └── global-setup.js     # Playwright globalSetup — runs reset_db.sh unless PW_KEEP_DB
 ├── setup/
 │   └── auth.setup.js       # logs in each persona, saves storageState
@@ -71,12 +82,13 @@ e2e/
 │   ├── personas.js         # persona → storageState path + user facts
 │   └── api.js              # persona-authenticated APIRequestContexts (CSRF wired)
 ├── lib/                    # shared spec helpers, one file per gesture
+│   ├── slot.js             # MINIBINI_SLOT → e2e DB name, ports, baseURL (§4.1)
 │   └── bundling.js         # first occupant (2026-09-19) — drive the Tasks-page
 │                            # "select atoms, open BundleModal" gesture; see below
 ├── specs/
 │   ├── smoke.spec.js       # platform smoke test
 │   └── <flow-doc>/…        # a directory per docs/ui-flows/ doc (see below)
-├── .auth/                  # storageState files   (gitignored)
+├── .auth/                  # storageState files; .auth/s<N>/ per slot (gitignored)
 ├── test-results/           #                      (gitignored)
 └── playwright-report/      #                      (gitignored)
 
@@ -293,10 +305,37 @@ npx playwright show-trace test-results/…/trace.zip   # replay a failure
 ```
 
 `reset_db.sh` can also be run by hand from any cwd:
-`DATABASE_NAME=minibini_e2e bash e2e/seed/reset_db.sh`.
+`DATABASE_NAME=minibini_e2e bash e2e/seed/reset_db.sh` (or
+`minibini_e2e_sN` for a slotted checkout, §4.1).
 
 Failures keep a trace and screenshot (`trace: 'retain-on-failure'`,
 `screenshot: 'only-on-failure'`) under `e2e/test-results/`.
+
+### 4.1 Parallel checkouts (`MINIBINI_SLOT`)
+
+Several checkouts (jj workspaces or git worktrees) can run tests at the
+same time if each has a distinct `MINIBINI_SLOT` digit, 1–9. Unset means
+the shared defaults above, so a single checkout needs nothing.
+
+| | unset | `MINIBINI_SLOT=N` |
+|---|---|---|
+| Django test DB | `test_minibini_db` | `test_minibini_db_sN` |
+| E2E DB | `minibini_e2e` | `minibini_e2e_sN` |
+| E2E Django / Vite ports | 8100 / 9100 | 81N0 / 91N0 |
+
+The mapping lives in `e2e/lib/slot.js` (Playwright side) and
+`minibini/settings.py` (test DB name, plus the slot's Vite origin in
+`CSRF_TRUSTED_ORIGINS`). Set the slot per checkout in its untracked
+`.claude/settings.local.json` (`{"env": {"MINIBINI_SLOT": "N"}}`) so
+Claude sessions pick it up; `.claude/hooks/check-django-test.sh` reads the
+same file and blocks a test run only when another run is live in a
+checkout with the **same** slot. Needs the one-time GRANTs in §1.1.
+A new slot's e2e DB doesn't exist on its first run, and Playwright starts
+the web servers before globalSetup's reset, so the Django webServer
+command runs `seed/ensure_db.sh` (create-if-missing) first. Saved persona
+sessions live in `.auth/s<N>/`, since a session belongs to one slot's DB.
+Specs must take URLs from `baseURL` (or `lib/slot.js`), never a literal
+`localhost:9100`.
 
 ## 5. Keeping it current
 

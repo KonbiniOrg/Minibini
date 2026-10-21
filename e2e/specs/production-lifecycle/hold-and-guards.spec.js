@@ -4,6 +4,7 @@ import { expect, test } from '@playwright/test';
 import { apiAs, closeOpenSession } from '../../fixtures/api.js';
 import { findStartableTask, loadBackdrop, pendingTasks } from '../../fixtures/lookups.js';
 import { personas } from '../../fixtures/personas.js';
+import { baseURL } from '../../lib/slot.js';
 
 let jobs;
 const used = new Set();
@@ -41,7 +42,7 @@ test.describe('manager side', () => {
     const workerPage = await workerCtx.newPage();
 
     await test.step('Hold is rejected while a timeslip on the job is open', async () => {
-      await workerPage.goto(`http://localhost:9100/#/jobs/${job.job_id}/tasks/${task.task_id}`);
+      await workerPage.goto(`${baseURL}/#/jobs/${job.job_id}/tasks/${task.task_id}`);
       await workerPage.getByRole('button', { name: 'Start Work' }).click();
       await expect(workerPage.getByText('Working on:')).toBeVisible();
 
@@ -68,7 +69,7 @@ test.describe('manager side', () => {
     });
 
     await test.step('While held: no new timeslips, work affordances hidden', async () => {
-      await workerPage.goto(`http://localhost:9100/#/jobs/${job.job_id}/tasks/${other.task_id}`);
+      await workerPage.goto(`${baseURL}/#/jobs/${job.job_id}/tasks/${other.task_id}`);
       await expect(workerPage.getByRole('button', { name: 'Start Work' })).toHaveCount(0);
       const api = await apiAs(personas.worker);
       const resp = await api.postRaw(`/api/tasks/${other.task_id}/start-work/`, {});
@@ -85,7 +86,7 @@ test.describe('manager side', () => {
       expect((await jobDetail(job.job_id)).status).toBe('in_progress');
       // Same-fragment goto doesn't renavigate a hash router — force a reload
       // so the page re-fetches the released job.
-      await workerPage.goto(`http://localhost:9100/#/jobs/${job.job_id}/tasks/${other.task_id}`);
+      await workerPage.goto(`${baseURL}/#/jobs/${job.job_id}/tasks/${other.task_id}`);
       await workerPage.reload();
       await expect(workerPage.getByRole('button', { name: 'Start Work' })).toBeVisible();
     });
