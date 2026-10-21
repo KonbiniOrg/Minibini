@@ -1441,7 +1441,10 @@ def assign_project_managers(c):
         return
     jobs = sorted((f for f in c.fixture_data if f['model'] == 'jobs.job'),
                   key=lambda f: f['pk'])
+    archived = c.archived_job_pks
     for f in jobs:
+        if f['pk'] in archived:
+            continue  # archived jobs carry only translated data (spec §6)
         if f['fields'].get('status') == 'draft':
             continue
         f['fields']['project_manager'] = random.choice(pool)
@@ -1954,9 +1957,12 @@ def build_synthetic_estimate_sources(c):
         for f in c.fixture_data
         if f['model'] == 'estimates.estimatelineitemsource'
     }
+    archived = c.archived_job_pks
     tasks_by_job = {}
     for f in c.fixture_data:
         if f['model'] == 'jobs.task' and f['pk'] not in claimed_tasks:
+            if f['fields']['job'] in archived:
+                continue  # archived jobs carry only translated data (spec §6)
             tasks_by_job.setdefault(f['fields']['job'], []).append(f)
 
     est_to_job = {
@@ -1980,6 +1986,8 @@ def build_synthetic_estimate_sources(c):
             # (RM 2026-08-13 — reactivatable via unexpire).
             continue
         job_pk = est_to_job.get(f['fields']['estimate'])
+        if job_pk in archived:
+            continue  # archived jobs carry only translated data (spec §6)
         if job_pk is not None:
             lines_by_job.setdefault(job_pk, []).append(f)
 
@@ -2051,6 +2059,8 @@ def build_checklist_declines(c):
         est_pk = fields['estimate']
         if est_status.get(est_pk) != 'accepted':
             continue
+        if est_job.get(est_pk) in c.archived_job_pks:
+            continue  # archived jobs carry only translated data (spec §6)
         if job_status.get(est_job.get(est_pk)) not in _APPROVED_OR_BEYOND:
             continue
         if f['pk'] in sourced_lines:
@@ -2121,6 +2131,8 @@ def build_invoice_agreement_refs(c):
         base_ref = inv_base.get(inv_pk)
         if base_ref is None or base_ref not in desc_maps:
             continue
+        if inv_meta[inv_pk].get('job') in c.archived_job_pks:
+            continue  # archived jobs carry only translated data (spec §6)
         if inv_meta[inv_pk].get('status') == 'cancelled':
             continue
         desc = (f['fields'].get('description') or '').strip()
@@ -2195,6 +2207,8 @@ def build_invoice_line_item_sources(c):
 
     # Deterministic iteration: jobs by pk, invoices by pk, lines by line_number.
     for job_pk in sorted(invoices_by_job):
+        if job_pk in c.archived_job_pks:
+            continue  # archived jobs carry only translated data (spec §6)
         task_pool = sorted(tasks_by_job.get(job_pk, []))
         material_pool = sorted(materials_by_job.get(job_pk, []))
         invs = sorted(invoices_by_job[job_pk], key=lambda f: f['pk'])
@@ -2276,6 +2290,8 @@ def build_shipments(c):
     for base_ref, job_info in c.jobs.items():
         job_pk = job_info['job_pk']
         card = job_info['card']
+        if job_pk in c.archived_job_pks:
+            continue  # archived jobs carry only translated data (spec §6)
         job_fields = job_fixtures.get(job_pk)
         if job_fields is None:
             continue
@@ -2536,6 +2552,8 @@ def build_bleps_and_shifts(c):
 
     for counter, tf in enumerate(complete):
         fields = tf['fields']
+        if fields['job'] in c.archived_job_pks:
+            continue  # archived jobs carry only translated data (spec §6)
 
         # entered_qty complete tasks bill on actual_qty (no bleps drive it), so
         # invent one with the thirds rule vs est_qty (fallback base 1). Set for
@@ -2655,6 +2673,7 @@ def assign_current_work(c):
     in_progress_jobs = {
         f['pk'] for f in c.fixture_data
         if f['model'] == 'jobs.job' and f['fields'].get('status') == 'in_progress'
+        and f['pk'] not in c.archived_job_pks  # archived jobs carry only translated data (spec §6)
     }
     candidates = sorted(
         (f for f in c.fixture_data
@@ -2897,6 +2916,8 @@ def build_purchasing(c):
     materials_by_job = defaultdict(list)
     for f in c.fixture_data:
         if f['model'] == 'inventory.material':
+            if f['fields']['job'] in c.archived_job_pks:
+                continue  # archived jobs carry only translated data (spec §6)
             materials_by_job[f['fields']['job']].append(f['fields'])
 
     base_by_jobpk = {jp: base for base, jp in c.job_map.items()}

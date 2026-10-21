@@ -3289,3 +3289,243 @@ class ArchiveOldJobsTest(unittest.TestCase):
         self.assertEqual(
             build.archive_cutoff(datetime(2026, 10, 21, 12, tzinfo=timezone.utc)),
             datetime(2026, 4, 21, 12, tzinfo=timezone.utc))
+
+
+class ArchivedJobsDownstreamSkipTest(unittest.TestCase):
+    """Every builder that runs after archive_old_jobs leaves archived jobs
+    alone (spec §6) while a twin live job in the same converter is handled
+    as before. Dataset-free synthetic state."""
+
+    def _c(self):
+        c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
+        c.jobs = {}
+        c.job_map = {}
+        c.rotation_user_pks = [1, 2, 3]
+        c.user_by_username = {'u1': 1, 'u2': 2, 'u3': 3}
+        c._pk_counters['core.user'] = 3
+        return c
+
+    def _job(self, c, status, archived=False, checklist='', completed=None):
+        pk = c.next_pk('jobs.job')
+        c.add_fixture('jobs.job', pk, {
+            'job_number': f'JOB{pk}', 'name': 'j', 'contact': 1,
+            'status': 'archived' if archived else status,
+            'created_date': '2026-01-01T00:00:00+00:00',
+            'start_date': '2026-01-01T00:00:00+00:00', 'due_date': None,
+            'completed_date': completed, 'project_manager': None,
+            'customer_po_number': '', 'description': '', 'accent_color': '#f97066',
+        })
+        c.jobs[f'BASE{pk}'] = {'job_pk': pk, 'card': {'Checklist': checklist},
+                               'estimate_rows': [], 'primary_ref': f'BASE{pk}'}
+        c.job_map[f'BASE{pk}'] = pk
+        if archived:
+            c.archived_job_pks.add(pk)
+        return pk
+
+    def _task(self, c, job, status='complete', **over):
+        pk = c.next_pk('jobs.task')
+        fields = {
+            'job': job, 'name': f't{pk}', 'status': status,
+            'qty_source': 'entered_qty', 'est_qty': '2.00',
+            'est_worker_time': '01:00:00', 'actual_qty': None,
+            'assignee': None, 'worker_queue': None, 'sort_order': 1,
+        }
+        fields.update(over)
+        c.add_fixture('jobs.task', pk, fields)
+        return pk
+
+    def _m(self, c, model):
+        return [f for f in c.fixture_data if f['model'] == model]
+
+    def _fields(self, c, model, pk):
+        return next(f['fields'] for f in c.fixture_data
+                    if f['model'] == model and f['pk'] == pk)
+
+    def test_project_manager_skips_archived(self):
+        import random as _random
+        _random.seed(1)
+        c = self._c()
+        arch = self._job(c, 'completed', archived=True)
+        live = self._job(c, 'in_progress')
+        build.assign_project_managers(c)
+        self.assertIsNone(self._fields(c, 'jobs.job', arch)['project_manager'])
+        self.assertIn(self._fields(c, 'jobs.job', live)['project_manager'], (1, 2, 3))
+
+    def test_shipments_skip_archived(self):
+        c = self._c()
+        arch = self._job(c, 'completed', archived=True,
+                         checklist='[X] Picked up/Delivered')
+        live = self._job(c, 'completed', checklist='[X] Picked up/Delivered',
+                         completed='2026-05-01T00:00:00+00:00')
+        for jp in (arch, live):
+            dp = c.next_pk('deliverables.deliverable')
+            c.add_fixture('deliverables.deliverable', dp, {
+                'job': jp, 'description': 'Widget', 'qty_ordered': '1.00'})
+        build.build_shipments(c)
+        ships = self._m(c, 'deliverables.shipment')
+        self.assertEqual([s['fields']['job'] for s in ships], [live])
+
+    def test_bleps_skip_archived(self):
+        c = self._c()
+        arch = self._job(c, 'completed', archived=True,
+                         completed='2026-02-05T00:00:00+00:00')
+        live = self._job(c, 'in_progress')
+        at = self._task(c, arch)
+        lt = self._task(c, live)
+        build.build_bleps_and_shifts(c)
+        self.assertEqual([b['fields']['task'] for b in self._m(c, 'jobs.blep')],
+                         [lt])
+        self.assertIsNone(self._fields(c, 'jobs.task', at)['actual_qty'])
+        self.assertIsNone(self._fields(c, 'jobs.task', at)['assignee'])
+        self.assertIsNotNone(self._fields(c, 'jobs.task', lt)['actual_qty'])
+
+    def test_current_work_skips_archived(self):
+        import random as _random
+        _random.seed(1)
+        c = self._c()
+        arch = self._job(c, 'in_progress', archived=True)
+        live = self._job(c, 'in_progress')
+        at = self._task(c, arch, 'pending')
+        lt = self._task(c, live, 'pending')
+        build.assign_current_work(c)
+        self.assertIsNone(self._fields(c, 'jobs.task', at)['assignee'])
+        self.assertIn(self._fields(c, 'jobs.task', lt)['assignee'], (1, 2, 3))
+
+    def test_purchasing_skips_archived(self):
+        c = self._c()
+        arch = self._job(c, 'in_progress', archived=True)
+        live = self._job(c, 'in_progress')
+        ip = c.next_pk('inventory.inventoryitem')
+        c.add_fixture('inventory.inventoryitem', ip, {
+            'code': 'X', 'qty_on_hand': '0.00', 'qty_sold': '0.00'})
+        for jp in (arch, live):
+            # Task-linked to a complete task: the live one counts as sold; the
+            # archived one would too, were it not skipped.
+            tp = self._task(c, jp)
+            mp = c.next_pk('inventory.material')
+            c.add_fixture('inventory.material', mp, {
+                'job': jp, 'task': tp, 'inventory_item': ip,
+                'quantity': '3.00', 'consumption_state': 'consumed',
+                'po_line_item': None})
+        build.build_purchasing(c)
+        # Only the live twin's material moves qty_sold.
+        self.assertEqual(self._fields(c, 'inventory.inventoryitem', ip)['qty_sold'],
+                         '3.00')
+        self.assertEqual(self._fields(c, 'inventory.inventoryitem', ip)['qty_on_hand'],
+                         '0.00')
+        self.assertEqual(self._m(c, 'inventory.earmark'), [])
+
+    def test_purchasing_skips_archived_pending_material(self):
+        # A pending archived material on an earmark-eligible job must not
+        # earmark or raise QOH; the live twin earmarks.
+        c = self._c()
+        arch = self._job(c, 'approved', archived=True)
+        live = self._job(c, 'approved')
+        ip = c.next_pk('inventory.inventoryitem')
+        c.add_fixture('inventory.inventoryitem', ip, {
+            'code': 'X', 'qty_on_hand': '0.00', 'qty_sold': '0.00'})
+        for jp in (arch, live):
+            mp = c.next_pk('inventory.material')
+            c.add_fixture('inventory.material', mp, {
+                'job': jp, 'task': None, 'inventory_item': ip,
+                'quantity': '3.00', 'consumption_state': 'pending',
+                'po_line_item': None})
+        build.build_purchasing(c)
+        self.assertEqual([e['fields']['job'] for e in self._m(c, 'inventory.earmark')],
+                         [live])
+        self.assertEqual(self._fields(c, 'inventory.inventoryitem', ip)['qty_on_hand'],
+                         '3.00')
+
+    def _invoice_with_line(self, c, job, kind='task', desc='cut'):
+        ip = c.next_pk('invoicing.invoice')
+        c.add_fixture('invoicing.invoice', ip, {'job': job, 'status': 'paid'})
+        lp = c.next_pk('invoicing.invoicelineitem')
+        c.add_fixture('invoicing.invoicelineitem', lp, {
+            'invoice': ip, 'line_number': 1, 'description': desc})
+        c.invoice_line_kinds[lp] = kind
+        return ip, lp
+
+    def test_invoice_sources_skip_archived(self):
+        c = self._c()
+        arch = self._job(c, 'completed', archived=True)
+        live = self._job(c, 'completed')
+        self._task(c, arch)
+        lt = self._task(c, live)
+        self._invoice_with_line(c, arch)
+        _, live_line = self._invoice_with_line(c, live)
+        build.build_invoice_line_item_sources(c)
+        srcs = self._m(c, 'invoicing.invoicelineitemsource')
+        self.assertEqual(len(srcs), 1)
+        self.assertEqual(srcs[0]['fields']['invoice_line_item'], live_line)
+        self.assertEqual(srcs[0]['fields']['source_pk'], lt)
+
+    def _agreement_state(self, c, job):
+        base = f'BASE{job}'
+        ep = c.next_pk('estimates.estimate')
+        c.add_fixture('estimates.estimate', ep, {
+            'job': job, 'status': 'accepted', 'version': 1})
+        c.estimates[base] = [{'est_pk': ep, 'version': 1}]
+        lp = c.next_pk('estimates.estimatelineitem')
+        c.add_fixture('estimates.estimatelineitem', lp, {
+            'estimate': ep, 'line_number': 1, 'description': 'cut'})
+        c.line_items[ep] = [{'line_item_pk': lp, 'description': 'cut'}]
+        return lp
+
+    def test_agreement_refs_skip_archived(self):
+        c = self._c()
+        arch = self._job(c, 'completed', archived=True)
+        live = self._job(c, 'completed')
+        self._agreement_state(c, arch)
+        live_est_line = self._agreement_state(c, live)
+        _, arch_line = self._invoice_with_line(c, arch)
+        _, live_line = self._invoice_with_line(c, live)
+        build.build_invoice_agreement_refs(c)
+        self.assertIsNone(
+            self._fields(c, 'invoicing.invoicelineitem', arch_line)
+            .get('agreement_estimate_line'))
+        self.assertEqual(
+            self._fields(c, 'invoicing.invoicelineitem', live_line)
+            .get('agreement_estimate_line'), live_est_line)
+
+    def _est_with_line(self, c, job, status='accepted'):
+        ep = c.next_pk('estimates.estimate')
+        c.add_fixture('estimates.estimate', ep, {
+            'job': job, 'status': status, 'version': 1})
+        lp = c.next_pk('estimates.estimatelineitem')
+        c.add_fixture('estimates.estimatelineitem', lp, {
+            'estimate': ep, 'line_number': 1, 'description': 'cut',
+            'adjustment_service': None, 'accounting_category': None,
+            'service_item': None, 'inventory_item': None, 'is_material': False})
+        return lp
+
+    def test_synthetic_sources_skip_archived(self):
+        c = self._c()
+        arch = self._job(c, 'archived', archived=True)
+        live = self._job(c, 'in_progress')
+        self._est_with_line(c, arch)
+        live_line = self._est_with_line(c, live)
+        self._task(c, arch)
+        lt = self._task(c, live)
+        build.build_synthetic_estimate_sources(c)
+        rows = self._m(c, 'estimates.estimatelineitemsource')
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['fields']['estimate_line_item'], live_line)
+        self.assertEqual(rows[0]['fields']['source_pk'], lt)
+
+    def test_checklist_declines_skip_archived(self):
+        c = self._c()
+        # An archived job whose (unreset) status would otherwise qualify.
+        arch = self._job(c, 'completed', archived=True)
+        live = self._job(c, 'completed')
+        arch_line = self._est_with_line(c, arch)
+        live_line = self._est_with_line(c, live)
+        # Status literal is 'archived' on the job row; declines must still
+        # skip it explicitly, so also check against a qualifying status.
+        self._fields(c, 'jobs.job', arch)['status'] = 'completed'
+        build.build_checklist_declines(c)
+        self.assertFalse(
+            self._fields(c, 'estimates.estimatelineitem', arch_line)
+            .get('work_declined', False))
+        self.assertTrue(
+            self._fields(c, 'estimates.estimatelineitem', live_line)
+            .get('work_declined'))

@@ -147,6 +147,9 @@ class NealsDataConverter:
         build.assign_est_quantities(self)  # real-task est_qty heuristic (needs worker times)
         build.build_invoices(self)
         reconcile.reconcile(self)
+        # After reconcile (final statuses/dates), before every builder that
+        # would reference the rows it strips (shipments, purchasing, history).
+        build.archive_old_jobs(self, build.archive_cutoff(self.now))
         build.assign_project_managers(self)  # after reconcile: needs final job status
         build.build_shipments(self)   # after reconcile: needs final job dates
         build.build_bleps_and_shifts(self)  # after reconcile: needs final task status/dates
@@ -180,8 +183,10 @@ class NealsDataConverter:
 
     def _print_summary(self):
         from collections import Counter
+        from nealsdata.converter import build
         c = self
         counts = Counter(row['model'] for row in self.fixture_data)
         for model, n in sorted(counts.items()):
             print(f'  {n:6} {model}')
+        print(f'  {len(c.archived_job_pks)} jobs archived (completed/rejected on or before {build.archive_cutoff(c.now):%Y-%m-%d})')
         print(f'  {c.fake_deliverable_count} jobs got a synthetic \'Fake Deliverable\' (review these)')
