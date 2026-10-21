@@ -289,9 +289,9 @@
   /* ── Readability pass (2026-10-21), scoped to this table ───────────────────
      Shared pieces (MaterialRow, TaskActivityIndicator) are adjusted here, not
      in their own files, because they also render in other views. Uses the
-     inert tokens in app.css. Rules: one body size, one secondary size, one
-     muted grey that passes AA on the yellow bands, bold only in headers,
-     tags are borderless pills and buttons are bordered rectangles. */
+     inert tokens in app.css. Rules: one text size (14px), one muted grey that
+     passes AA on the yellow bands, bold only in headers, tags are outlined
+     pills and buttons are bordered rectangles (shadcn outline/sm). */
   /* Inter in this table only: much narrower than the page's Verdana, so cells
      wrap less; buttons inherit it (font-family: inherit below). */
   .task-tree-table { color: var(--text-fg); font-family: var(--font-sans); }
