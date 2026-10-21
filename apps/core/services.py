@@ -588,7 +588,7 @@ class EmailService:
             'job': (
                 Job,
                 'job_id',
-                {Job.STATUS_COMPLETED, Job.STATUS_REJECTED, Job.STATUS_CANCELLED},
+                Job.CLOSED_STATUSES,
             ),
             'purchaseorder': (
                 PurchaseOrder,

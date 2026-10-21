@@ -1426,8 +1426,7 @@ class TaskService:
             raise NotFoundError(f'Task {task_pk} not found')
         _assert_job_not_frozen(task.job, 'delete this task')
         _assert_job_not_on_hold(task.job, 'delete this task')
-        if task.job.status in (Job.STATUS_COMPLETED, Job.STATUS_CANCELLED,
-                               Job.STATUS_REJECTED):
+        if task.job.status in Job.CLOSED_STATUSES:
             raise ValidationError(
                 'Cannot delete a task on a closed job.'
             )
@@ -2166,8 +2165,7 @@ class BoardService:
 
         # Closed: terminal states within retention
         closed_jobs = list(Job.objects.filter(
-            status__in=[Job.STATUS_COMPLETED, Job.STATUS_REJECTED,
-                        Job.STATUS_CANCELLED],
+            status__in=Job.CLOSED_STATUSES,
             completed_date__gte=cutoff,
         ).select_related('contact', 'project_manager').order_by('-completed_date'))
         closed_deposit_states = BoardService._deposit_states(
@@ -2388,8 +2386,7 @@ class BoardService:
         cutoff = timezone.now() - timedelta(days=retention_days)
 
         closed_jobs = list(Job.objects.filter(
-            status__in=[Job.STATUS_COMPLETED, Job.STATUS_REJECTED,
-                        Job.STATUS_CANCELLED],
+            status__in=Job.CLOSED_STATUSES,
             completed_date__gte=cutoff,
         ).select_related('contact', 'project_manager').order_by('-completed_date'))
         deposit_states = BoardService._deposit_states(
@@ -2444,7 +2441,7 @@ class BoardService:
             'status': job.status,
             # A quote-stage job appearing on a work surface is exceptional —
             # the flag drives its distinct card/chip treatment.
-            'pre_approval': job.status in (Job.STATUS_DRAFT, Job.STATUS_SUBMITTED),
+            'pre_approval': job.status in Job.PRE_APPROVAL_STATUSES,
             'on_hold': job.on_hold,
             'hold_reason': job.hold_reason,
             'sub_status': BoardService.compute_sub_status(job),

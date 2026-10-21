@@ -91,6 +91,19 @@ class CleanupTempEmailsCommandTest(TestCase):
 
         self.assertTrue(TempEmail.objects.filter(email_record=rec).exists())
 
+    def test_linked_archived_job_counts_as_final(self):
+        contact = self._make_contact()
+        job = Job.objects.create(
+            job_number='JOB-ARC', name='archived', status=Job.STATUS_ARCHIVED,
+            contact=contact,
+        )
+        self._record_status_change('job', job.pk, Job.STATUS_ARCHIVED, days_ago=120)
+        rec, _ = self._make_temp('linked-archived', 10, job=job)
+
+        call_command('cleanup_temp_emails')
+
+        self.assertFalse(TempEmail.objects.filter(email_record=rec).exists())
+
     def test_linked_completed_job_old_transition_purged(self):
         contact = self._make_contact()
         job = Job.objects.create(

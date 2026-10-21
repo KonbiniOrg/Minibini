@@ -892,7 +892,7 @@ class Command(BaseCommand):
         from apps.inventory.models import Earmark
 
         for em in Earmark.objects.select_related('job', 'inventory_item').all():
-            if em.job.status in (Job.STATUS_WORK_COMPLETE, Job.STATUS_COMPLETED, Job.STATUS_CANCELLED, Job.STATUS_REJECTED):
+            if em.job.status in Job.WORK_FROZEN_STATUSES:
                 self.warnings.append(
                     f'Earmark {em.pk}: {em.inventory_item.code} earmarked for '
                     f'job {em.job.job_number} which is "{em.job.status}"'

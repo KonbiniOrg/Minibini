@@ -78,7 +78,7 @@ class EstimateService:
         # a fresh estimate there would restart a negotiation the job already
         # skipped. Revisions of an existing tree go through revise_estimate,
         # not here.
-        if job.status not in (Job.STATUS_DRAFT, Job.STATUS_SUBMITTED):
+        if job.status not in Job.PRE_APPROVAL_STATUSES:
             raise ValidationError(
                 f'Cannot start an estimate for a job in status '
                 f'"{job.status}" — the job is past the estimating phase.'

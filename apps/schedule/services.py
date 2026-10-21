@@ -609,7 +609,7 @@ class ScheduleService:
             'job_number': getattr(task.job, 'job_number', '') or '',
             'job_name': getattr(task.job, 'name', '') or '',
             # Quote-stage work renders with a distinct treatment.
-            'pre_approval': task.job.status in (Job.STATUS_DRAFT, Job.STATUS_SUBMITTED),
+            'pre_approval': task.job.status in Job.PRE_APPROVAL_STATUSES,
             'name': task.name,
             'status': task.status,
             'blocked_reason': task.blocked_reason or '',

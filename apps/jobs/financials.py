@@ -280,8 +280,7 @@ def compute_customer_financials(jobs):
         invoiced += fin['invoiced']
         profit += fin['profit']
 
-    closed = {Job.STATUS_COMPLETED, Job.STATUS_REJECTED, Job.STATUS_CANCELLED}
-    open_jobs = sum(1 for j in jobs if j.status not in closed)
+    open_jobs = sum(1 for j in jobs if j.status not in Job.CLOSED_STATUSES)
 
     job_pks = [j.pk for j in jobs]
     unpaid = Invoice.objects.filter(
