@@ -27,28 +27,17 @@
     return list.length === items.length ? list : items;
   });
 
-  // A dragged table row (or <tbody>) is lifted out of the table while it
-  // moves, so its cells stop sharing the table's column widths and rewrap.
-  // Pin each cell to its width at pick-up; release on drop.
-  let pinned = [];
-  function pinCellWidths(el) {
-    pinned = el ? Array.from(el.querySelectorAll(':scope > td, :scope > tr > td')) : [];
-    for (const td of pinned) {
-      const w = `${td.getBoundingClientRect().width}px`;
-      td.style.width = w; td.style.minWidth = w; td.style.maxWidth = w;
-    }
-  }
-  function releaseCellWidths() {
-    for (const td of pinned) { td.style.width = ''; td.style.minWidth = ''; td.style.maxWidth = ''; }
-    pinned = [];
-  }
-
-  function handleDragStart(event) {
-    pinCellWidths(event.operation?.source?.element);
+  // Pointer drags slide the item in place ('move') instead of lifting it into a
+  // floating layer: a lifted table group leaves the table, its cells resize to
+  // their content, and long text rewraps mid-drag. Keyboard sorting needs the
+  // default (lifted) feedback, so it keeps it.
+  function handleBeforeDragStart(event) {
+    const source = event.operation?.source;
+    if (!source) return;
+    source.feedback = event.operation.activatorEvent instanceof KeyboardEvent ? 'default' : 'move';
   }
 
   function handleDragEnd(event) {
-    releaseCellWidths();
     const next = nextOrder(ordered.map(getId), event);
     if (!next) return;
     localOrder = next;
@@ -73,7 +62,7 @@
       // @ts-expect-error @dnd-kit/abstract types (as in the dashboard-01 block)
       RestrictToVerticalAxis,
     ]}
-    onDragStart={handleDragStart}
+    onBeforeDragStart={handleBeforeDragStart}
     onDragEnd={handleDragEnd}
   >
     {#each ordered as it, index (getId(it))}
