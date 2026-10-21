@@ -113,7 +113,7 @@ defaults to the current UTC time, stored as `c.now`), so the same inputs
 produce different `archived` sets as time passes. Tests therefore assert
 the rule, not fixed counts, and inject `now` where they need a known
 boundary. With the real clock and the default `--limit 100` the regenerated
-dataset currently holds very few archived jobs (one, as of 2026-10-21):
+dataset currently holds very few archived jobs:
 the spine is the newest 100 cards, and old cards compete for those same
 slots by design. Raise `--limit` to get more archives.
 
@@ -278,8 +278,9 @@ slots by design. Raise `--limit` to get more archives.
     the consume event.)
 
 The RNG is seeded with a fixed constant at the top of `convert()` so the
-invented worker times and blep placement are byte-stable across regenerations
-unless the inputs change.
+invented worker times and blep placement are stable across regenerations
+unless the inputs change, for a given run clock (the output as a whole is not
+byte-stable across days; see the §2 note on the archive cutoff).
 
 ## 4. Building Tasks, Materials, and Deliverables
 
@@ -605,7 +606,8 @@ archives on converted data. What that means per record:
   `Fake Deliverable` is removed (the verbose count is decremented).
 
 The nine downstream builders that would otherwise add live-job data each
-carry an `# archived jobs carry only translated data (spec §6)` guard
+carry an `# archived jobs carry only translated data (spec §6)` guard (the comment
+refers to the rule above: archived jobs keep only what the importer would write)
 (project managers, shipments, bleps and shifts, current work, purchasing,
 invoice line sources, agreement refs, synthetic estimate sources, checklist
 declines).
