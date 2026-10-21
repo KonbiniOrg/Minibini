@@ -12,6 +12,7 @@ from apps.estimates.models import (
 )
 from apps.invoicing.models import Invoice, InvoiceLineItem, InvoiceLineItemSource
 from apps.inventory.models import Material
+from apps.deliverables.models import Deliverable, Shipment, ShipmentItem
 from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
 from apps.purchasing.services import PurchaseOrderService
 
@@ -1013,3 +1014,85 @@ class ValidateDataPOReconciliationTest(TestCase):
         self._line(po)
         output = self._run()
         self.assertNotIn('final_price is set but PO is not reconciled', output)
+
+
+class ValidateDataArchivedJobsTest(TestCase):
+    """Archived jobs are read-only historical imports: tasks terminal,
+    invoices settled, no estimate required behind a shipment, and no date
+    expectations."""
+
+    def setUp(self):
+        self.ac = AccountingCategory.objects.create(name='Arc', code='ARCAC')
+        self.contact = Contact.objects.create(first_name='Ar', last_name='Chived')
+        self.rs = RateScheme.objects.create(
+            name='RS-Arc', algorithm=RateScheme.ELAPSED_TIME,
+            rate=Decimal('45.00'), unit_label='hour', accounting_category=self.ac,
+        )
+
+    def _run(self):
+        out = StringIO()
+        call_command('validate_data', stdout=out, stderr=out)
+        return out.getvalue()
+
+    def _archived(self, number):
+        return Job.objects.create(
+            job_number=number, contact=self.contact, status=Job.STATUS_ARCHIVED,
+        )
+
+    def _lines_for(self, output, needle):
+        return [l for l in output.splitlines() if needle in l]
+
+    def test_archived_job_without_dates_is_clean(self):
+        self._archived('J-ARC-001')
+        output = self._run()
+        self.assertEqual(self._lines_for(output, 'J-ARC-001'), [])
+
+    def test_archived_job_with_pending_task_is_an_error(self):
+        job = self._archived('J-ARC-002')
+        Task.objects.create(
+            name='Open', job=job, status=Task.STATUS_PENDING,
+            **_task_scheme_fields(self.rs),
+        )
+        lines = self._lines_for(self._run(), 'J-ARC-002')
+        self.assertTrue(lines)
+        self.assertIn('[ERROR]', lines[0])
+
+    def test_archived_job_with_open_invoice_is_an_error(self):
+        job = self._archived('J-ARC-003')
+        Invoice.objects.create(job=job, invoice_number='ARC-I1', status=Invoice.STATUS_OPEN)
+        lines = self._lines_for(self._run(), 'J-ARC-003')
+        self.assertTrue(lines)
+        self.assertIn('[ERROR]', lines[0])
+        self.assertIn('archived invoices must be paid or cancelled', lines[0])
+
+    def test_archived_job_with_settled_invoices_is_clean(self):
+        job = self._archived('J-ARC-004')
+        Invoice.objects.create(job=job, invoice_number='ARC-I2', status=Invoice.STATUS_PAID)
+        Invoice.objects.create(job=job, invoice_number='ARC-I3', status=Invoice.STATUS_CANCELLED)
+        self.assertEqual(self._lines_for(self._run(), 'J-ARC-004'), [])
+
+    def _shipment(self, job):
+        d = Deliverable.objects.create(
+            job=job, description='Widget', qty_ordered=Decimal('1'), units='ea',
+        )
+        s = Shipment.objects.create(
+            job=job, sequence=1, status=Shipment.STATUS_PICKED_UP,
+            picked_up_date=timezone.now(),
+        )
+        ShipmentItem.objects.create(shipment=s, deliverable=d, qty=Decimal('1'))
+        return s
+
+    def test_archived_shipment_without_accepted_estimate_is_not_a_warning(self):
+        s = self._shipment(self._archived('J-ARC-005'))
+        output = self._run()
+        self.assertEqual(
+            self._lines_for(output, f'Shipment {s.pk}: job'), [])
+
+    def test_live_shipment_without_accepted_estimate_still_warns(self):
+        job = Job.objects.create(job_number='J-ARC-006', contact=self.contact)
+        Job.objects.filter(pk=job.pk).update(status=Job.STATUS_APPROVED)
+        s = self._shipment(job)
+        output = self._run()
+        lines = self._lines_for(output, f'Shipment {s.pk}: job')
+        self.assertTrue(lines)
+        self.assertIn('no accepted estimate', lines[0])
