@@ -106,6 +106,17 @@ Tests load it into the auto-created test DB via
 service items, manual shifts — live in separate RM-managed fixture files
 loaded after the dataset; they are not the converter's concern.)
 
+**The output is not byte-stable across days.** The archive rule (§4,
+"Archived jobs") compares each job's `completed_date` to a cutoff of six
+calendar months before the run's clock (`NealsDataConverter(..., now=None)`
+defaults to the current UTC time, stored as `c.now`), so the same inputs
+produce different `archived` sets as time passes. Tests therefore assert
+the rule, not fixed counts, and inject `now` where they need a known
+boundary. With the real clock and the default `--limit 100` the regenerated
+dataset currently holds very few archived jobs (one, as of 2026-10-21):
+the spine is the newest 100 cards, and old cards compete for those same
+slots by design. Raise `--limit` to get more archives.
+
 ## 3. Pipeline at a glance
 
 `orchestrator.NealsDataConverter.convert()` runs these phases in order:
@@ -116,9 +127,9 @@ loaded after the dataset; they are not the converter's concern.)
    non-archived active-stage matches plus the newest other matches (up to
    `--limit` total) become the Jobs we'll build (§2).
 3. **`build_seed`**: copies users, accounting categories and rate schemes
-   verbatim from `fixtures/large_datasets/nealseed.json`. (Fixed charges no
-   longer need a "Flat Fee" scheme — they become `jobs.fee` atoms in
-   `derive_atoms`.) **Assigns
+   verbatim from `fixtures/large_datasets/nealseed.json`. (Fixed charges need
+   no "Flat Fee" scheme — there is no Fee model; they stay plain estimate
+   document lines, see `derive_atoms`.) **Assigns
    explicit pks to the (otherwise pk-less) seed users** and builds
    `c.user_by_username`, the blep-rotation pool `c.rotation_user_pks` (every
    active seed user except `system`), and `c.scheme_fields_by_pk` (each
@@ -200,13 +211,14 @@ loaded after the dataset; they are not the converter's concern.)
    so the customer-portal URL (`/portal/?token=…`) works for seeded data.
    Estimate line items are **kept**; downstream atoms (Task, Material,
    Deliverable) are *copies*, not moves.
-9. **`derive_atoms`**: for each Job, builds Tasks, Fees, Materials, and
+9. **`derive_atoms`**: for each Job, builds Tasks, Materials, and
    Deliverables from the Kanban Checklist and/or the estimate line items.
    Atoms live **directly on the Job at every status** (draft included) —
    there is no plan layer (the app's job-owns-atoms model; EstWorksheet /
    PlanTask / PlanMaterial no longer exist). A task-classified estimate
-   line that bills as a fixed charge becomes a `jobs.fee` claimed by its
-   source line (`source_type='fee'`). Materials get a `unit_cost` and an
+   line that bills as a fixed charge emits no atom at all: it stays a plain
+   document line (price included, already emitted by `build_estimates`).
+   Materials get a `unit_cost` and an
    `inventory_item` link via fuzzy matching (§4). This is where most of
    the interesting logic lives — see §4.
 9a. **`assign_worker_times`**: gives every Task an invented per-task
@@ -227,6 +239,12 @@ loaded after the dataset; they are not the converter's concern.)
     invoice Date) and `qbo_amount_paid` on `paid` invoices (= that invoice's
     own line-item total; `draft` invoices stay null-dated — §8).
 11. **`reconcile`**: cross-model fixups in a fixed order — see §5.
+11a. **`archive_old_jobs`**: runs right after reconcile, before anything
+    else that reads final job state. Reshapes completed / rejected /
+    cancelled Jobs whose reconciled `completed_date` is on or before
+    `archive_cutoff(c.now)` (now minus `_ARCHIVE_AFTER_MONTHS = 6` calendar
+    months) into `archived` Jobs carrying only translated data — see "Archived
+    jobs" in §4. Every later builder skips them.
 12. **`build_shipments`**: runs *after* reconcile so it can see final Job
     status / dates. Builds a Shipment + ShipmentItems for any card whose
     checklist has a checked `Picked up/Delivered` line OR for any Job that
@@ -325,9 +343,9 @@ return, currently always an empty key list).
   always work); otherwise `_line_billing` infers the billing shape — a
   line with a time/quantity signal matches a seeded scheme by
   `(algorithm, rate)` (`_match_seed_scheme`), and a line with **no**
-  time/quantity signal is a **fixed charge → it becomes a `jobs.fee`
-  atom, not a Task** (`_emit_fee`; the retired flat-fee RateScheme is
-  gone).
+  time/quantity signal is a **fixed charge → it stays a plain document
+  line, no atom and no source row** (`_build_line_item_tasks`; there is no
+  Fee model and the retired flat-fee RateScheme is gone).
 
 If the named scheme isn't in nealseed, the closest match is used (see
 `_match_seed_scheme`). When you add new schemes to nealseed, this will pick
@@ -359,7 +377,7 @@ at the DB level and unenforced), but the dataset wants it populated:
   × pieces_per_hour)`, `pieces_per_hour` random 2–6 (min 1) — unless a source
   line set a qty. This also feeds the `entered_qty` actuals.
 
-(Fixed charges are `jobs.fee` atoms, not Tasks, so there is no flat-fee
+(Fixed charges are plain document lines, not Tasks, so there is no flat-fee
 case.)
 
 ### Bleps, Shifts, and entered_qty actuals
@@ -404,7 +422,7 @@ case.)
   so it doesn't invoice at zero. This is set for **every** complete task — even
   ones too old for a blep under the horizon — so historical work never invoices
   at zero. `elapsed_time` tasks derive qty from their bleps and need no
-  explicit actual (fixed charges are Fee atoms with no actuals at all).
+  explicit actual (fixed charges are plain document lines with no actuals at all).
 
 `assign_current_work` (after `build_bleps_and_shifts`) then populates **current**
 work: each rotation worker (excludes `system` + minted users) gets up to three
@@ -545,9 +563,71 @@ Deliverable row validates against the running app's canonical list.
 
 Deliverables default to `units='ea'` (canon form of `each`).
 
+### Archived jobs
+
+`build.archive_old_jobs(c, cutoff)` runs after `reconcile.reconcile(c)`
+(`orchestrator.convert()` passes `build.archive_cutoff(self.now)`). It has to
+run after reconcile because reconcile is what settles a job's final status
+and `completed_date` (pass 3 rejects on expiry, pass 6 downgrades, pass 5
+sets the date); classifying earlier would be a guess. A job qualifies when
+its status is in `_ARCHIVABLE_JOB_STATUSES` (completed, rejected, cancelled)
+and its `completed_date` is at or before the cutoff. A job that pass 6
+downgraded to `work_complete` for an unpaid invoice never qualifies. The
+pass records `c.archived_job_pks` and `c.archived_outcome` (job pk to its
+pre-archive status), and `--verbose` prints an `N jobs archived` summary
+line.
+
+The goal is that each archived job looks exactly like one
+`ArchiveImportService.create_archived_job` (`apps/jobs/archive.py`, see
+`docs/designs/jobs-and-tasks.md` §3.8) would have created, so RM can test
+archives on converted data. What that means per record:
+
+- **Job**: `status='archived'`, `project_manager` null. Number, contact,
+  name, description, dates as reconciled; `accent_color` is left as the
+  converter's round-robin value.
+- **Tasks**: kept with their reconciled `complete` / `cancelled` status. The
+  money block is plain values (`qty_source='entered_qty'`, rate, unit label,
+  accounting category); `source_scheme`, `service_item` and
+  `active_modifiers` are cleared. `est_qty` is kept only when it came from an
+  estimate line's own quantity; if `assign_est_quantities` invented it (the
+  pks are in `c.invented_est_qty`) it is nulled. `est_worker_time`,
+  `actual_qty`, `assignee` and `worker_queue` are always null.
+- **Materials**: kept, marked `consumed` / `imported`, nothing released, no PO
+  line. A link to a converter-minted `LOT-*` transient lot is cleared and the
+  lot row removed if nothing else uses it; links to real price-list items stay.
+- **Estimates, estimate lines, invoices, invoice lines**: kept as reconciled,
+  version chains included. Invoice QBO fields are blanked (`qbo_amount_paid`,
+  `qbo_id`, `qbo_payment_status`) because the importer never sets them.
+- **Source rows** (`estimatelineitemsource`, `invoicelineitemsource`,
+  agreement-line refs): none; the importer cannot express them.
+- **Deliverables, shipments, bleps, shifts, earmarks, POs and PO lines**:
+  none. Deliverable-shaped estimate lines stay as estimate lines, and a
+  `Fake Deliverable` is removed (the verbose count is decremented).
+
+The nine downstream builders that would otherwise add live-job data each
+carry an `# archived jobs carry only translated data (spec §6)` guard
+(project managers, shipments, bleps and shifts, current work, purchasing,
+invoice line sources, agreement refs, synthetic estimate sources, checklist
+declines).
+
+`build_history` emits importer-shaped rows for archived jobs
+(`_archived_job_history`): a `_created` audit row per job, task, material,
+estimate and invoice at the run's `now`, then action rows on the job
+(`Created`, `Started` when there is a start date, the outcome, `Imported from
+Kanban`), plus a note row `Picked up/Delivered (Kanban checklist)` when the
+card had that marker checked. No transition rows for child records. All
+rows have `user=None`.
+
+Design call (RM): where the importer cannot express something, the
+converter **drops** it rather than the importer being extended to match. The
+one importer change this work needed was estimate version chains (`parent`,
+superseded versions).
+
 ## 5. Reconciliation passes
 
-`reconcile.reconcile()` runs after all builders, in this order:
+`reconcile.reconcile()` runs after all builders, in this order. Its
+"today" is the run clock (`c.now.date()`), not `date.today()`, so one run has
+one clock (§2).
 
 1. **Estimate version chains** — for any base reference with multiple
    versions, every version below the highest is marked `superseded` and
@@ -726,6 +806,11 @@ The script invents data where the sources don't say:
   falls back to `_FALLBACK_YEAR-01-01T00:00:00+00:00` (currently 2025);
   otherwise it is the earliest estimate date − 1 day. The job_number itself is
   unaffected by this.
+- **Archived jobs carry no invented data.** Everything the converter
+  fabricates for live jobs (worker times, invented `est_qty`, bleps and
+  shifts, fake deliverables, shipments, PO and earmark state, transient
+  lots, QBO payment fields) is stripped from archived jobs, since the
+  importer could not have produced it (§4, "Archived jobs").
 - **PII** is replaced, never preserved. The dataset is intended to look
   realistic but contain nothing real.
 
@@ -756,10 +841,23 @@ The pipeline is covered by:
   priced via the markup, no negative QOH, consumption-by-task, earmarks only on
   pending Materials of active jobs, `received_in_full` POs linking Materials, and
   Bills linked to those POs.
+  The archive rule has its own classes: `RunClockTest` (`now` / `c.now`),
+  `EstQtyProvenanceTest` (`c.invented_est_qty`), `ArchiveOldJobsTest` (the
+  rule and every row of the §4 shape), `ArchivedJobsDownstreamSkipTest` (the
+  builder guards), `ArchivedJobHistoryTest` (importer-shaped history rows),
+  and `ConvertEndToEndTest.test_archive_rule_holds_end_to_end`.
 - `tests/test_neals_fixture.py` — loads the generated `converted.json`
   into the test database and runs `validate_data` over it. This is the
   end-to-end safety net; it also asserts bleps/shifts load and that the
-  enclosure / no-overlap / task-not-pending invariants report no errors.
+  enclosure / no-overlap / task-not-pending invariants report no errors, and
+  (`test_archived_jobs_present_and_valid`) that archived jobs load and pass
+  the archived-job checks.
+- `tests/test_neals_archive_parity.py` — `ConverterImporterParityTest` loads
+  `converted.json` and checks that every archived job is reproduced, field
+  for field, by `ArchiveImportService` from a payload built off that job.
+  `FarFutureParityTest` runs a conversion with a 2030 clock so every closed
+  job archives, covering materials, superseded chains and cancelled tasks
+  that the real-clock dataset's few archives lack.
 
 `validate_data` now also enforces the time-tracking invariants
 (`check_bleps_and_shifts`): a blep's task is never pending, every closed blep is
@@ -769,7 +867,8 @@ Run them with:
 
 ```bash
 python manage.py test tests.test_neals_parsing tests.test_neals_loaders \
-    tests.test_neals_builders tests.test_neals_fixture
+    tests.test_neals_builders tests.test_neals_fixture \
+    tests.test_neals_archive_parity
 ```
 
 Per `CLAUDE.md`, only one agent/process may run the Django test suite at a

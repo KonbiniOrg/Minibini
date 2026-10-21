@@ -815,6 +815,17 @@ archived job with a `start_date` and only rejected/expired estimates shows
 Estimated $0; accepted as-is (the importer does not validate `start_date ⇒
 accepted estimate`).
 
+**Second producer: the nealsdata converter.** `nealsdata/converter/build.py`
+`archive_old_jobs` also produces archived jobs, for the Neal's Kanban/FreeAgent
+dataset: after reconcile, a completed/rejected/cancelled job whose
+`completed_date` is six or more calendar months before the run's clock is
+reshaped to `status='archived'` and stripped to exactly the data
+`ArchiveImportService` would have written (no bleps, shipments, deliverables,
+source rows, QBO fields or invented `est_qty`; importer-shaped
+history rows). `tests/test_neals_archive_parity.py` guards the shape parity
+by round-tripping each converted archived job through the importer. Rule,
+shape and caveats: `nealsdata/convert.md` (§4 "Archived jobs").
+
 **SPA treatment.**
 
 - `JobHeader`: `VALID_TRANSITIONS.archived = []`, the "Archived" pill
