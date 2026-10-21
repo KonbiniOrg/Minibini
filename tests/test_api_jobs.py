@@ -366,7 +366,7 @@ class JobTaskSubResourceTest(TestCase):
         self.client.force_authenticate(user=worker)
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/reorder-tasks/',
-            {'task_id': task.pk, 'direction': 'up'},
+            {'task_ids': [task.pk]},
             format='json',
         )
         self.assertEqual(response.status_code, 403)
@@ -605,48 +605,6 @@ class JobReorderTasksTest(TestCase):
         self.a = _stamp_task(self.job, self.scheme, 'A', sort_order=0)
         self.b = _stamp_task(self.job, self.scheme, 'B', sort_order=1)
         self.c = _stamp_task(self.job, self.scheme, 'C', sort_order=2)
-
-    def test_reorder_down(self):
-        response = self.client.post(
-            f'/api/jobs/{self.job.pk}/reorder-tasks/',
-            {'task_id': self.a.pk, 'direction': 'down'},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 200, response.data)
-        self.a.refresh_from_db()
-        self.b.refresh_from_db()
-        self.assertEqual(self.a.sort_order, 1)
-        self.assertEqual(self.b.sort_order, 0)
-
-    def test_reorder_missing_task_id(self):
-        response = self.client.post(
-            f'/api/jobs/{self.job.pk}/reorder-tasks/',
-            {'direction': 'up'},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 400)
-
-    def test_reorder_invalid_direction(self):
-        response = self.client.post(
-            f'/api/jobs/{self.job.pk}/reorder-tasks/',
-            {'task_id': self.a.pk, 'direction': 'sideways'},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 400)
-
-    def test_reorder_requires_can_manage_jobs(self):
-        worker = User.objects.create_user(username='r_worker', password='pass')
-        self.client.force_authenticate(user=worker)
-        response = self.client.post(
-            f'/api/jobs/{self.job.pk}/reorder-tasks/',
-            {'task_id': self.a.pk, 'direction': 'down'},
-            format='json',
-        )
-        self.assertEqual(response.status_code, 403)
-
-    # ── Full order (drag-and-drop, 2026-10-19) ─────────────────────────────
-    # A drag can move a task several places at once, so the endpoint also
-    # takes the whole new order as `task_ids` and applies it atomically.
 
     def _order(self):
         return list(

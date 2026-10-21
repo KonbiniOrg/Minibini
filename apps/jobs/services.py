@@ -1457,59 +1457,22 @@ class TaskService:
         task.delete()
 
     @staticmethod
-    def reorder_tasks(task_id, direction):
-        """Reorder a task among the job's tasks — delegates to
-        BundlingService. (Tasks are one flat level — better-fees spec §3 —
-        so the peer group is simply the job's task list.)"""
-        from apps.core.services import BundlingService
-
-        try:
-            task = Task.objects.get(pk=task_id)
-        except Task.DoesNotExist:
-            raise NotFoundError(f'Task {task_id} not found')
-        _assert_job_not_frozen(task.job, 'reorder tasks on this job')
-        _assert_job_not_on_hold(task.job, 'reorder tasks on this job')
-
-        items_qs = Task.objects.filter(job=task.job)
-
-        BundlingService.reorder_container_items(
-            items_qs, 'task', task_id, direction,
-        )
-        task.refresh_from_db()
-        return task
-
-    @staticmethod
     def set_task_order(job, task_ids):
         """Put the job's tasks in exactly the order of `task_ids` (issue
         #513: drag-and-drop moves a task several places at once).
 
-        `task_ids` must name every task on the job once — a partial or
-        foreign list is refused rather than guessed at, so a stale client
-        can't silently drop a task to the end. Applied in one transaction;
-        per-instance save() (never QuerySet.update) so Task.save() runs.
+        `task_ids` must name every task on the job once; validation, locking,
+        and per-instance saves are ReorderService.set_order's. Numbered from 1,
+        as Task.save() numbers new tasks, so only moved tasks are saved.
         """
+        from apps.core.services import ReorderService
+
         _assert_job_not_frozen(job, 'reorder tasks on this job')
         _assert_job_not_on_hold(job, 'reorder tasks on this job')
-
-        if not isinstance(task_ids, list) or not all(
-            isinstance(i, int) and not isinstance(i, bool) for i in task_ids
-        ):
-            raise ValidationError({'task_ids': ['Must be a list of task ids.']})
-        if len(set(task_ids)) != len(task_ids):
-            raise ValidationError({'task_ids': ['Each task may appear only once.']})
-
-        with transaction.atomic():
-            tasks = {t.pk: t for t in Task.objects.select_for_update().filter(job=job)}
-            if set(task_ids) != set(tasks):
-                raise ValidationError({'task_ids': [
-                    "Must list every task on this job, and only this job's tasks."
-                ]})
-            # 1-based, as Task.save() numbers new tasks — so only moved tasks save.
-            for position, task_id in enumerate(task_ids, start=1):
-                task = tasks[task_id]
-                if task.sort_order != position:
-                    task.sort_order = position
-                    task.save()
+        ReorderService.set_order(
+            Task.objects.filter(job=job), task_ids,
+            field='sort_order', start=1, error_field='task_ids',
+        )
 
     @staticmethod
     def assign(task, assignee_id, worker_queue=None, est_worker_time=None):

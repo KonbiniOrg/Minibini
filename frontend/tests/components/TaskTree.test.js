@@ -733,19 +733,19 @@ describe('TaskRow Est Qty on hour-unit tasks', () => {
   });
 });
 
-describe('TaskTree zebra parity across task groups (issue #513)', () => {
-  // Each task is its own <tbody>; a task row is striped exactly when its
-  // overall row position in the table is even, as in the old single tbody.
-  it('marks a task group odd-start when an odd number of rows precede it', () => {
+describe('TaskTree task groups (issue #513)', () => {
+  // Each task and its materials are one <tbody class="task-group">, in task
+  // order — the unit a drag moves, and what the CSS zebra alternates by.
+  it('renders one task-group tbody per task, holding its material rows', () => {
     const mat = (id) => ({ material_id: id, description: `M${id}`, quantity: '1', sell_price: '1', units: 'ea', consumption_state: 'pending' });
     const tasks = [
-      task({ task_id: 1, name: 'A', materials: [] }),          // rows before: 0 → even
-      task({ task_id: 2, name: 'B', materials: [mat(1)] }),    // rows before: 1 → odd
-      task({ task_id: 3, name: 'C', materials: [] }),          // rows before: 3 → odd
-      task({ task_id: 4, name: 'D', materials: [] }),          // rows before: 4 → even
+      task({ task_id: 1, name: 'A', materials: [] }),
+      task({ task_id: 2, name: 'B', materials: [mat(1), mat(2)] }),
+      task({ task_id: 3, name: 'C', materials: [] }),
     ];
     const { container } = render(TaskTree, { props: { tasks, canManage: true } });
-    const odd = Array.from(container.querySelectorAll('tbody.task-group.odd-start')).map((t) => t.dataset.taskId);
-    expect(odd).toEqual(['2', '3']);
+    const groups = Array.from(container.querySelectorAll('tbody.task-group'));
+    expect(groups.map((g) => g.dataset.taskId)).toEqual(['1', '2', '3']);
+    expect(groups.map((g) => g.querySelectorAll('tr').length)).toEqual([1, 3, 1]);
   });
 });

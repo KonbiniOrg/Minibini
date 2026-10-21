@@ -344,15 +344,8 @@ class TaskServiceReorderTest(JobsTestBase):
         self.t2.stamp_from_scheme(scheme)
         self.t2.save()
 
-    def test_reorder_down(self):
-        TaskService.reorder_tasks(self.t1.pk, 'down')
-        self.t1.refresh_from_db()
-        self.t2.refresh_from_db()
-        self.assertEqual(self.t1.sort_order, 2)
-        self.assertEqual(self.t2.sort_order, 1)
-
-    def test_reorder_up(self):
-        TaskService.reorder_tasks(self.t2.pk, 'up')
+    def test_set_task_order(self):
+        TaskService.set_task_order(self.job, [self.t2.pk, self.t1.pk])
         self.t1.refresh_from_db()
         self.t2.refresh_from_db()
         self.assertEqual(self.t2.sort_order, 1)
