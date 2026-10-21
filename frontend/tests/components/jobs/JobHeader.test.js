@@ -463,7 +463,7 @@ describe('JobHeader frozen banner', () => {
 
 describe('JobHeader archived treatment', () => {
   const archived = { ...job, status: 'archived', contact: 7 };
-  const impact = { tasks: 2, materials: 1, deliverables: 1, shipments: 1, estimates: 1, invoices: 1, history_rows: 9 };
+  const impact = { tasks: 2, materials: 1, deliverables: 1, shipments: 1, estimates: 1, invoices: 1, history_rows: 9, linked_po_lines: 0 };
 
   it('shows the archived banner', () => {
     const { getByText } = render(JobHeader, { props: { job: archived } });
@@ -499,7 +499,7 @@ describe('JobHeader archived treatment', () => {
     await fireEvent.click(getByRole('button', { name: 'Delete…' }));
     expect(api.delete).toHaveBeenCalledWith('/api/jobs/5/');
     const dialog = await within(document.body).findByRole('dialog', { name: 'Delete job' });
-    for (const t of ['2 task(s)', '1 material(s)', '1 deliverable(s)', '1 shipment(s)', '1 estimate(s)', '1 invoice(s)', '9 history row(s)']) {
+    for (const t of ['2 task(s)', '1 material(s)', '1 deliverable(s)', '1 shipment(s)', '1 estimate(s)', '1 invoice(s)', '9 history row(s)', '0 linked PO line(s)']) {
       expect(within(dialog).getByText(t)).toBeTruthy();
     }
     await fireEvent.click(within(dialog).getByRole('button', { name: 'Delete job' }));

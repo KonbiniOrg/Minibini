@@ -220,10 +220,7 @@ inside the default 12-month customer window and the customer banner shows
 the archive caveat. Exercised by `specs/archived-jobs/archived-job.spec.js`
 (customer-page window labels + caveat, read-only job page, search's
 Archived filter, email link, Duplicate…, PM-only persona sees no Delete…,
-and the two-phase Delete… — last, since it removes the job). With 101 jobs
-the seed now exceeds `loadBackdrop`'s single `page_size=100` fetch
-(`e2e/fixtures/lookups.js` does not paginate) — a latent gap, logged in
-`LATER.md`.
+and the two-phase Delete… — last, since it removes the job).
 
 **Rebase:** the seed is frozen history — left alone, the 7-day Recent
 Time window, the 30-hour blep-edit window, board retention, schedule

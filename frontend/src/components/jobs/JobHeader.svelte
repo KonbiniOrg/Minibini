@@ -233,7 +233,7 @@
   const IMPACT_LABELS = [
     ['tasks', 'task(s)'], ['materials', 'material(s)'], ['deliverables', 'deliverable(s)'],
     ['shipments', 'shipment(s)'], ['estimates', 'estimate(s)'], ['invoices', 'invoice(s)'],
-    ['history_rows', 'history row(s)'],
+    ['history_rows', 'history row(s)'], ['linked_po_lines', 'linked PO line(s)'],
   ];
   let deleteImpact = $state(null);
   let deleting = $state(false);
@@ -487,4 +487,8 @@
   .hold-modal-label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px; }
   #hold-reason-input { width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 13px; }
   .hold-modal-actions { display: flex; gap: 8px; margin-top: 12px; }
+  /* Delete… modal — same treatment as ContactDetailPage's delete modal. */
+  .impact { margin: 8px 0 14px; padding: 10px 12px 10px 28px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; font-size: 13px; color: #7f1d1d; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .modal-actions .danger { background: #b91c1c; border-color: #b91c1c; color: #fff; font-weight: 600; }
 </style>

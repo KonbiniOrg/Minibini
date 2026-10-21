@@ -382,4 +382,21 @@ class ArchivedJobDeletionTests(DeletionGuardBase):
         self.assertEqual(impact, {
             'tasks': 1, 'materials': 1, 'deliverables': 1, 'shipments': 1,
             'estimates': 1, 'invoices': 1, 'history_rows': 7,
+            'linked_po_lines': 0,
         })
+
+    def test_archived_job_with_po_line_linked_to_its_task_is_refused(self):
+        job = self._heavy_job(Job.STATUS_ARCHIVED)
+        task = job.tasks.get()
+        self.po_line.task = task
+        self.po_line.save()
+        self.assertEqual(JobService.job_deletion_impact(job)['linked_po_lines'], 1)
+        with self.assertRaises(ValidationError) as cm:
+            JobService.delete_job(job)
+        self.assertIn('linked from purchase order lines', ' '.join(cm.exception.messages))
+        self.assertTrue(Job.objects.filter(pk=job.pk).exists())
+
+        self.po_line.task = None
+        self.po_line.save()
+        JobService.delete_job(job)
+        self.assertFalse(Job.objects.filter(pk=job.pk).exists())

@@ -1010,12 +1010,16 @@ Billing mechanics and money-record lifecycle.
 
 ## Platform & conventions
 
-- **`loadBackdrop` reads only the first 100 jobs.** — _added 2026-10-21 (archived-jobs e2e)_
-  `e2e/fixtures/lookups.js` `loadBackdrop()` fetches `/api/jobs/?page_size=100`
-  (the API max) and never follows `next`. The Playwright seed now has 101 jobs
-  (the appended archived `OLD-1042`), so the shape finders see a truncated set;
-  harmless today but a silent seed gap as the seed grows.
-  _Done when:_ `loadBackdrop` paginates until `next` is null.
+- **`InvoiceListPage` has no stale-response guard.** — _added 2026-10-21 (archived-jobs final review)_
+  `frontend/src/routes/invoices/InvoiceListPage.svelte` `load()` assigns
+  whatever response arrives last, so changing the Status filter while the
+  initial `status=open` fetch is in flight can leave the Draft filter
+  showing open invoices. Surfaced as an order-dependent e2e failure in
+  `specs/deposits/deposit-creation.spec.js` (now waits for the first list
+  before filtering). Other list pages with the same `$effect(load)` shape
+  likely share it.
+  _Done when:_ list loads ignore superseded responses (request token or
+  AbortController) and the spec's wait is no longer needed.
 
 - **Seed RateScheme "knife cutting" (pk 9) is `elapsed_time` in minutes.** —
   _added 2026-10-20 (noticed during the archived-jobs design)_

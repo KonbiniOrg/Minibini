@@ -623,7 +623,7 @@ picker, with no extra fetch.
 
 ### 3.8 Archived jobs
 
-(2026-10-20, archived-jobs; spec `docs/plans/2026-10-20-archived-jobs-design.md`.)
+(2026-10-20, archived-jobs; design discussed with RM 2026-10-20 and folded into this section.)
 
 An **archived** job is a historical job brought in from a shop's previous
 system (or paper): it can be opened, read, searched for, found from its
@@ -714,13 +714,19 @@ receipts on completed / inactive-contact jobs stay allowed
 **Deletion.** `JobViewSet` uses `ConfirmDeleteMixin` for every job delete:
 the first `DELETE /api/jobs/{id}/` returns `confirm_required` plus
 `JobService.job_deletion_impact(job)` counts (`tasks`, `materials`,
-`deliverables`, `shipments`, `estimates`, `invoices`, `history_rows`);
+`deliverables`, `shipments`, `estimates`, `invoices`, `history_rows`,
+`linked_po_lines` — PO lines whose `task` is one of the job's tasks; the
+SPA modal lists each, ending with "linked PO line(s)");
 `?confirm=true` runs `JobService.delete_job`. Live-job rules are unchanged
 (`assert_job_deletable` still refuses anything with bleps, invoices or a
 sent estimate/CO). For an archived job:
 
 - `assert_job_deletable` **short-circuits** before the frozen guard and the
-  history checks — delete is the one allowed mutation.
+  history checks — delete is the one allowed mutation — with one refusal:
+  if any `PurchaseOrderLineItem.task` (`PROTECT`) points at one of the
+  job's tasks it raises "This archived job has tasks linked from purchase
+  order lines. Unlink those PO lines before deleting it." (so the refusal
+  lands at the impact phase, not as a 409 after confirm).
 - Permission is status-conditional: `destroy` keeps `CanManageJobOrPM` for
   live jobs, but an archived job additionally requires the
   `can_manage_jobs` atom (or superuser) — a PM reference alone is refused
@@ -752,7 +758,13 @@ children from a plain dict in one `transaction.atomic()`. The whole
 payload is validated before any write and every problem is collected into
 one `ValidationError` keyed by payload path (`'tasks[2].status'`,
 `'estimates[0].estimate_number'`, `'shipments[1].items[0].qty'`) so a
-future spreadsheet importer can map errors back to rows. Children are
+future spreadsheet importer can map errors back to rows. Unrecognised
+top-level keys (e.g. a typo'd `invoice`) are one `non_field_errors` entry
+(`Unknown payload keys: invoice, foo.`) rather than silently dropped; keys
+inside child rows stay permissive. Numbers above 10⁸ in magnitude (incl.
+`'1e30'`), non-finite or > 100,000-hour durations, and estimate/invoice
+numbers repeated within the payload case- and whitespace-insensitively
+(matching MySQL's collation) are path-keyed field errors. Children are
 written with ORM `create()` — never the domain services, whose guards and
 status-coupled side effects an archive must avoid — so model `save()`
 hooks still run (`_created` audits, Material's `_populate_from_pli`,

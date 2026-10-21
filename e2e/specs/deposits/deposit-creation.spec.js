@@ -99,6 +99,10 @@ test('§1 Creating a deposit invoice: states 1→2→3', async ({ page }) => {
 
   await test.step('The invoices list shows the DEPOSIT pill', async () => {
     await page.goto('/#/invoices');
+    // Let the default (open) list land first: InvoiceListPage has no
+    // stale-response guard, so a late open response would overwrite the
+    // draft one (LATER.md).
+    await expect(page.getByRole('heading', { name: /^Invoices \(\d+\)$/ })).toBeVisible();
     await page.getByLabel('Status:').selectOption('draft');
     const listRow = page.locator('tr', {
       has: page.getByRole('link', { name: job.job_number, exact: true }),

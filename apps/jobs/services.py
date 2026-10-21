@@ -836,10 +836,18 @@ class JobService:
         """
         from apps.estimates.models import ChangeOrder, Estimate
         from apps.invoicing.models import Invoice
+        from apps.purchasing.models import PurchaseOrderLineItem
         if job.status == Job.STATUS_ARCHIVED:
             # Deleting is the one allowed mutation of an archived job (the fix
             # for a bad import is delete and re-import); must precede the
-            # frozen guard, which refuses archived jobs.
+            # frozen guard, which refuses archived jobs. PurchaseOrderLineItem
+            # .task is PROTECT, so a linked PO line would 409 the cascade
+            # after the user confirmed — refuse up front instead.
+            if PurchaseOrderLineItem.objects.filter(task__job=job).exists():
+                raise ValidationError(
+                    'This archived job has tasks linked from purchase order '
+                    'lines. Unlink those PO lines before deleting it.'
+                )
             return
         _assert_job_not_frozen(job, 'delete this job')
         if Blep.objects.filter(task__job=job).exists():
@@ -880,8 +888,10 @@ class JobService:
     @staticmethod
     def job_deletion_impact(job):
         """Counts shown before a confirmed delete. history_rows is the size of
-        the purge set (0 for a live job, whose history is kept)."""
+        the purge set (0 for a live job, whose history is kept);
+        linked_po_lines counts PO lines pointing at the job's tasks."""
         from apps.core.models import JobHistory
+        from apps.purchasing.models import PurchaseOrderLineItem
         history_rows = 0
         if job.status == Job.STATUS_ARCHIVED:
             for object_type, ids in JobService._archived_history_keys(job).items():
@@ -895,6 +905,8 @@ class JobService:
             'estimates': job.estimate_set.count(),
             'invoices': job.invoice_set.count(),
             'history_rows': history_rows,
+            'linked_po_lines': PurchaseOrderLineItem.objects.filter(
+                task__job=job).count(),
         }
 
     @staticmethod

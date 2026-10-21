@@ -521,3 +521,59 @@ class DocumentTests(ArchiveImportTestBase):
         self.assertFalse(Shipment.objects.filter(job=dup).exists())
         self.assertEqual(
             (Estimate.objects.count(), Invoice.objects.count(), Shipment.objects.count()), counts)
+
+
+class InputHardeningTests(ArchiveImportTestBase):
+    """Final-review F2/F6: hostile inputs become path-keyed errors, never an
+    uncaught exception or a mid-write IntegrityError; nothing is written."""
+
+    def base(self, number, **extra):
+        return {'job_number': number, 'contact': self.contact.pk, **extra}
+
+    def counts(self):
+        from apps.estimates.models import Estimate
+        from apps.invoicing.models import Invoice
+        return (Job.objects.count(), Task.objects.count(), Material.objects.count(),
+                Estimate.objects.count(), Invoice.objects.count(), JobHistory.objects.count())
+
+    def test_huge_exponent_quantity_is_a_field_error(self):
+        before = self.counts()
+        d = self.assertErrorKeys(self.base('OLD-H1', tasks=[
+            {'name': 'Cut', 'status': 'complete', 'est_qty': '1e30'}]), 'tasks[0].est_qty')
+        self.assertIn('This number is too large.', d['tasks[0].est_qty'])
+        d = self.assertErrorKeys(self.base('OLD-H1', materials=[
+            {'description': 'Ply', 'quantity': '1e30'}]), 'materials[0].quantity')
+        self.assertIn('This number is too large.', d['materials[0].quantity'])
+        self.assertEqual(self.counts(), before)
+
+    def test_non_finite_and_huge_duration_is_a_field_error(self):
+        before = self.counts()
+        for bad in (float('inf'), float('nan'), 10 ** 400, 10 ** 12):
+            with self.subTest(bad=bad):
+                self.assertErrorKeys(self.base('OLD-H2', tasks=[
+                    {'name': 'Cut', 'status': 'complete', 'est_worker_time': bad}]),
+                    'tasks[0].est_worker_time')
+        self.assertEqual(self.counts(), before)
+
+    def test_case_variant_estimate_numbers_in_one_payload(self):
+        before = self.counts()
+        d = self.assertErrorKeys(self.base('OLD-H3', estimates=[
+            {'estimate_number': 'EST-1', 'status': 'rejected'},
+            {'estimate_number': 'est-1', 'status': 'expired'}]), 'estimates[1].estimate_number')
+        self.assertNotIn('estimates[0].estimate_number', d)
+        self.assertEqual(self.counts(), before)
+
+    def test_case_variant_invoice_numbers_in_one_payload(self):
+        before = self.counts()
+        d = self.assertErrorKeys(self.base('OLD-H4', invoices=[
+            {'invoice_number': 'INV-A', 'status': 'paid'},
+            {'invoice_number': ' inv-a ', 'status': 'cancelled'}]), 'invoices[1].invoice_number')
+        self.assertNotIn('invoices[0].invoice_number', d)
+        self.assertEqual(self.counts(), before)
+
+    def test_unknown_top_level_keys_are_a_non_field_error(self):
+        before = self.counts()
+        d = self.assertErrorKeys(self.base('OLD-H5', invoice=[
+            {'invoice_number': '9', 'status': 'paid'}], foo=1), 'non_field_errors')
+        self.assertEqual(d['non_field_errors'], ['Unknown payload keys: invoice, foo.'])
+        self.assertEqual(self.counts(), before)

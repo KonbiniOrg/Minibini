@@ -76,6 +76,11 @@ test.describe('archived job', () => {
       await expect(page.getByRole('button', { name: 'Add Work' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Add Expense' })).toHaveCount(0);
     });
+    await test.step('history page offers no Add Note form', async () => {
+      await page.goto(`/#/jobs/${job.job_id}/history`);
+      await expect(page.getByRole('heading', { name: 'History' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Add Note' })).toHaveCount(0);
+    });
   });
 
   test('search lists it under the Archived job-status filter', async ({ page }) => {

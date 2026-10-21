@@ -176,12 +176,14 @@
     </header>
 
     <div class="body">
-      <div class="add-note">
-        <textarea bind:value={noteText} rows="2" placeholder="Add a note…"></textarea>
-        <button onclick={addNote} disabled={saving || !noteText.trim()}>Add Note</button>
-      </div>
-      <FieldError errors={noteFields} field="text" />
-      <FormMessage error={noteError} />
+      {#if job?.status !== 'archived'}
+        <div class="add-note">
+          <textarea bind:value={noteText} rows="2" placeholder="Add a note…"></textarea>
+          <button onclick={addNote} disabled={saving || !noteText.trim()}>Add Note</button>
+        </div>
+        <FieldError errors={noteFields} field="text" />
+        <FormMessage error={noteError} />
+      {/if}
 
       <nav class="page-tabs">
         <button class:active={activeTab === 'summary'} onclick={() => (activeTab = 'summary')}>Summary</button>

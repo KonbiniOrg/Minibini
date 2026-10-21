@@ -5,13 +5,21 @@
 import { apiAs } from './api.js';
 import { personas } from './personas.js';
 
-// One shot: every job with embedded tasks (status, qty_source) and
+// Every job (all pages) with embedded tasks (status, qty_source) and
 // materials (consumption_state, quantity, qty_on_hand, task, inventory_item).
 export async function loadBackdrop() {
   const api = await apiAs(personas.finjobs);
-  const jobs = (await api.get('/api/jobs/?page_size=100')).results;
-  await api.dispose();
-  return jobs;
+  try {
+    const jobs = [];
+    for (let page = 1; ; page++) {
+      const data = await api.get(`/api/jobs/?page_size=100&page=${page}`);
+      jobs.push(...(data.results || []));
+      if (!data.next) break;
+    }
+    return jobs;
+  } finally {
+    await api.dispose();
+  }
 }
 
 const stocked = (m) => Number(m.qty_on_hand) >= Number(m.quantity);

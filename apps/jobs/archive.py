@@ -11,6 +11,7 @@ The whole payload is validated before any write; every problem is collected
 into one ``ValidationError`` keyed by payload path (``'tasks[2].status'``) so
 an importer can map errors back to source rows.
 """
+import math
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 
@@ -25,6 +26,11 @@ from apps.core.history import (
 from apps.jobs.models import Job, Task
 
 
+# Upper bound for imported durations (100,000 hours) — well past any real
+# task, far below timedelta's overflow.
+MAX_DURATION_SECONDS = 100_000 * 3600
+
+
 def _blank(value):
     return value is None or (isinstance(value, str) and not value.strip())
 
@@ -36,6 +42,14 @@ def _add(errors, path, message):
 class ArchiveImportService:
     TASK_STATUSES = (Task.STATUS_COMPLETE, Task.STATUS_CANCELLED)
     DATE_FIELDS = ('created_date', 'start_date', 'due_date', 'completed_date')
+    # Every recognised top-level payload key (spec §4). Anything else is a
+    # payload error — a typo'd key ('invoice') would otherwise silently drop
+    # data. Nested row keys stay permissive.
+    PAYLOAD_KEYS = frozenset((
+        'job_number', 'contact', 'project_manager', 'name', 'description',
+        'customer_po_number', 'outcome', 'source', 'notes',
+        'tasks', 'materials', 'deliverables', 'shipments', 'estimates', 'invoices',
+    ) + DATE_FIELDS)
 
     # ------------------------------------------------------------------ entry
     @staticmethod
@@ -107,11 +121,13 @@ class ArchiveImportService:
         if not d.is_finite():
             _add(errors, path, 'Enter a number.')
             return None
-        if d != d.quantize(Decimal('0.01')):
-            _add(errors, path, 'Use at most 2 decimal places.')
-            return None
+        # Magnitude first: quantize() raises InvalidOperation on values whose
+        # coefficient would exceed the context precision (e.g. '1e30').
         if abs(d) >= Decimal('100000000'):
             _add(errors, path, 'This number is too large.')
+            return None
+        if d != d.quantize(Decimal('0.01')):
+            _add(errors, path, 'Use at most 2 decimal places.')
             return None
         if positive and d <= 0:
             _add(errors, path, 'Must be greater than zero.')
@@ -129,12 +145,28 @@ class ArchiveImportService:
         if isinstance(value, timedelta):
             return value
         if isinstance(value, (int, float, Decimal)) and not isinstance(value, bool):
-            if value < 0:
+            try:
+                seconds = float(value)
+            except (OverflowError, ValueError):
+                seconds = math.inf
+            if not math.isfinite(seconds):
+                _add(errors, path, 'Enter a duration in seconds or ISO-8601 (e.g. PT2H).')
+                return None
+            if seconds < 0:
                 _add(errors, path, 'Must not be negative.')
                 return None
-            return timedelta(seconds=float(value))
+            if seconds > MAX_DURATION_SECONDS:
+                _add(errors, path, 'This duration is too large.')
+                return None
+            return timedelta(seconds=seconds)
         if isinstance(value, str):
-            td = parse_duration(value.strip())
+            try:
+                td = parse_duration(value.strip())
+            except (OverflowError, ValueError):
+                td = None
+            if td is not None and td > timedelta(seconds=MAX_DURATION_SECONDS):
+                _add(errors, path, 'This duration is too large.')
+                return None
             if td is not None and td >= timedelta(0):
                 return td
         _add(errors, path, 'Enter a duration in seconds or ISO-8601 (e.g. PT2H).')
@@ -215,6 +247,11 @@ class ArchiveImportService:
         errors = {}
         if not isinstance(payload, dict):
             return {'non_field_errors': ['The payload must be an object.']}
+
+        unknown = [k for k in payload if k not in S.PAYLOAD_KEYS]
+        if unknown:
+            _add(errors, 'non_field_errors',
+                 f'Unknown payload keys: {", ".join(str(k) for k in unknown)}.')
 
         # Header
         job_number = payload.get('job_number')
@@ -362,12 +399,15 @@ class ArchiveImportService:
                     before = len(errors.get(np, []))
                     number = S._coerce_str(number, np, errors, max_length=50)
                     if len(errors.get(np, [])) == before:
-                        if number in seen:
+                        # Case/whitespace-insensitive, matching MySQL's
+                        # collation on the unique column.
+                        key_ = number.strip().casefold()
+                        if key_ in seen:
                             _add(errors, np, f'{label.capitalize()} number {number} appears '
                                              f'more than once in this payload.')
                         elif taken(number):
                             _add(errors, np, f'An {label} numbered {number} already exists.')
-                        seen.add(number)
+                        seen.add(key_)
                 status = row.get('status')
                 if _blank(status):
                     _add(errors, f'{p}.status', 'This field is required.')

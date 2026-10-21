@@ -316,4 +316,18 @@ describe('JobHistorySection', () => {
     await fireEvent.click(getByRole('button', { name: 'Add Note' }));
     expect(await findByText('This field is too long.')).toBeInTheDocument();
   });
+
+  it('hides the Add Note form on an archived job (read-only), shows it otherwise', async () => {
+    api.get.mockResolvedValue({ results: [] });
+    const archived = render(JobHistorySection, { props: { job: { ...JOB, status: 'archived' } } });
+    await archived.findByRole('heading', { name: 'History' });
+    expect(archived.queryByRole('button', { name: 'Add Note' })).toBeNull();
+    expect(archived.queryByPlaceholderText('Add a note…')).toBeNull();
+    archived.unmount();
+
+    const live = render(JobHistorySection, { props: { job: { ...JOB, status: 'completed' } } });
+    await live.findByRole('heading', { name: 'History' });
+    expect(live.getByRole('button', { name: 'Add Note' })).toBeInTheDocument();
+    expect(live.getByPlaceholderText('Add a note…')).toBeInTheDocument();
+  });
 });
