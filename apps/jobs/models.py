@@ -79,6 +79,7 @@ class Job(AbstractWorkContainer):
     STATUS_REJECTED = 'rejected'
     STATUS_COMPLETED = 'completed'
     STATUS_CANCELLED = 'cancelled'
+    STATUS_ARCHIVED = 'archived'
 
     JOB_STATUS_CHOICES = [
         (STATUS_DRAFT, 'Draft'),
@@ -89,7 +90,14 @@ class Job(AbstractWorkContainer):
         (STATUS_REJECTED, 'Rejected'),
         (STATUS_COMPLETED, 'Completed'),
         (STATUS_CANCELLED, 'Cancelled'),
+        (STATUS_ARCHIVED, 'Archived'),
     ]
+
+    # Named status groupings (archived-jobs spec 3.2). archived is a member of
+    # CLOSED; WORK_FROZEN = CLOSED plus work_complete.
+    PRE_APPROVAL_STATUSES = frozenset({STATUS_DRAFT, STATUS_SUBMITTED})
+    CLOSED_STATUSES = frozenset({STATUS_COMPLETED, STATUS_REJECTED, STATUS_CANCELLED, STATUS_ARCHIVED})
+    WORK_FROZEN_STATUSES = CLOSED_STATUSES | {STATUS_WORK_COMPLETE}
 
     job_id = models.AutoField(primary_key=True)
     job_number = models.CharField(max_length=50, unique=True)
@@ -151,6 +159,7 @@ class Job(AbstractWorkContainer):
             Job.STATUS_REJECTED: [Job.STATUS_SUBMITTED],  # reactivatable (estimate unexpire)
             Job.STATUS_COMPLETED: [],  # Terminal state
             Job.STATUS_CANCELLED: [Job.STATUS_IN_PROGRESS],  # reactivatable (undo accidental cancel)
+            Job.STATUS_ARCHIVED: [],  # terminal; set only by ArchiveImportService
         }
 
         # Check if this is an update
