@@ -1000,6 +1000,19 @@ Billing mechanics and money-record lifecycle.
 
 ## Platform & conventions
 
+- **Seed RateScheme "knife cutting" (pk 9) is `elapsed_time` in minutes.** —
+  _added 2026-10-20 (noticed during the archived-jobs design)_
+  `RateScheme.clean` pins elapsed-time schemes to `HOUR_UNIT`, but
+  `fixtures/large_datasets/nealseed.json` and `fixtures/playwright/seed.json`
+  both carry scheme pk 9 with `algorithm='elapsed_time', unit_label='min'`,
+  loaded via `loaddata` (which skips `clean`). It predates the pin. Harmless
+  until something re-saves the row, at which point `full_clean()` rejects it
+  with a unit error. nealseed is RM-managed — do not regenerate it; fix the
+  row by hand (or re-stamp it as `entered_qty`/min like its siblings) when RM
+  next touches the seeds.
+  _Done when:_ no fixture scheme has `elapsed_time` with a non-hour unit, or
+  the pin is relaxed on purpose.
+
 - **Contact.email uniqueness is collation-dependent; never case-folded.** —
   _added 2026-09-24 (nealseed load failure)_
   `Contact.email` is `unique=True` and `Contact.clean()` only strips
