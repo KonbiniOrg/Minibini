@@ -86,4 +86,27 @@ describe('CustomerHeader', () => {
     expect(onNewJob).toHaveBeenCalled();
     expect(getByRole('button', { name: 'Edit' })).toBeInTheDocument();
   });
+
+  it('labels Invoiced/Profit with the window and shows no caveat when nothing is archived', () => {
+    const { getByText, container } = render(CustomerHeader, {
+      props: { name: 'Acme', financials: { ...FIN, window_months: 12, includes_archived: false } },
+    });
+    expect(getByText('Invoiced (12 mo)')).toBeInTheDocument();
+    expect(getByText('Profit (12 mo)')).toBeInTheDocument();
+    expect(container.querySelector('.ch-caveat')).toBeNull();
+  });
+
+  it('shows the archive caveat when the window includes archived jobs', () => {
+    const { container } = render(CustomerHeader, {
+      props: { name: 'Acme', financials: { ...FIN, window_months: 6, includes_archived: true } },
+    });
+    expect(container.querySelector('.ch-caveat').textContent)
+      .toBe('Includes archived jobs \u2014 imported labor may be incomplete.');
+  });
+
+  it('falls back to bare labels when window_months is absent', () => {
+    const { getByText } = render(CustomerHeader, { props: { name: 'Acme', financials: FIN } });
+    expect(getByText('Invoiced')).toBeInTheDocument();
+    expect(getByText('Profit')).toBeInTheDocument();
+  });
 });

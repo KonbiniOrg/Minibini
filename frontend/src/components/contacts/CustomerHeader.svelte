@@ -29,6 +29,7 @@
   const money = (v) => (v == null || v === '' ? '$—' : formatMoney(v));
 
   let profitNum = $derived(financials?.profit == null ? null : Number(financials.profit));
+  let span = $derived(financials?.window_months ? ` (${financials.window_months} mo)` : '');
   let facts = $derived(customerFacts(financials, { kind, terms }));
 </script>
 
@@ -68,14 +69,17 @@
           <div class="ch-value ch-owed">{money(financials.outstanding)}</div>
         </div>
         <div class="ch-item">
-          <div class="ch-label">Invoiced</div>
+          <div class="ch-label">Invoiced{span}</div>
           <div class="ch-value ch-invoiced">{money(financials.invoiced)}</div>
         </div>
         <div class="ch-item">
-          <div class="ch-label">Profit</div>
+          <div class="ch-label">Profit{span}</div>
           <div class="ch-value" class:ch-profit-pos={profitNum != null && profitNum >= 0} class:ch-profit-neg={profitNum != null && profitNum < 0}>{money(financials.profit)}</div>
         </div>
       </div>
+      {#if financials.includes_archived}
+        <p class="ch-caveat">Includes archived jobs — imported labor may be incomplete.</p>
+      {/if}
     {/if}
   </div>
 </div>
@@ -131,6 +135,7 @@
     border-radius: 8px;
     border: 1px solid rgba(255,255,255,0.08);
   }
+  .ch-caveat { margin: 0; font-size: 11px; color: rgba(255,255,255,0.65); }
   .ch-item { text-align: right; }
   .ch-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: rgba(255,255,255,0.65); }
   .ch-value { font-size: 18px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; color: #fff; }
