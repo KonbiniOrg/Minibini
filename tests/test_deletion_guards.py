@@ -277,3 +277,109 @@ class JobDeletionGuardTests(DeletionGuardBase):
         resp = client.delete(f'/api/jobs/{self.job.pk}/')
         self.assertEqual(resp.status_code, 400)
         self.assertTrue(Job.objects.filter(pk=self.job.pk).exists())
+
+
+class ArchivedJobDeletionTests(DeletionGuardBase):
+    """Archived jobs delete with their history; live jobs keep theirs."""
+
+    def _heavy_job(self, status):
+        from apps.contacts.models import Business
+        from apps.core.models import JobHistory
+        from apps.deliverables.models import Deliverable, Shipment, ShipmentItem
+        from apps.purchasing.models import PurchaseOrder, PurchaseOrderLineItem
+        job = Job.objects.create(
+            contact=self.contact, status=status, job_number='JOB-2026-0777')
+        self.job = job
+        task = self._task()
+        biz = Business.objects.create(
+            business_name='Vendor Inc', default_contact=self.contact)
+        po = PurchaseOrder.objects.create(business=biz)
+        self.po_line = PurchaseOrderLineItem.objects.create(
+            purchase_order=po, description='x', qty=Decimal('5.00'),
+            price=Decimal('1.00'))
+        material = Material.objects.create(
+            job=job, task=task, quantity=Decimal('5.00'),
+            accounting_category=self.cat, po_line_item=self.po_line,
+            consumption_state=Material.CONSUMPTION_STATE_CONSUMED)
+        estimate = self._estimate(status=Estimate.STATUS_ACCEPTED)
+        invoice = Invoice.objects.create(
+            job=job, invoice_number='INV-ARC-1', status=Invoice.STATUS_PAID)
+        InvoiceLineItem.objects.create(
+            invoice=invoice, description='x', qty=Decimal('1'),
+            price=Decimal('10.00'), accounting_category=self.cat)
+        deliverable = Deliverable.objects.create(
+            job=job, description='widget', qty_ordered=Decimal('2'),
+            units='each')
+        shipment = Shipment.objects.create(
+            job=job, sequence=1, status=Shipment.STATUS_PICKED_UP,
+            picked_up_date=timezone.now())
+        ShipmentItem.objects.create(
+            shipment=shipment, deliverable=deliverable, qty=Decimal('2'))
+        self.pairs = [
+            ('job', job.pk), ('task', task.pk),
+            ('material', material.pk), ('estimate', estimate.pk),
+            ('invoice', invoice.pk), ('deliverable', deliverable.pk),
+            ('shipment', shipment.pk),
+        ]
+        for t, i in self.pairs:
+            JobHistory.objects.create(
+                entry_type='audit', object_type=t, object_id=i)
+        return job
+
+    def test_archived_job_with_history_deletes_and_purges_history(self):
+        from apps.core.models import JobHistory
+        from apps.deliverables.models import Deliverable, Shipment
+        job = self._heavy_job(Job.STATUS_ARCHIVED)
+        JobService.delete_job(job)
+        self.assertFalse(Job.objects.filter(pk=job.pk).exists())
+        self.assertFalse(Task.objects.filter(job_id=job.pk).exists())
+        self.assertFalse(Material.objects.filter(job_id=job.pk).exists())
+        self.assertFalse(Estimate.objects.filter(job_id=job.pk).exists())
+        self.assertFalse(Invoice.objects.filter(job_id=job.pk).exists())
+        self.assertFalse(Deliverable.objects.filter(job_id=job.pk).exists())
+        self.assertFalse(Shipment.objects.filter(job_id=job.pk).exists())
+        for t, i in self.pairs:
+            self.assertFalse(
+                JobHistory.objects.filter(object_type=t, object_id=i).exists(),
+                f'{t} {i} history survived')
+        from apps.purchasing.models import PurchaseOrderLineItem
+        self.assertTrue(
+            PurchaseOrderLineItem.objects.filter(pk=self.po_line.pk).exists())
+
+    def test_same_shape_at_completed_is_refused(self):
+        job = self._heavy_job(Job.STATUS_COMPLETED)
+        with self.assertRaises(ValidationError):
+            JobService.assert_job_deletable(job)
+
+    def test_live_draft_delete_leaves_its_history(self):
+        from apps.core.models import JobHistory
+        job = Job.objects.create(
+            contact=self.contact, status=Job.STATUS_DRAFT,
+            job_number='JOB-2026-0778')
+        JobHistory.objects.create(
+            entry_type='audit', object_type='job', object_id=job.pk)
+        job_pk = job.pk
+        before = JobHistory.objects.filter(
+            object_type='job', object_id=job_pk).count()
+        self.assertGreaterEqual(before, 1)
+        JobService.delete_job(job)
+        self.assertEqual(
+            JobHistory.objects.filter(
+                object_type='job', object_id=job_pk).count(), before)
+
+    def test_impact_counts(self):
+        from apps.core.models import JobHistory
+        job = self._heavy_job(Job.STATUS_ARCHIVED)
+        impact = JobService.job_deletion_impact(job)
+        # auto-captured audit rows plus the 7 explicit ones, for this job's
+        # pairs only (the setUp job's own rows are not in the purge set).
+        expected = sum(
+            JobHistory.objects.filter(object_type=t, object_id=i).count()
+            for t, i in self.pairs)
+        self.assertGreaterEqual(expected, 7)
+        self.assertEqual(impact['history_rows'], expected)
+        impact['history_rows'] = 7
+        self.assertEqual(impact, {
+            'tasks': 1, 'materials': 1, 'deliverables': 1, 'shipments': 1,
+            'estimates': 1, 'invoices': 1, 'history_rows': 7,
+        })

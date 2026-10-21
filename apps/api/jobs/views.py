@@ -3,6 +3,7 @@ from django.db import transaction
 from apps.core.history import record_history
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.db.models import Q, OuterRef, Subquery, Sum, DecimalField, Value
@@ -14,7 +15,7 @@ from apps.jobs.services import JobService, TaskService
 from apps.core.services import NotFoundError, ServiceError
 from apps.estimates.models import WorkTemplate, Estimate, ServiceItem, EstimateLineItem, EstimateLineItemSource
 from apps.estimates.mint import MintService
-from apps.api.mixins import StatusTransitionMixin, JobTaskMixin, JSONDestroyMixin, JobScopedPermissionMixin
+from apps.api.mixins import StatusTransitionMixin, JobTaskMixin, ConfirmDeleteMixin, JobScopedPermissionMixin
 from apps.api.permissions import CanManageJobs, CanManageJobOrPM
 from apps.api.history.serializers import HistoryEntrySerializer
 from apps.api.tasks.serializers import TaskSerializer
@@ -90,7 +91,7 @@ def _resolve_claim_line_per_unit(request):
     return bool(raw)
 
 
-class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
+class JobViewSet(JobScopedPermissionMixin, ConfirmDeleteMixin, StatusTransitionMixin, JobTaskMixin, viewsets.ModelViewSet):
     job_object_path = 'self'
     queryset = Job.objects.select_related('contact', 'contact__business') \
         .prefetch_related(
@@ -122,7 +123,6 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
     serializer_class = JobSerializer
     lookup_field = 'pk'
     task_serializer_class = TaskSerializer
-    destroy_response_message = 'Job deleted.'
 
     def destroy(self, request, *args, **kwargs):
         """Hard delete is for unworked jobs only; everything else cancels.
@@ -131,8 +131,19 @@ class JobViewSet(JobScopedPermissionMixin, JSONDestroyMixin, StatusTransitionMix
         deleted by a document action (deletion doctrine, Rule 1 at job scale).
         """
         job = self.get_object()
+        if (job.status == Job.STATUS_ARCHIVED
+                and not CanManageJobs().has_permission(request, self)):
+            raise PermissionDenied(
+                'Only a user who can manage jobs may delete an archived job.')
         JobService.assert_job_deletable(job)
         return super().destroy(request, *args, **kwargs)
+
+    def get_deletion_impact(self, job):
+        return JobService.job_deletion_impact(job)
+
+    def perform_confirmed_destroy(self, job):
+        JobService.delete_job(job)
+        return Response({'message': 'Job deleted.'})
 
     def get_permissions(self):
         read_actions = ('list', 'retrieve', 'history', 'notes', 'agreement', 'overview')

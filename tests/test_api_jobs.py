@@ -190,7 +190,51 @@ class JobAPITest(BaseTestCase):
         job_id = response.data['job_id']
         response = self.client.delete(f'/api/jobs/{job_id}/')
         self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['confirm_required'])
+        self.assertIsInstance(response.data['impact'], dict)
+        self.assertTrue(Job.objects.filter(pk=job_id).exists())
+        response = self.client.delete(f'/api/jobs/{job_id}/?confirm=true')
+        self.assertEqual(response.status_code, 200)
         self.assertIn('message', response.data)
+        self.assertFalse(Job.objects.filter(pk=job_id).exists())
+
+    def _job_for_delete(self, status, pm=None):
+        from apps.contacts.models import Contact
+        return Job.objects.create(
+            job_number=f'JOB-DEL-{status}-{Job.objects.count()}',
+            name='Del', status=status, contact=Contact.objects.first(),
+            project_manager=pm)
+
+    def test_pm_only_user_cannot_delete_archived_but_can_delete_own_draft(self):
+        pm = User.objects.create_user(username='pm_del', password='x')
+        client = APIClient()
+        client.force_authenticate(user=User.objects.get(pk=pm.pk))
+        archived = self._job_for_delete(Job.STATUS_ARCHIVED, pm)
+        resp = client.delete(f'/api/jobs/{archived.pk}/')
+        self.assertEqual(resp.status_code, 403)
+        resp = client.delete(f'/api/jobs/{archived.pk}/?confirm=true')
+        self.assertEqual(resp.status_code, 403)
+        self.assertTrue(Job.objects.filter(pk=archived.pk).exists())
+        draft = self._job_for_delete(Job.STATUS_DRAFT, pm)
+        resp = client.delete(f'/api/jobs/{draft.pk}/')
+        self.assertTrue(resp.data['confirm_required'])
+        resp = client.delete(f'/api/jobs/{draft.pk}/?confirm=true')
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(Job.objects.filter(pk=draft.pk).exists())
+
+    def test_atom_user_can_delete_archived(self):
+        from tests.base import grant_atoms
+        user = grant_atoms(
+            User.objects.create_user(username='atom_del', password='x'),
+            'can_manage_jobs')
+        client = APIClient()
+        client.force_authenticate(user=user)
+        archived = self._job_for_delete(Job.STATUS_ARCHIVED)
+        resp = client.delete(f'/api/jobs/{archived.pk}/')
+        self.assertTrue(resp.data['confirm_required'])
+        resp = client.delete(f'/api/jobs/{archived.pk}/?confirm=true')
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(Job.objects.filter(pk=archived.pk).exists())
 
     def test_complete_job(self):
         job = self._get_approved_job()

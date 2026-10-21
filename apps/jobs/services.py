@@ -836,6 +836,11 @@ class JobService:
         """
         from apps.estimates.models import ChangeOrder, Estimate
         from apps.invoicing.models import Invoice
+        if job.status == Job.STATUS_ARCHIVED:
+            # Deleting is the one allowed mutation of an archived job (the fix
+            # for a bad import is delete and re-import); must precede the
+            # frozen guard, which refuses archived jobs.
+            return
         _assert_job_not_frozen(job, 'delete this job')
         if Blep.objects.filter(task__job=job).exists():
             raise ValidationError(
@@ -858,6 +863,59 @@ class JobService:
                 'This job has a sent change order and cannot be deleted. '
                 'Cancel it instead.'
             )
+
+    @staticmethod
+    def _archived_history_keys(job):
+        """(object_type -> [ids]) for a job and its history-bearing children."""
+        return {
+            'job': [job.pk],
+            'task': list(job.tasks.values_list('pk', flat=True)),
+            'material': list(job.materials.values_list('pk', flat=True)),
+            'estimate': list(job.estimate_set.values_list('pk', flat=True)),
+            'invoice': list(job.invoice_set.values_list('pk', flat=True)),
+            'deliverable': list(job.deliverables.values_list('pk', flat=True)),
+            'shipment': list(job.shipments.values_list('pk', flat=True)),
+        }
+
+    @staticmethod
+    def job_deletion_impact(job):
+        """Counts shown before a confirmed delete. history_rows is the size of
+        the purge set (0 for a live job, whose history is kept)."""
+        from apps.core.models import JobHistory
+        history_rows = 0
+        if job.status == Job.STATUS_ARCHIVED:
+            for object_type, ids in JobService._archived_history_keys(job).items():
+                history_rows += JobHistory.objects.filter(
+                    object_type=object_type, object_id__in=ids).count()
+        return {
+            'tasks': job.tasks.count(),
+            'materials': job.materials.count(),
+            'deliverables': job.deliverables.count(),
+            'shipments': job.shipments.count(),
+            'estimates': job.estimate_set.count(),
+            'invoices': job.invoice_set.count(),
+            'history_rows': history_rows,
+        }
+
+    @staticmethod
+    def delete_job(job):
+        """Hard-delete a job. An archived job (a historical import) also has
+        its history rows purged; a live job's history is left untouched."""
+        from apps.core.models import JobHistory
+        JobService.assert_job_deletable(job)
+        with transaction.atomic():
+            archived = job.status == Job.STATUS_ARCHIVED
+            keys = JobService._archived_history_keys(job) if archived else None
+            # ShipmentItem.deliverable is PROTECT, so the job cascade cannot
+            # reach a shipped deliverable; drop shipments (and their items)
+            # first.
+            for shipment in list(job.shipments.all()):
+                shipment.delete()
+            job.delete()
+            if archived:
+                for object_type, ids in keys.items():
+                    JobHistory.objects.filter(
+                        object_type=object_type, object_id__in=ids).delete()
 
     @staticmethod
     def maybe_complete_if_resolved(job):
