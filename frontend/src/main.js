@@ -1,6 +1,9 @@
 import App from './App.svelte';
 import { mount } from 'svelte';
 import './css/app.css';
+// Inter (self-hosted). Only registers the font; nothing uses it until a
+// component opts in via var(--font-sans) — first: the job Tasks table.
+import '@fontsource-variable/inter';
 import { viewMode } from './stores/viewMode.js';
 import { layout } from './stores/layout.js';
 

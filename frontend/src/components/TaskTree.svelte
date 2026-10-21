@@ -326,7 +326,9 @@
      inert tokens in app.css. Rules: one body size, one secondary size, one
      muted grey that passes AA on the yellow bands, bold only in headers,
      tags are borderless pills and buttons are bordered rectangles. */
-  .task-tree-table { color: var(--text-fg); }
+  /* Inter in this table only: much narrower than the page's Verdana, so cells
+     wrap less; buttons inherit it (font-family: inherit below). */
+  .task-tree-table { color: var(--text-fg); font-family: var(--font-sans); }
   .task-tree-table th, .task-tree-table :global(td) { font-size: var(--text-sm); }
   .task-tree-table :global(.material-row.consumed),
   .task-tree-table :global(.material-row.released) { color: var(--text-muted); }
@@ -343,9 +345,17 @@
      dark enough to see as a control (#767676 is 4.5:1 on white; #ccc was 1.6:1). */
   .task-tree-table :global(.row-actions button),
   .task-tree-table :global(.small-btn) {
-    font-size: var(--text-sm); padding: 2px 8px;
+    font-family: inherit; font-size: var(--text-sm); padding: 1px 5px; margin: 2px 4px 2px 0;  /* vertical gap for wrapped rows of buttons */
     border: 1px solid #767676; border-radius: 4px; color: var(--text-fg);
   }
+  /* All of a row's buttons on one line; the old 12em cap pushed +mat to a
+     second line. Tight padding keeps the column narrow. */
+  /* Actions column shrinks to its content (width: 1%); leftover width goes to Name.
+     Task rows' four short buttons stay on one line and set that width; material
+     and expense rows (longer buttons: "draw more", "mark used") wrap inside it
+     instead of widening the whole column. */
+  .task-tree-table :global(td.actions-cell) { max-width: none; width: 1%; }
+  .task-tree-table :global(tr.task-row td.actions-cell) { white-space: nowrap; }
   .task-tree-table :global(.ta:not(.pill)) {
     font-weight: normal; text-transform: none; letter-spacing: 0;
     font-size: var(--text-sm);

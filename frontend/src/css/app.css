@@ -824,6 +824,7 @@ tr.grand td { font-weight:600; border-top:2px solid var(--doc-border); backgroun
    nothing until a component opts in. Adopted table by table; first user is the
    job Tasks table (TaskTree.svelte). Values match the type-scale spike. */
 :root {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;  /* type-scale spike's face */
   --text-xs: 12px;      /* secondary/meta text: notes, chips */
   --text-sm: 14px;      /* table body and headers */
   --text-fg: #0a0a0a;

@@ -162,7 +162,7 @@
 
   .link-btn {
     background: none; border: none; padding: 0; margin: 0;
-    color: #1d4ed8; cursor: pointer; font-size: inherit;
+    color: #1d4ed8; cursor: pointer; font: inherit;  /* page font (Verdana), not the button default */
     text-decoration: underline; text-align: left;
   }
   .link-btn:hover { color: #1e40af; }
