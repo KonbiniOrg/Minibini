@@ -19,11 +19,24 @@ class NealsFixtureLoadTest(TestCase):
         self.assertGreater(Job.objects.count(), 0)
         self.assertGreater(Task.objects.count(), 0)
         # every Job with a non-draft estimate has at least one Deliverable
-        for est in Estimate.objects.exclude(status='draft'):
+        for est in Estimate.objects.exclude(status=Estimate.STATUS_DRAFT).exclude(
+                job__status=Job.STATUS_ARCHIVED):
             self.assertTrue(
                 Deliverable.objects.filter(job=est.job).exists(),
                 f'Job {est.job_id} has a non-draft estimate but no Deliverable',
             )
+
+    def test_archived_jobs_present_and_valid(self):
+        # The converter archives old closed jobs; they must load and pass
+        # validate_data's archived-job checks.
+        call_command('loaddata', FIXTURE, verbosity=0)
+        self.assertTrue(Job.objects.filter(status=Job.STATUS_ARCHIVED).exists())
+        out = StringIO()
+        call_command('validate_data', stdout=out)
+        for line in out.getvalue().splitlines():
+            body = line.strip().removeprefix('[ERROR]').strip()
+            self.assertFalse(body.startswith('Archived job'), body)
+            self.assertFalse('non-terminal task' in body and 'archived' in body, body)
 
     def test_validate_data_runs_on_fixture(self):
         # The validate_data command must run to completion against the

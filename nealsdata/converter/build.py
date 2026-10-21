@@ -3107,7 +3107,8 @@ def _archived_job_history(c, job_pk, job_fields, related, card, emit):
     action(c.archived_outcome[job_pk].capitalize(), completed)
     action('Imported from Kanban', now_s)
     if card is not None and P.has_pickup_done(card):
-        emit('job', job_pk, completed, 'note', {},
+        # changes=None: what record_history writes for an importer note row.
+        emit('job', job_pk, completed, 'note', None,
              text='Picked up/Delivered (Kanban checklist)')
 
 

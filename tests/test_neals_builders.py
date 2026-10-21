@@ -1831,6 +1831,39 @@ class ConvertEndToEndTest(unittest.TestCase):
         self.assertNotIn('"jobs.fee"', raw)
         self.assertNotIn('"source_type": "fee"', raw)
 
+    @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
+                         'datasets not present')
+    def test_archive_rule_holds_end_to_end(self):
+        from datetime import datetime, timezone as tz
+        fd, path = tempfile.mkstemp(suffix='.json')
+        os.close(fd)
+        self.addCleanup(os.unlink, path)
+        now = datetime(2030, 1, 1, tzinfo=tz.utc)   # far future: every closed job is old
+        c = NealsDataConverter(XLSX, CSV, output_path=path, limit=40, now=now)
+        c.convert()
+        cutoff = build.archive_cutoff(now)
+        jobs = [f for f in c.fixture_data if f['model'] == 'jobs.job']
+        archived = {f['pk'] for f in jobs if f['fields']['status'] == 'archived'}
+        self.assertEqual(archived, c.archived_job_pks)
+        self.assertGreater(len(archived), 0)
+        closed = ('completed', 'rejected', 'cancelled')
+        for f in jobs:
+            st = f['fields']['status']
+            cd = build._aware(f['fields'].get('completed_date'))
+            if st == 'archived':
+                # archived => it was an old closed job
+                self.assertIn(c.archived_outcome[f['pk']], closed)
+                self.assertIsNotNone(cd)
+                self.assertLessEqual(cd, cutoff)
+            elif st in closed:
+                # a closed job left live => it is younger than the cutoff
+                self.assertTrue(cd is None or cd > cutoff, f['fields']['job_number'])
+        # nothing invented survives on an archive
+        for f in c.fixture_data:
+            if f['model'] in ('deliverables.deliverable', 'deliverables.shipment', 'jobs.blep',
+                              'inventory.earmark', 'purchasing.purchaseorderlineitem'):
+                self.assertNotIn(f['fields'].get('job'), archived, f['model'])
+
 
 @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
                      'datasets not present')
@@ -2071,7 +2104,8 @@ class ArchivedJobHistoryTest(unittest.TestCase):
             ('action', 'job', 1, {'_action': 'Created'}, '', '2020-01-01T00:00:00+00:00'),
             ('action', 'job', 1, {'_action': 'Started'}, '', '2020-01-05T00:00:00+00:00'),
             ('action', 'job', 1, {'_action': 'Completed'}, '', '2020-03-01T00:00:00+00:00'),
-            ('note', 'job', 1, {}, 'Picked up/Delivered (Kanban checklist)',
+            # changes None, not {}: record_history's default for a note row
+            ('note', 'job', 1, None, 'Picked up/Delivered (Kanban checklist)',
              '2020-03-01T00:00:00+00:00'),
             ('action', 'job', 1, {'_action': 'Imported from Kanban'}, '', self.NOW_S),
         ]
