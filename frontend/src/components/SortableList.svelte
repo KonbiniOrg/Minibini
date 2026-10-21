@@ -11,12 +11,16 @@
   // `onReorder(ids)` saves the new order; the dropped order shows at once and
   // the caller's next `items` replaces it (which also undoes a failed save
   // once the caller reloads).
-  import { DragDropProvider } from '@dnd-kit-svelte/svelte';
+  import { DragDropProvider, DragOverlay } from '@dnd-kit-svelte/svelte';
   import { useSortable } from '@dnd-kit-svelte/svelte/sortable';
   import { RestrictToVerticalAxis } from '@dnd-kit/abstract/modifiers';
   import { nextOrder } from '../lib/dragOrder.js';
 
-  let { items = [], getId, disabled = false, onReorder, item } = $props();
+  // `preview(item)`: optional snippet for what follows the cursor. With it, the
+  // dragged item stays in place (dimmed, sliding to where it will land) and the
+  // preview floats — needed for table rows/groups, which can't be lifted out of
+  // a table without losing the table's column widths and row heights.
+  let { items = [], getId, disabled = false, onReorder, item, preview } = $props();
 
   let localOrder = $state(null);
   $effect(() => { void items; localOrder = null; });
@@ -26,16 +30,6 @@
     const list = localOrder.map((id) => byId.get(id)).filter(Boolean);
     return list.length === items.length ? list : items;
   });
-
-  // Pointer drags slide the item in place ('move') instead of lifting it into a
-  // floating layer: a lifted table group leaves the table, its cells resize to
-  // their content, and long text rewraps mid-drag. Keyboard sorting needs the
-  // default (lifted) feedback, so it keeps it.
-  function handleBeforeDragStart(event) {
-    const source = event.operation?.source;
-    if (!source) return;
-    source.feedback = event.operation.activatorEvent instanceof KeyboardEvent ? 'default' : 'move';
-  }
 
   function handleDragEnd(event) {
     const next = nextOrder(ordered.map(getId), event);
@@ -62,11 +56,19 @@
       // @ts-expect-error @dnd-kit/abstract types (as in the dashboard-01 block)
       RestrictToVerticalAxis,
     ]}
-    onBeforeDragStart={handleBeforeDragStart}
     onDragEnd={handleDragEnd}
   >
     {#each ordered as it, index (getId(it))}
       {@render sortableItem(it, index)}
     {/each}
+    {#if preview}
+      <DragOverlay>
+        {#snippet children(source)}
+          {@const it = items.find((x) => getId(x) === source.id)}
+          {#if it}{@render preview(it)}{/if}
+        {/snippet}
+      </DragOverlay>
+    {/if}
   </DragDropProvider>
 {/if}
+

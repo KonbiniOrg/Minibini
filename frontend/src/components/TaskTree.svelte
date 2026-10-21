@@ -203,6 +203,13 @@
   <!-- Each task and its materials are one <tbody>, so a drag moves the
        whole group (a table may hold several tbodies). -->
   <SortableList items={tasks} getId={(t) => t.task_id} disabled={!canDrag} {onReorder}>
+    {#snippet preview(task)}
+      <div class="drag-preview" aria-hidden="true">
+        <span class="drag-preview-grip">⠿</span>
+        <span class="drag-preview-name">{task.name}</span>
+        {#if task.materials?.length}<span class="drag-preview-meta">+{task.materials.length} material{task.materials.length === 1 ? '' : 's'}</span>{/if}
+      </div>
+    {/snippet}
     {#snippet item(task, index, sortable)}
       <tbody class="task-group" data-task-id={task.task_id}
              data-dragging={sortable.dragging} {@attach sortable.ref}>
@@ -260,7 +267,18 @@
      their own background). */
   .task-tree-table :global(tbody.task-group:nth-of-type(even) > tr.task-row) { background: var(--doc-faint); }
   /* The group being dragged lifts above its neighbours. */
-  .task-tree-table :global(tbody.task-group[data-dragging="true"]) { opacity: 0.85; }
+  /* The dragged group stays in the table (dimmed) while the preview follows the cursor. */
+  .task-tree-table :global(tbody.task-group[data-dragging="true"]) { opacity: 0.4; }
+  .task-tree-table :global(.drag-preview) {
+    display: flex; align-items: center; gap: 8px;
+    max-width: 420px; padding: 6px 12px;
+    font-family: var(--font-sans); font-size: var(--text-sm); color: var(--text-fg);
+    background: #fff; border: 1px solid #8f8f8f; border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); cursor: grabbing;
+  }
+  .task-tree-table :global(.drag-preview-grip) { color: var(--text-muted); }
+  .task-tree-table :global(.drag-preview-name) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .task-tree-table :global(.drag-preview-meta) { color: var(--text-muted); white-space: nowrap; }
   .text-right { text-align: right; }
   /* Numbers ("2h 54m", "2.90 hour", "$85.00") stay on one line in this table's
      task and material rows; the width they stop wasting goes to the Name
