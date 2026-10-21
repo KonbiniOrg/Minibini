@@ -1010,6 +1010,12 @@ Billing mechanics and money-record lifecycle.
 
 ## Platform & conventions
 
+- **`python-dateutil` is imported but not pinned in `requirements.txt`.** — _added 2026-10-21_
+  `apps/jobs/financials.py` and the nealsdata converter (`archive_cutoff`) both import
+  `dateutil.relativedelta`; it arrives transitively today. Pin it explicitly so a
+  dependency bump cannot drop it.
+  _Done when:_ `python-dateutil` has its own line in `requirements.txt`.
+
 - **`InvoiceListPage` has no stale-response guard.** — _added 2026-10-21 (archived-jobs final review)_
   `frontend/src/routes/invoices/InvoiceListPage.svelte` `load()` assigns
   whatever response arrives last, so changing the Status filter while the
