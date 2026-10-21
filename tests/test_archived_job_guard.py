@@ -1,6 +1,7 @@
 """An archived job is a read-only historical record: every user-driven mutation
 that the inactive-contact freeze refuses is refused for an archived job too,
-with the archived sentence. The contact stays ACTIVE throughout, so the
+with the archived sentence (deleting the job is the one allowed exception,
+spec 3.5). The contact stays ACTIVE throughout, so the
 archived branch (not the inactive one) is what fires."""
 from datetime import timedelta
 from decimal import Decimal
@@ -77,8 +78,16 @@ class ArchivedJobGuardTest(ArchivedGuardBase):
             'end_time': (now - timedelta(hours=1)).isoformat(),
         }, format='json'))
 
-    def test_delete_job_refused(self):
-        self._assert_archived(self.client.delete(f'/api/jobs/{self.job.pk}/'))
+    def test_delete_job_is_allowed_two_phase(self):
+        # Deleting is the one mutation an archived job still permits (spec 3.5).
+        r = self.client.delete(f'/api/jobs/{self.job.pk}/')
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertIs(r.data['confirm_required'], True)
+        self.assertIn('tasks', r.data['impact'])
+        self.assertTrue(Job.objects.filter(pk=self.job.pk).exists())
+        r = self.client.delete(f'/api/jobs/{self.job.pk}/?confirm=true')
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertFalse(Job.objects.filter(pk=self.job.pk).exists())
 
     def test_material_add_refused(self):
         self._assert_archived(self.client.post(
