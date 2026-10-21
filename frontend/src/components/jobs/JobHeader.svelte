@@ -1,4 +1,5 @@
 <script>
+  import { isClosedJob, jobStatusLabel } from '../../lib/jobStatus.js';
   import { api, errorMessage } from '../../lib/api.js';
   import { showError } from '../../stores/messages.js';
   import { notifyEstimateLinesChanged } from '../../stores/estimateLines.js';
@@ -50,21 +51,11 @@
     rejected: [],
     completed: [],
     cancelled: ['in_progress'],
-  };
-
-  const STATUS_LABELS = {
-    in_progress: 'In Progress',
-    work_complete: 'Work Complete',
-    draft: 'Draft',
-    submitted: 'Submitted',
-    approved: 'Approved',
-    rejected: 'Rejected',
-    completed: 'Completed',
-    cancelled: 'Cancelled',
+    archived: [],
   };
 
   function statusLabel(s) {
-    return STATUS_LABELS[s] || s;
+    return jobStatusLabel(s);
   }
 
   // Trigger labels: the pill names the *act*, not the resulting status, for
@@ -97,9 +88,7 @@
 
   // A closed job doesn't offer Edit (Duplicate stays — cloning a finished
   // job is a normal way to start the next one).
-  let isTerminal = $derived(
-    ['completed', 'rejected', 'cancelled'].includes(job.status)
-  );
+  let isTerminal = $derived(isClosedJob(job.status));
 
   let showStatusSelect = $derived(
     canManageJobs && (validNextStatuses.length > 0 || canHold || job.on_hold)

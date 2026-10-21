@@ -374,6 +374,13 @@ describe('workBlock', () => {
 // ===========================================================================
 // 3. MATERIALS
 // ===========================================================================
+describe('archived jobs are frozen', () => {
+  it('workBlock and spendBlock freeze on archived', () => {
+    expect(workBlock({ job: { status: 'archived' }, overview: { work: { tasks_total: 2 } } }).state).toBe('frozen');
+    expect(spendBlock({ job: { status: 'archived' }, overview: overviewMid, scopeTotal: 12400 }).state).toBe('frozen');
+  });
+});
+
 describe('materialsBlock', () => {
   it('dormant — nothing on order', () => {
     const b = materialsBlock({ pos: [], materials: [] });

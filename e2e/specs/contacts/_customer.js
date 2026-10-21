@@ -6,7 +6,7 @@
 import { apiAs } from '../../fixtures/api.js';
 import { personas } from '../../fixtures/personas.js';
 
-export const CLOSED_JOB = new Set(['completed', 'rejected', 'cancelled']);
+export const CLOSED_JOB = new Set(['completed', 'rejected', 'cancelled', 'archived']);
 
 export async function findCustomerBusiness() {
   const api = await apiAs(personas.finjobs);

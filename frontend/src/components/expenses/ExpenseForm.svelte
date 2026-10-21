@@ -228,7 +228,7 @@
 
   <p>
     <label for="ef-job"><strong>Job</strong> (leave blank for overhead)</label><br>
-    <JobPicker bind:value={jobId} selectedItem={jobRow} onSelect={(j) => { jobRow = j; }} />
+    <JobPicker bind:value={jobId} excludeArchived selectedItem={jobRow} onSelect={(j) => { jobRow = j; }} />
   </p>
   {#each fieldErr('job') as msg}<p><em>{msg}</em></p>{/each}
 

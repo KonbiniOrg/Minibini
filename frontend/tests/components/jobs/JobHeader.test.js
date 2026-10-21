@@ -299,6 +299,16 @@ describe('JobHeader in-flight transition guard', () => {
 });
 
 describe('JobHeader Edit/Duplicate', () => {
+  it('archived job: Archived pill, no select, no Edit, Duplicate stays', () => {
+    const { queryByRole, getByRole, getByText, container } = render(JobHeader, {
+      props: { job: { ...job, status: 'archived', can_manage: true } },
+    });
+    expect(getByText('Archived')).toBeInTheDocument();
+    expect(container.querySelector('select')).toBeNull();
+    expect(queryByRole('button', { name: 'Edit' })).toBeNull();
+    expect(getByRole('button', { name: 'Duplicate…' })).toBeInTheDocument();
+  });
+
   it.each(['completed', 'rejected', 'cancelled'])(
     'hides Edit on a terminal %s job (Duplicate stays)', (status) => {
       const closedJob = { ...job, status };

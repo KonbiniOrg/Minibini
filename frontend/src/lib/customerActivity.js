@@ -7,11 +7,12 @@
 //   - the Delete-offered rule the banner follows (Deactivate/Reactivate always shown)
 //   - the banner's facts line and the contact page's sibling list
 
-const CLOSED_JOB = new Set(['completed', 'rejected', 'cancelled']);
+import { isClosedJob as isClosedJobStatus } from './jobStatus.js';
+
 const CLOSED_INVOICE = new Set(['paid', 'cancelled', 'superseded']);
 const CLOSED_PO = new Set(['received_in_full', 'cancelled']);
 
-export const isClosedJob = (row) => CLOSED_JOB.has(row.status);
+export const isClosedJob = (row) => isClosedJobStatus(row.status);
 export const isClosedInvoice = (row) => CLOSED_INVOICE.has(row.status);
 export const isClosedPO = (row) => CLOSED_PO.has(row.status);
 
