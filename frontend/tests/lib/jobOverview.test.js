@@ -508,6 +508,7 @@ describe('spendBlock', () => {
   it('archived job labels its labor hours as imported', () => {
     const b = spendBlock({ job: { status: 'archived' }, overview: overviewMid, scopeTotal: 12400 });
     expect(b.frozenText).toContain('41.5 hours imported');
+    expect(spendBlock({ job: { status: 'completed' }, overview: overviewMid, scopeTotal: 12400 }).frozenText).not.toContain('imported');
   });
 
   it('dormant — nothing spent', () => {

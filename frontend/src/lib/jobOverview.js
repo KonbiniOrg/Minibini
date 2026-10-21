@@ -547,7 +547,7 @@ export function spendBlock({ job, overview, scopeTotal = 0 }) {
     state: 'active',
     href,
     stats: [
-      { label: 'Labor', value: labor, sub: `${fmtHours(spend.labor_hours)} hours${status === 'archived' ? ' (imported)' : ''}` },
+      { label: 'Labor', value: labor, sub: `${fmtHours(spend.labor_hours)} hours` },
       { label: 'Materials', value: materials, sub: 'bought so far' },
       totalStat,
     ],
