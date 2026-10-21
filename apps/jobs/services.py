@@ -183,10 +183,22 @@ def _assert_party_active(contact, field='contact'):
         raise ValidationError({field: [f'{business.business_name} is inactive.']})
 
 
+def _assert_job_not_archived(job, action):
+    """An archived job is a read-only historical record: no user-driven
+    mutation, in any domain. Called first by _assert_job_not_frozen so every
+    mutator that honours the freeze honours this too."""
+    if job.status == Job.STATUS_ARCHIVED:
+        raise ValidationError(
+            f"Cannot {action}: this job is archived. Archived jobs are a "
+            f"historical record and cannot be changed."
+        )
+
+
 def _assert_job_not_frozen(job, action):
     """Spec 5.1: a job whose contact is inactive accepts no user-driven
     mutation. Mirrors _assert_job_not_on_hold; system transitions never
-    call this."""
+    call this. Archived jobs are refused first."""
+    _assert_job_not_archived(job, action)
     contact = job.contact
     if contact.is_active:
         return
@@ -582,6 +594,9 @@ class JobService:
         except Job.DoesNotExist:
             raise NotFoundError(f'Job {pk} not found')
         if not system_transition:
+            # Archived is refused before the same-business contact-swap
+            # carve-out below (which only exists to thaw inactive contacts).
+            _assert_job_not_archived(job, 'edit this job')
             new_contact = kwargs.get('contact')
             swap_only = set(kwargs) == {'contact'}
             if new_contact is not None:

@@ -94,6 +94,10 @@ class ExpenseService:
             if material and job is None:
                 job = material.job
 
+            if job is not None:
+                from apps.jobs.services import _assert_job_not_archived
+                _assert_job_not_archived(job, 'attribute an expense to this job')
+
             expense = Expense(
                 entered_by=entered_by, purchased_by=purchased_by, amount=amount,
                 purchased_on=purchased_on, accounting_category=accounting_category,
@@ -134,6 +138,12 @@ class ExpenseService:
         # Once reimbursed, the money fields are settled (the person was paid).
         ExpenseService._assert_reimbursed_money_unchanged(expense, fields)
         old_stock_qty = expense.stock_qty
+        # Narrow archived-only check (late receipts on completed / inactive-
+        # contact jobs stay allowed). Before any setattr so the material move
+        # below can never run.
+        if fields.get('job') is not None:
+            from apps.jobs.services import _assert_job_not_archived
+            _assert_job_not_archived(fields['job'], 'attribute an expense to this job')
         with transaction.atomic():
             for key, value in fields.items():
                 if key in allowed:
