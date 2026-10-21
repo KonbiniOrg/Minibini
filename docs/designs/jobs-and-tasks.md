@@ -2103,7 +2103,7 @@ task, so the table stripes alternate task groups in CSS
 
 **Table exemplar (design-system workstream).** The Tasks table is the first
 table with the readability conventions other tables will adopt one at a time:
-Inter via `--font-sans`; one 14px text size (`--text-sm`) for cells, headers,
+Inter (the app font, `--font-sans`); one 14px text size (`--text-sm`) for cells, headers,
 tags, and buttons; muted text `--text-muted` (#666, AA on the yellow bands);
 bold only in headers; status tags as outlined pills (label in body colour,
 colour on dot and border); buttons in the style of shadcn's Button

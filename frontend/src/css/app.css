@@ -61,6 +61,12 @@
   --doc-soft: #f0fdfa;
   --doc-border: #99f6e4;
   --doc-faint: #f8f9fa;
+
+  /* Font, and readability values (see the Readability section); inert until used. */
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;  /* self-hosted Inter (main.js) */
+  --text-sm: 14px;      /* table body and headers */
+  --text-fg: #0a0a0a;
+  --text-muted: #666666; /* 5.7:1 on white, 5.1:1 on the palest band — AA */
 }
 
 /* The colorways: estimate/CO = indigo, tasks/materials = amber, invoice =
@@ -74,8 +80,16 @@
 
 body {
   margin: 0;
-  font-family: Verdana, Geneva, sans-serif;
+  font-family: var(--font-sans);
+  /* Inter's default digits are proportional; Verdana's were all one width.
+     Keep one width so number columns align and counts ("1–25", "26–50")
+     don't nudge the controls beside them. */
+  font-variant-numeric: tabular-nums;
 }
+
+/* Browsers don't pass the page font to form controls; without this, buttons
+   and inputs render in the OS font next to Inter text. */
+button, input, select, textarea { font-family: inherit; }
 
 body[data-view-mode="full"] {
   background-color: #fffde6;
@@ -824,11 +838,6 @@ tr.grand td { font-weight:600; border-top:2px solid var(--doc-border); backgroun
    Inert by design: custom properties and the .figure class change
    nothing until a component opts in. Adopted table by table; first user is the
    job Tasks table (TaskTree.svelte). Values match the type-scale spike. */
-:root {
-  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;  /* type-scale spike's face */
-  --text-sm: 14px;      /* table body and headers */
-  --text-fg: #0a0a0a;
-  --text-muted: #666666; /* 5.7:1 on white, 5.1:1 on the palest band — AA */
-}
+/* Values live in the :root block at the top of this file. */
 /* A number in a cell: aligned digits, never split across lines. */
 .figure { font-variant-numeric: tabular-nums; white-space: nowrap; }

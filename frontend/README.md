@@ -321,6 +321,13 @@ Clear `formError`/`errors` at submit start and on open/cancel.
 - Global styles live in `frontend/src/css/app.css`, imported via `main.js`
   **and** `portal-main.js` — global changes reach the customer portal too.
 - Semantic HTML with minimal global styles.
+- **One app font: Inter.** Self-hosted (`@fontsource-variable/inter`,
+  imported in both entry points), set once on `body` as `var(--font-sans)`
+  with `tabular-nums` (Inter's default digits vary in width; ours don't, so
+  number columns align and counts don't shift nearby controls); form
+  controls inherit it. Components never name their own sans face —
+  only `var(--font-sans)`, `inherit`, or a monospace stack for code-like
+  fields and board figures. `tests/appFont.test.js` enforces this.
 - **app.css is organized in three sections** — (1) BASE: tokens, element
   defaults, utilities, the page frame; (2) SHARED: families any page may use;
   (3) PAGE KINDS: vocabulary tied to the three page categories of the
