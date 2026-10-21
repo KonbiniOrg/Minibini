@@ -396,7 +396,10 @@ Clear `formError`/`errors` at submit start and on open/cancel.
     business detail pages) are peer banner components. Each is rendered by the
     route **above** `.page-body` and gets its own background color to signal the
     area — job = gray-800 `#1f2937`, contacts/business = red-950 `#450a0a`. More
-    area headers with their own colors are planned. On job pages, `JobHeader` is
+    area headers with their own colors are planned. `JobHeader`'s top-of-band
+    notice slot holds `FrozenPartyBanner` (inactive contact) or, on an archived
+    job, `components/jobs/ArchivedJobBanner.svelte`, which takes precedence
+    (`docs/designs/jobs-and-tasks.md` §3.8). On job pages, `JobHeader` is
     always paired with `JobNavRail` (an eight-link section strip) and an
     optional collapsible `JobContextBand`; the trio is packaged as
     `components/jobs/JobShell.svelte` — **every** job route, including the

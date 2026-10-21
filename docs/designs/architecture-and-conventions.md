@@ -159,6 +159,26 @@ pill's PATCH, the status-action endpoints, and the estimate- and
 invoice-driven handlers all route through it, so side effects fire
 regardless of caller.
 
+**Job status groupings — named, never re-spelled** (2026-10-20,
+archived-jobs). Three status sets recur with identical membership across the
+codebase and are named once, on `Job` (alongside `Invoice.UNPAID_STATUSES`):
+`Job.PRE_APPROVAL_STATUSES` (draft, submitted), `Job.CLOSED_STATUSES`
+(completed, rejected, cancelled, archived) and `Job.WORK_FROZEN_STATUSES`
+(closed + work_complete). The SPA twin is `frontend/src/lib/jobStatus.js`
+(`PRE_APPROVAL_JOB_STATUSES` / `CLOSED_JOB_STATUSES` /
+`WORK_FROZEN_JOB_STATUSES` `Set`s, the `isPreApprovalJob` / `isClosedJob` /
+`isWorkFrozenJob` predicates, and `JOB_STATUS_LABELS` / `jobStatusLabel`).
+When code means one of those three ideas, use the name — never a literal list
+or tuple of statuses (Python or JS) — so a new status lands everywhere in one
+line each; the two files must stay in step. **Bespoke allow-lists stay
+bespoke**: schedule's work-active set, the board's pipeline / in-progress /
+unpaid lanes, timeslip-allowed statuses, `BILLABLE_JOB_STATUSES`,
+hold-allowed, auto-complete / auto-advance gates,
+`_EARMARK_RELEASING_STATUSES`, the accent-colour active set and the contact
+deactivation blockers each encode their own domain rule; don't fold them into
+a grouping just because the membership happens to match today. See
+`jobs-and-tasks.md` §3.8.
+
 ### 2.3 Signals vs services
 
 The codebase has not committed to a single pattern for cross-model side
@@ -347,8 +367,8 @@ All in `apps/api/mixins.py`.
 | `StatusTransitionMixin` | Every document viewset | Auto-registers `@action` POST endpoints from a `status_actions` dict, with optional `requires_reason` validation and HistoryEntry attachment. |
 | `LineItemMixin` | EstimateViewSet, InvoiceViewSet, PurchaseOrderViewSet | Adds `line-items/`, `line-items/{id}/`, `line-items/reorder/` actions; delegates all writes to `line_item_service_class`. Its own `try`/`except` blocks catch only `NotFoundError` → 404; a service `ValidationError` is **not** caught here (2026-07-25 fix — it used to be re-rendered as `{'detail': str(e)}`, which stringified dict-keyed field errors into garbled text) and instead propagates to the central handler (§3.9), which renders both the plain-sentence and field-keyed shapes correctly. |
 | `JobTaskMixin` | JobViewSet | Adds `tasks/`, `tasks/{id}/` actions for `Task` (job-side); calls `TaskService.create_direct` / `delete_task`. (The Job's `materials/` action lives on `JobViewSet` directly. There is no `fees/` action — the `Fee` model was deleted; a plain hand-line no longer crystallizes into a job atom on estimate/CO acceptance, see §2.3 above.) |
-| `JSONDestroyMixin` | JobViewSet, InventoryItemViewSet, WorkTemplateViewSet, ServiceItemViewSet, AccountingCategoryViewSet | Overrides DRF's default destroy() to return 200 with `{'message': ...}` instead of 204; subclasses set `destroy_response_message`. |
-| `ConfirmDeleteMixin` | ContactViewSet, BusinessViewSet, ReimbursementViewSet | Two-phase delete; first DELETE returns `{'confirm_required': True, 'impact': {…}}`, DELETE with `?confirm=true` runs the delete. Subclasses implement `get_deletion_impact(obj)` and `perform_confirmed_destroy(obj)`. |
+| `JSONDestroyMixin` | InventoryItemViewSet, WorkTemplateViewSet, ServiceItemViewSet, AccountingCategoryViewSet | Overrides DRF's default destroy() to return 200 with `{'message': ...}` instead of 204; subclasses set `destroy_response_message`. |
+| `ConfirmDeleteMixin` | ContactViewSet, BusinessViewSet, ReimbursementViewSet, JobViewSet | Two-phase delete; first DELETE returns `{'confirm_required': True, 'impact': {…}}`, DELETE with `?confirm=true` runs the delete. Subclasses implement `get_deletion_impact(obj)` and `perform_confirmed_destroy(obj)`. |
 | `JobScopedPermissionMixin` | JobViewSet, EstimateViewSet, ChangeOrderViewSet, DeliverableViewSet, TaskViewSet | Resolves a viewset's target Job for `CanManageJobOrPM` via `get_object_job(obj)` / `get_permission_target_job(request)`. Configured per viewset with `job_object_path` (attribute chain instance → Job, e.g. `'self'`, `'estimate.job'`), `job_create_field` (create-body key naming the parent Job), and `job_url_kwarg` (job-nested URL kwarg). |
 | `JobScopedCanManageMixin` | Job/Estimate/ChangeOrder/Deliverable/Task serializers | Serializer mixin adding a server-computed read-only `can_manage` boolean (`JobService.user_can_manage(request.user, <job>)`, job reached via `can_manage_job_path`). Caches the atom check per-request to keep list serialization O(1) queries. The SPA gates job-scoped edit affordances on this per-object flag — same convention as the line-item `editable`/`deletable` booleans. |
 
@@ -476,7 +496,7 @@ a runtime error in the SPA.
 - `BlepViewSet` — `apps/api/bleps/views.py`
 - `RateSchemeViewSet` — `apps/api/rate_schemes/views.py`
 - `ExpenseViewSet` — `apps/api/expenses/views.py`
-- `JobViewSet` — `JSONDestroyMixin`
+- `JobViewSet` — `ConfirmDeleteMixin` (two-phase since 2026-10-20)
 - `InventoryItemViewSet` — `JSONDestroyMixin`
 - `WorkTemplateViewSet` — `JSONDestroyMixin` (plus `perform_destroy` for service call)
 - `ServiceItemViewSet` — `JSONDestroyMixin` (plus `perform_destroy` for service call)
@@ -498,12 +518,15 @@ DELETE /api/contacts/5/?confirm=true
   → 200 {"message": "\"Jane Doe\" has been deleted."}
 ```
 
-Implemented via `ConfirmDeleteMixin` in `apps/api/mixins.py`. Three
+Implemented via `ConfirmDeleteMixin` in `apps/api/mixins.py`. Four
 viewsets use it today:
 
 - `ContactViewSet` — `apps/api/contacts/views.py`
 - `BusinessViewSet` — `apps/api/contacts/views.py`
 - `ReimbursementViewSet` — `apps/api/reimbursements/views.py`
+- `JobViewSet` — `apps/api/jobs/views.py` (2026-10-20; impact from
+  `JobService.job_deletion_impact`, delete via `JobService.delete_job` —
+  `jobs-and-tasks.md` §3.8)
 
 Each one implements `get_deletion_impact(obj) -> dict` and
 `perform_confirmed_destroy(obj) -> Response`; the mixin handles the
@@ -1582,7 +1605,7 @@ Final-status sets ("practically done"):
 
 | Model | Final statuses |
 |---|---|
-| `Job` | `completed`, `rejected`, `cancelled` |
+| `Job` | `Job.CLOSED_STATUSES` — `completed`, `rejected`, `cancelled`, `archived` |
 | `PurchaseOrder` | `received_in_full`, `cancelled` |
 
 (The Bill slice of the finality map was removed with the 2026-07-23 bill

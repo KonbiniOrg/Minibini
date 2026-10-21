@@ -765,6 +765,16 @@ Billing mechanics and money-record lifecycle.
 
 ## Purchasing & inventory
 
+- **PO line task picker can't offer archived tasks.** — _added 2026-10-21 (archived-jobs, spec §3.4)_
+  Linking a PO line to a task on an archived job (`PurchaseOrderLineItem.task`)
+  is allowed at the API/model level, but `TaskLinkPicker.svelte` queries
+  `?open=true`, which excludes archived jobs (`Job.CLOSED_STATUSES`) — and must,
+  since that picker also serves work that must never attach to an archive. A
+  migrated shop that imports its old POs may want to link them to archived tasks.
+  Take up with the spreadsheet importer once the need is concrete.
+  _Done when:_ a picker variant that offers archived tasks exists for the
+  PO-line task link (and only there), or the need is ruled out.
+
 (The procurement-machinery items moved into the freeform-materials plan
 2026-07-04; the plan shipped 2026-07-05 and the still-open ones returned below.)
 
@@ -999,6 +1009,13 @@ Billing mechanics and money-record lifecycle.
   are frozen.
 
 ## Platform & conventions
+
+- **`loadBackdrop` reads only the first 100 jobs.** — _added 2026-10-21 (archived-jobs e2e)_
+  `e2e/fixtures/lookups.js` `loadBackdrop()` fetches `/api/jobs/?page_size=100`
+  (the API max) and never follows `next`. The Playwright seed now has 101 jobs
+  (the appended archived `OLD-1042`), so the shape finders see a truncated set;
+  harmless today but a silent seed gap as the seed grows.
+  _Done when:_ `loadBackdrop` paginates until `next` is null.
 
 - **Seed RateScheme "knife cutting" (pk 9) is `elapsed_time` in minutes.** —
   _added 2026-10-20 (noticed during the archived-jobs design)_

@@ -1717,6 +1717,19 @@ expense is one of two modes:
 Modes are mutually exclusive (validated). An inventoried `new_material` is routed
 to a stock receipt automatically.
 
+**No expenses on archived jobs** (2026-10-20, archived-jobs). An archived job
+(`jobs-and-tasks.md` §3.8) is a read-only historical import, and an expense on
+it would change its `spent` / `profit` and the customer's windowed totals.
+`ExpenseService.submit` (with a `job`, given or inferred from the material) and
+`ExpenseService.update` (re-attribution via `job`) call
+`_assert_job_not_archived(job, 'attribute an expense to this job')` →
+400 `{detail: "Cannot attribute an expense to this job: this job is archived. …"}`.
+This is the narrow archived-only helper, **not** the full frozen-job guard: late
+receipts against a *completed* or inactive-contact job stay allowed. In the SPA,
+`ExpenseForm.svelte`'s `JobPicker` passes `excludeArchived` →
+`/api/jobs/?exclude_archived=true` (drops only archived jobs; `?open=true` would
+also drop completed ones).
+
 - **Job P&L** (`apps/jobs/financials.py` `_spent`) = non-rejected, **non-stock-
   receipt** expenses by `amount` (overhead `job=null` excluded) + consumed
   materials with no expense, at cost (where inventoried stock cost lands) + labor.

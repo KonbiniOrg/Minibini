@@ -309,7 +309,10 @@ fixed in `_open_statuses()`:
 Each open-record blocker reads `N open job(s)`-style (`1 open job`, `2 open
 POs`) followed by up to five record numbers (drafts show `(draft)`), e.g.
 `2 open jobs (JOB-2026-0001, JOB-2026-0002)`. Closed work (completed,
-cancelled, paid, received) never blocks.
+cancelled, paid, received) never blocks. Neither does an **archived** job
+(not in the allow-list), so a customer whose only jobs are archived can be
+deactivated; the archived job's page then shows the archived banner, not the
+inactive-contact one (`jobs-and-tasks.md` §3.8).
 
 ### Cascade
 
@@ -686,11 +689,27 @@ which returns:
 
 | key | meaning |
 |---|---|
-| `invoiced`, `profit` | sums of the per-job `compute_job_financials` figures (a plain per-job loop, as before — fine at current volumes, an N × query-cost pattern to know about) |
-| `open_jobs` | count of jobs not completed / rejected / cancelled |
+| `invoiced`, `profit` | sums of the per-job `compute_job_financials` figures over the **in-window** jobs only (see "Rolling window" below; archived jobs included) — a plain per-job loop, fine at current volumes, an N × query-cost pattern to know about |
+| `open_jobs` | count of jobs not in `Job.CLOSED_STATUSES` (completed / rejected / cancelled / archived) — all jobs, unwindowed |
 | `outstanding` | Σ (line-item total − `qbo_amount_paid`) over invoices in `Invoice.UNPAID_STATUSES` (open / partly-paid / defaulted — the constant moved onto the model so the A/R serializer and this rollup share one set) |
 | `first_job_date` | earliest `created_date`, as a local ISO date, or null |
 | `last_job_start` | latest of each job's `start_date` (falling back to `created_date`), local ISO date or null |
+| `window_months` | the window length used (int), for the banner labels — `/api/settings/` is config-gated, so the payload carries it |
+| `includes_archived` | bool — at least one **in-window** job is archived (an archived job outside the window does not set it) |
+
+**Rolling window** (2026-10-20, archived-jobs). `invoiced` and `profit` are
+trailing figures, not lifetime: a job is *in the window* if it is **not
+closed** (any status outside `Job.CLOSED_STATUSES` — always in), or it is
+closed and `completed_date ≥ now − N months`; a closed job with a **null**
+`completed_date` (possible for an archive with no dates) is **out**. N is
+Configuration `customer_financials_window_months` (default 12, integer ≥ 1;
+missing/invalid ⇒ 12 — `data-constraints.md` §1.1). The window is by job, not
+by invoice, because `profit = invoiced − spent` and spend has no single date;
+windowing both by the job keeps them consistent, and old archives age out by
+their imported `completed_date`. `outstanding`, `open_jobs`,
+`first_job_date` and `last_job_start` are "right now" / history facts and stay
+over **all** jobs (archived jobs with dates extend the date facts, which is the
+point).
 
 The viewsets serialize money as 2-dp strings, counts as ints, dates as ISO
 strings or null (`_financials_payload` in `apps/api/contacts/views.py`).
@@ -699,7 +718,15 @@ strings or null (`_financials_payload` in `apps/api/contacts/views.py`).
 this rollup on both detail pages: a facts line ("Customer since Mar 2024 ·
 Last job started Sep 26, 2026 · Net 30"; "Contact since …" on contact
 pages; null facts omitted) over a numbers box of Open jobs / Outstanding
-(amber) / Invoiced (green) / Profit (green or red). It also renders the
+(amber) / **Invoiced (N mo)** (green) / **Profit (N mo)** (green or red) —
+the `(N mo)` suffix read from `financials.window_months`. When
+`financials.includes_archived` is true it adds one muted line under the
+figures: *"Includes archived jobs — imported labor may be incomplete."*
+(archived labor comes only from imported hour-unit tasks,
+`jobs-and-tasks.md` §3.8); a customer with no in-window archive never sees
+it. Archived jobs list under the jobs section's closed toggle ("show N
+completed", `isClosedJob` from `lib/jobStatus.js`) with the label
+"Archived". It also renders the
 name, the counterpart link (business's default contact ↔ contact's
 business, or "(individual)" when a contact has none), the "default
 contact" chip, and the page-supplied `actions` snippet — see "Detail
