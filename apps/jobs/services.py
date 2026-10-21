@@ -1146,10 +1146,15 @@ class JobService:
         for material in Material.objects.filter(job=source_job).exclude(
             consumption_state=Material.CONSUMPTION_STATE_RELEASED,
         ).order_by('pk'):
+            fields = material.copy_fields()
+            # An imported (archived-job) cost is history; on the new job it is
+            # only a placeholder, so it reads as an unconfirmed estimate.
+            if fields.get('cost_source') == Material.COST_SOURCE_IMPORTED:
+                fields['cost_source'] = Material.COST_SOURCE_ESTIMATED
             MaterialService.create_on_job(
                 job=new_job,
                 task=task_map.get(material.task_id),
-                **material.copy_fields(),
+                **fields,
             )
 
     @staticmethod

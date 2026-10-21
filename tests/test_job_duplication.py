@@ -269,6 +269,34 @@ class DuplicateEstimateTest(DuplicateJobTestBase):
         self.assertEqual(Earmark.objects.filter(job=new_job).count(), 0)
 
 
+    def test_duplicating_archived_job_maps_imported_cost_to_estimated_without_minting(self):
+        archived = Job.objects.create(
+            job_number='JOB-ARCH-001', name='Old', contact=self.contact,
+            status=Job.STATUS_ARCHIVED)
+        Material.objects.create(
+            job=archived, description='Imported ply', quantity=Decimal('1'),
+            unit_cost=Decimal('5.00'), inventory_item=None,
+            cost_source=Material.COST_SOURCE_IMPORTED,
+            consumption_state=Material.CONSUMPTION_STATE_CONSUMED,
+            accounting_category=self.category)
+        Material.objects.create(
+            job=archived, description='PO ply', quantity=Decimal('1'),
+            unit_cost=Decimal('6.00'), inventory_item=None,
+            cost_source=Material.COST_SOURCE_PO,
+            consumption_state=Material.CONSUMPTION_STATE_CONSUMED,
+            accounting_category=self.category)
+        before = InventoryItem.objects.count()
+        new_job = JobService.duplicate_job(
+            archived, contact=self.contact, path='estimate')
+        imported = Material.objects.get(job=new_job, description='Imported ply')
+        self.assertEqual(imported.cost_source, Material.COST_SOURCE_ESTIMATED)
+        self.assertEqual(
+            imported.consumption_state, Material.CONSUMPTION_STATE_PENDING)
+        po = Material.objects.get(job=new_job, description='PO ply')
+        self.assertEqual(po.cost_source, Material.COST_SOURCE_PO)
+        self.assertEqual(InventoryItem.objects.count(), before)
+
+
 class DuplicateApiTest(DuplicateJobTestBase):
 
     def setUp(self):
