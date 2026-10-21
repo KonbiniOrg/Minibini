@@ -95276,5 +95276,210 @@
         "jkim"
       ]
     }
+  },
+  {
+    "model": "jobs.job",
+    "pk": 101,
+    "fields": {
+      "job_number": "OLD-1042",
+      "name": "Reception desk (imported)",
+      "created_date": "2026-03-20T17:00:00Z",
+      "start_date": "2026-03-30T15:00:00Z",
+      "due_date": null,
+      "completed_date": "2026-04-19T17:00:00Z",
+      "status": "archived",
+      "on_hold": false,
+      "hold_reason": "",
+      "contact": 82,
+      "project_manager": [
+        "schen"
+      ],
+      "customer_po_number": "",
+      "description": "Reception desk, imported from the previous system",
+      "accent_color": "#8b5cf6"
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 525,
+    "fields": {
+      "name": "Fabrication",
+      "description": "Fabrication",
+      "sort_order": 1,
+      "est_worker_time": null,
+      "est_qty": null,
+      "parent_task": null,
+      "assignee": null,
+      "job": 101,
+      "status": "complete",
+      "blocked_reason": "",
+      "worker_queue": null,
+      "active_modifiers": [],
+      "actual_qty": "12.50",
+      "source_scheme": null,
+      "qty_source": "entered_qty",
+      "rate": "85.00",
+      "unit_label": "hour",
+      "accounting_category": 1
+    }
+  },
+  {
+    "model": "jobs.task",
+    "pk": 526,
+    "fields": {
+      "name": "Install",
+      "description": "Install",
+      "sort_order": 2,
+      "est_worker_time": null,
+      "est_qty": null,
+      "parent_task": null,
+      "assignee": null,
+      "job": 101,
+      "status": "complete",
+      "blocked_reason": "",
+      "worker_queue": null,
+      "active_modifiers": [],
+      "actual_qty": "1.00",
+      "source_scheme": null,
+      "qty_source": "entered_qty",
+      "rate": "2137.50",
+      "unit_label": "ea",
+      "accounting_category": 1
+    }
+  },
+  {
+    "model": "deliverables.deliverable",
+    "pk": 106,
+    "fields": {
+      "job": 101,
+      "description": "Reception desk",
+      "qty_ordered": "1.00",
+      "units": "ea",
+      "sort_order": 10,
+      "created_at": "2026-03-20T17:00:00Z",
+      "updated_at": "2026-03-20T17:00:00Z"
+    }
+  },
+  {
+    "model": "deliverables.shipment",
+    "pk": 13,
+    "fields": {
+      "job": 101,
+      "sequence": 1,
+      "status": "picked_up",
+      "prepared_date": "2026-04-19T17:00:00Z",
+      "picked_up_date": "2026-04-19T17:00:00Z",
+      "notes": "",
+      "created_at": "2026-04-19T17:00:00Z",
+      "updated_at": "2026-04-19T17:00:00Z"
+    }
+  },
+  {
+    "model": "deliverables.shipmentitem",
+    "pk": 13,
+    "fields": {
+      "shipment": 13,
+      "deliverable": 106,
+      "qty": "1.00"
+    }
+  },
+  {
+    "model": "invoicing.invoice",
+    "pk": 29,
+    "fields": {
+      "job": 101,
+      "invoice_number": "OLD-INV-1042",
+      "status": "paid",
+      "created_date": "2026-04-19T17:00:00Z",
+      "sent_date": "2026-04-19T17:00:00Z",
+      "closed_date": "2026-04-19T17:00:00Z",
+      "qbo_id": null,
+      "qbo_payment_status": "",
+      "qbo_amount_paid": "3200.00"
+    }
+  },
+  {
+    "model": "invoicing.invoicelineitem",
+    "pk": 137,
+    "fields": {
+      "inventory_item": null,
+      "line_number": 1,
+      "qty": "1.00",
+      "units": "ea",
+      "description": "Reception desk",
+      "price": "3200.00",
+      "accounting_category": 3,
+      "invoice": 29,
+      "adjustment_service": null,
+      "adjustment_target_categories": []
+    }
+  },
+  {
+    "model": "core.jobhistory",
+    "pk": 1919,
+    "fields": {
+      "entry_type": "action",
+      "object_type": "job",
+      "object_id": 101,
+      "user": [
+        "jkim"
+      ],
+      "timestamp": "2026-03-20T17:00:00Z",
+      "changes": {
+        "_action": "Created"
+      },
+      "text": ""
+    }
+  },
+  {
+    "model": "core.jobhistory",
+    "pk": 1920,
+    "fields": {
+      "entry_type": "action",
+      "object_type": "job",
+      "object_id": 101,
+      "user": [
+        "jkim"
+      ],
+      "timestamp": "2026-03-30T15:00:00Z",
+      "changes": {
+        "_action": "Started"
+      },
+      "text": ""
+    }
+  },
+  {
+    "model": "core.jobhistory",
+    "pk": 1921,
+    "fields": {
+      "entry_type": "action",
+      "object_type": "job",
+      "object_id": 101,
+      "user": [
+        "jkim"
+      ],
+      "timestamp": "2026-04-19T17:00:00Z",
+      "changes": {
+        "_action": "Completed in previous system"
+      },
+      "text": ""
+    }
+  },
+  {
+    "model": "core.jobhistory",
+    "pk": 1922,
+    "fields": {
+      "entry_type": "action",
+      "object_type": "job",
+      "object_id": 101,
+      "user": [
+        "jkim"
+      ],
+      "timestamp": "2026-04-20T17:00:00Z",
+      "changes": {
+        "_action": "Imported"
+      },
+      "text": ""
+    }
   }
 ]
