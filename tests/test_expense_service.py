@@ -357,6 +357,39 @@ class ExpenseJobLinkTest(TestCase):
         exp.refresh_from_db()
         self.assertEqual(exp.job_id, self.other_job.pk)
 
+    def _archived_job(self):
+        from apps.jobs.models import Job
+        return Job.objects.create(
+            job_number='JOB-ARC', contact=self.contact, status=Job.STATUS_ARCHIVED)
+
+    def test_submit_to_archived_job_is_refused(self):
+        arc = self._archived_job()
+        with self.assertRaises(ValidationError) as cm:
+            self._expense(job=arc)
+        self.assertIn('is archived', str(cm.exception))
+        self.assertEqual(Expense.objects.filter(job=arc).count(), 0)
+
+    def test_submit_to_completed_job_still_allowed(self):
+        from apps.jobs.models import Job
+        done = Job.objects.create(
+            job_number='JOB-DONE', contact=self.contact, status=Job.STATUS_COMPLETED)
+        exp = self._expense(job=done)
+        self.assertEqual(exp.job_id, done.pk)
+
+    def test_update_reattributing_to_archived_job_is_refused(self):
+        exp = self._expense(amount=Decimal('60.00'), new_material={
+            'job_id': self.job.pk, 'description': 'Steel',
+            'quantity': 2, 'price': Decimal('30.00')})
+        material = exp.material
+        arc = self._archived_job()
+        with self.assertRaises(ValidationError) as cm:
+            ExpenseService.update(expense=exp, actor=self.user, job=arc)
+        self.assertIn('is archived', str(cm.exception))
+        material.refresh_from_db()
+        exp.refresh_from_db()
+        self.assertEqual(material.job_id, self.job.pk)
+        self.assertEqual(exp.job_id, self.job.pk)
+
     def test_freeform_new_material_uses_entered_cost_no_division(self):
         # The created material's unit_cost is what the user entered (price),
         # NOT amount/quantity. Goods = 2 × $30 = $60; amount $66 (incl $6 tax) —

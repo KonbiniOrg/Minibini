@@ -48,6 +48,7 @@
     { value: 'rejected', label: 'Rejected' },
     { value: 'completed', label: 'Completed' },
     { value: 'cancelled', label: 'Cancelled' },
+    { value: 'archived', label: 'Archived' },
   ];
 
   function toggleJobStatus(value) {

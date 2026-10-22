@@ -7,6 +7,7 @@
   let est_expire_days = $state('');
   let board_closed_retention_days = $state('');
   let average_labor_cost = $state('');
+  let customer_financials_window_months = $state('');
   let job_number_sequence = $state('');
   let po_number_sequence = $state('');
 
@@ -19,6 +20,7 @@
       est_expire_days = data.est_expire_days ?? '';
       board_closed_retention_days = data.board_closed_retention_days ?? '';
       average_labor_cost = data.average_labor_cost ?? '';
+      customer_financials_window_months = data.customer_financials_window_months ?? '';
       job_number_sequence = data.job_number_sequence ?? '';
       po_number_sequence = data.po_number_sequence ?? '';
     } catch (_) {}
@@ -56,6 +58,13 @@
   </p>
   <p><small>How long closed jobs stay visible on the Job Board.</small></p>
   <p>
+    <label><strong>Customer totals window</strong><br>
+      <input type="number" min="1" class="num" bind:value={customer_financials_window_months}> months
+    </label>
+    {#if errors.customer_financials_window_months}<em class="err">{errors.customer_financials_window_months}</em>{/if}
+  </p>
+  <p><small>Months of closed jobs counted in a customer's Invoiced and Profit figures.</small></p>
+  <p>
     <label><strong>Average labor cost</strong><br>
       $ <input type="number" min="0" step="0.01" class="num" bind:value={average_labor_cost}> / hour
     </label>
@@ -65,7 +74,7 @@
     total. Leave blank to value labor at $0 until you set a rate.</small></p>
   <p>
     <button type="button"
-            onclick={() => save({ est_expire_days, board_closed_retention_days, average_labor_cost }, 'Defaults')}>Save defaults</button>
+            onclick={() => save({ est_expire_days, board_closed_retention_days, average_labor_cost, customer_financials_window_months }, 'Defaults')}>Save defaults</button>
   </p>
 </fieldset>
 

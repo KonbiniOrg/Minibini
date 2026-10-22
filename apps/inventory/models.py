@@ -267,12 +267,14 @@ class Material(MaterialBase):
     COST_SOURCE_PO = 'po'                        # real document cost from a PO line
     COST_SOURCE_EXPENSE = 'expense'              # real document cost from an attached expense
     COST_SOURCE_CUSTOMER = 'customer_supplied'   # $0, deliberate and locked
+    COST_SOURCE_IMPORTED = 'imported'            # archived-job import: historical cost, no provenance claimed
     COST_SOURCE_CHOICES = [
         (COST_SOURCE_ESTIMATED, 'Estimated'),
         (COST_SOURCE_ENTERED, 'Entered'),
         (COST_SOURCE_PO, 'PO'),
         (COST_SOURCE_EXPENSE, 'Expense'),
         (COST_SOURCE_CUSTOMER, 'Customer supplied'),
+        (COST_SOURCE_IMPORTED, 'Imported'),
     ]
 
     material_id = models.AutoField(primary_key=True)

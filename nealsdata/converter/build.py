@@ -13,7 +13,10 @@ from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 from decimal import Decimal
 
+from dateutil.relativedelta import relativedelta
+
 from nealsdata.converter import parsing as P
+from nealsdata.converter import deposits as DEP
 
 # Mirrors apps.contacts' phone-digit stripping (converter stays standalone).
 _PHONE_STRIP = re.compile(r'[\s\-.()+]')
@@ -1402,6 +1405,7 @@ def _build_line_item_tasks(c, base_ref, job_pk, task_lines, start_sort=0):
         }
         fields.update(_stamp_money_block(c, scheme_pk, active_modifiers))
         c.add_fixture('jobs.task', task_pk, fields)
+        c.line_est_qty[task_pk] = fields['est_qty']
         if base_ref not in c.cut_task and 'cut' in name.lower():
             c.cut_task[base_ref] = task_pk
     return sort_order
@@ -1439,10 +1443,115 @@ def assign_project_managers(c):
         return
     jobs = sorted((f for f in c.fixture_data if f['model'] == 'jobs.job'),
                   key=lambda f: f['pk'])
+    archived = c.archived_job_pks
     for f in jobs:
+        if f['pk'] in archived:
+            continue  # archived jobs carry only translated data (spec §6)
         if f['fields'].get('status') == 'draft':
             continue
         f['fields']['project_manager'] = random.choice(pool)
+
+
+_ARCHIVE_AFTER_MONTHS = 6
+_ARCHIVABLE_JOB_STATUSES = ('completed', 'rejected', 'cancelled')
+
+
+def archive_cutoff(now):
+    """Jobs finished at or before this instant become archived."""
+    return now - relativedelta(months=_ARCHIVE_AFTER_MONTHS)
+
+
+def archive_old_jobs(c, cutoff):
+    """Reshape completed/rejected/cancelled jobs finished at or before
+    `cutoff` into read-only `archived` jobs carrying only translated data,
+    matching what ArchiveImportService would create. Selection looks only at
+    the reconciled completed_date. Sets c.archived_job_pks / c.archived_outcome.
+    """
+    fx = c.fixture_data
+    outcome = {}
+    for f in fx:
+        if f['model'] != 'jobs.job':
+            continue
+        fl = f['fields']
+        done = _aware(fl.get('completed_date'))
+        if (fl.get('status') in _ARCHIVABLE_JOB_STATUSES
+                and done is not None and done <= cutoff):
+            outcome[f['pk']] = fl['status']
+    c.archived_outcome = outcome
+    c.archived_job_pks = set(outcome)
+    if not outcome:
+        return
+
+    atoms = set()          # (source_type, source_pk)
+    candidate_lots = set()
+    drop = set()           # (model, pk) rows to remove
+    for f in fx:
+        fl = f['fields']
+        m = f['model']
+        if m == 'jobs.job' and f['pk'] in outcome:
+            fl['status'] = 'archived'
+            fl['project_manager'] = None
+        elif m == 'jobs.task' and fl.get('job') in outcome:
+            if f['pk'] in c.line_est_qty:
+                fl['est_qty'] = c.line_est_qty[f['pk']]   # the estimate line's own quantity
+            elif f['pk'] in c.invented_est_qty:
+                fl['est_qty'] = None
+            fl.update({
+                'qty_source': 'entered_qty', 'est_worker_time': None,
+                'actual_qty': None, 'assignee': None, 'worker_queue': None,
+                'source_scheme': None, 'active_modifiers': [],
+                'service_item': None,
+            })
+            atoms.add(('task', f['pk']))
+        elif m == 'inventory.material' and fl.get('job') in outcome:
+            lot = fl.get('inventory_item')
+            if lot is not None:
+                candidate_lots.add(lot)
+            fl.update({
+                'consumption_state': 'consumed', 'cost_source': 'imported',
+                'released_qty': '0.00', 'po_line_item': None,
+            })
+            atoms.add(('material', f['pk']))
+        elif m == 'invoicing.invoice' and fl.get('job') in outcome:
+            fl.update({'qbo_amount_paid': None, 'qbo_id': None,
+                       'qbo_payment_status': ''})
+        elif m == 'deliverables.deliverable' and fl.get('job') in outcome:
+            drop.add((m, f['pk']))
+            if fl.get('description') == 'Fake Deliverable':
+                c.fake_deliverable_count -= 1
+
+    # Archived materials are unlinked from their lots only when the lot is a
+    # transient one; real catalog items stay linked.
+    lot_codes = {f['pk']: f['fields'].get('code', '') for f in fx
+                 if f['model'] == 'inventory.inventoryitem'}
+    transient = {pk for pk in candidate_lots
+                 if lot_codes.get(pk, '').startswith('LOT-')}
+    for f in fx:
+        if (f['model'] == 'inventory.material' and f['fields'].get('job') in outcome
+                and f['fields'].get('inventory_item') in transient):
+            f['fields']['inventory_item'] = None
+    still_used = {f['fields'].get('inventory_item') for f in fx
+                  if f['model'] == 'inventory.material'}
+    for pk in transient - still_used:
+        drop.add(('inventory.inventoryitem', pk))
+    for f in fx:
+        if (f['model'] == 'estimates.estimatelineitemsource'
+                and (f['fields'].get('source_type'),
+                     f['fields'].get('source_pk')) in atoms):
+            drop.add((f['model'], f['pk']))
+    # Invoice claim rows: the heuristic wiring runs after this pass and
+    # skips archived jobs, but deposit credits claim their deposit line at
+    # build_invoices time — drop those here so an archived job carries no
+    # source rows by construction (spec §6), not by phase ordering.
+    archived_invoices = {f['pk'] for f in fx if f['model'] == 'invoicing.invoice'
+                         and f['fields'].get('job') in outcome}
+    archived_lines = {f['pk'] for f in fx if f['model'] == 'invoicing.invoicelineitem'
+                      and f['fields'].get('invoice') in archived_invoices}
+    for f in fx:
+        if (f['model'] == 'invoicing.invoicelineitemsource'
+                and f['fields'].get('invoice_line_item') in archived_lines):
+            drop.add((f['model'], f['pk']))
+    c.fixture_data = [f for f in fx if (f['model'], f['pk']) not in drop]
 
 
 def _duration_hours(duration_str):
@@ -1476,11 +1585,13 @@ def assign_est_quantities(c):
         algo = fields.get('qty_source')
         if algo == 'elapsed_time':
             fields['est_qty'] = f'{_duration_hours(fields.get("est_worker_time")):.2f}'
+            c.invented_est_qty.add(f['pk'])
         elif algo == 'entered_qty':
             if fields.get('est_qty') in (None, ''):
                 hours = _duration_hours(fields.get('est_worker_time'))
                 pieces = max(1, round(float(hours) * random.randint(2, 6)))
                 fields['est_qty'] = f'{Decimal(pieces):.2f}'
+                c.invented_est_qty.add(f['pk'])
 
 
 def _emit_estimate_line_item_source(c, li_pk, source_type, source_pk):
@@ -1742,6 +1853,31 @@ def build_invoices(c):
         all_pairs.append((current_container, current_lis))
 
     # ------------------------------------------------------------------
+    # 2a. Deposits (convert.md §4 "Deposits"): FreeAgent deposit invoices
+    #     are never named by the Estimates sheet, so they join a job by the
+    #     job number in their line's description, or by the deduction that
+    #     names them. The plan also decides which deductions become real
+    #     credits (claiming their deposit line) and which stay plain lines.
+    # ------------------------------------------------------------------
+    spine_numbers = {}
+    for base_ref in c.jobs:
+        n = DEP.ref_number(P.base_reference(base_ref))
+        if n is not None:
+            spine_numbers[n] = base_ref
+    plan = DEP.plan_deposits(
+        all_pairs, spine_numbers, dict(inv_ref_to_base),
+        lambda container: _map_invoice_status(
+            (container.get('Status') or '').strip(), container.get('Paid Date')))
+    for ref_str, base_ref in plan.placed.items():
+        if ref_str not in inv_ref_to_job:
+            inv_ref_to_job[ref_str] = c.jobs[base_ref]['job_pk']
+            inv_ref_to_base[ref_str] = base_ref
+    c.deposit_summary = dict(plan.counts)
+    li_pk_by_key = {}    # (invoice ref, line index) -> invoicelineitem pk
+    lines_by_ref = {str(cont.get('Reference') or '').strip(): lrs
+                    for cont, lrs in all_pairs}
+
+    # ------------------------------------------------------------------
     # 3. Emit matched invoices and their line items
     # ------------------------------------------------------------------
     for container, lis in all_pairs:
@@ -1757,10 +1893,13 @@ def build_invoices(c):
         status = _map_invoice_status(fa_status, paid_date)
 
         # Invoice-stage 'Neal's do' jobs: an invoice may exist but has not
-        # been sent to the customer — force it to draft.
+        # been sent to the customer — force it to draft. Deposit invoices
+        # are exempt: the deposit was sent (and usually paid) long before
+        # the final was drafted, and the deposit pill matters most here.
         card = c.jobs.get(base_ref, {}).get('card', {})
         if ((card.get('Stage') or '').strip().lower() == 'invoice'
-                and _is_neals_swimlane(card)):
+                and _is_neals_swimlane(card)
+                and ref_str not in plan.deposit_invoices):
             status = 'draft'
 
         raw_date = container.get('Date')
@@ -1791,18 +1930,39 @@ def build_invoices(c):
         job_li_total = c.invoice_totals.get(base_ref, Decimal('0'))
         inv_total = Decimal('0')   # this invoice's own line total (for paid amount)
 
-        for li_row in lis:
+        for idx, li_row in enumerate(lis):
             item_type = (li_row.get('Item Type') or '').strip()
             description = str(li_row.get('Description') or '').strip()
-            classification = P.classify_line_item(item_type, description)
+            key = (ref_str, idx)
+            if key in plan.deposit_lines:
+                classification = DEP.KIND_DEPOSIT
+            elif key in plan.credits:
+                classification = DEP.KIND_CREDIT
+            elif key in plan.plain:
+                classification = 'lineitem'      # a credit-like freeform line
+            else:
+                classification = P.classify_line_item(item_type, description)
             if classification == 'skip':
                 continue
 
             line_number += 1
             qty = P.parse_decimal(li_row.get('Quantity'))
             price = P.parse_decimal(li_row.get('Price'))
+            if classification == DEP.KIND_CREDIT:
+                # The app's credit shape: qty 1 at the negated deposit total.
+                dep_ref, dep_idx = plan.credits[key]
+                qty = Decimal('1')
+                price = -DEP.line_amount(lines_by_ref[dep_ref][dep_idx])
+            if classification in (DEP.KIND_DEPOSIT, DEP.KIND_CREDIT):
+                ac_code = 'DEP'
+            elif key in plan.plain:
+                ac_code = 'SVC'
+            else:
+                ac_code = P.pick_invoice_line_ac(item_type, description,
+                                                 classification)
 
             li_pk = c.next_pk('invoicing.invoicelineitem')
+            li_pk_by_key[key] = li_pk
             c.add_fixture('invoicing.invoicelineitem', li_pk, {
                 'invoice':             inv_pk,
                 'inventory_item':     None,
@@ -1814,10 +1974,9 @@ def build_invoices(c):
                 # Every line needs an AC (mirrors the estimate-line rule):
                 # deterministic, plausible pick across the four seeded
                 # categories — DLV/PRD/MTL/SVC by description + Item Type +
-                # classification. build_seed runs first, so ac_by_code is set.
-                'accounting_category': c.ac_by_code.get(
-                    P.pick_invoice_line_ac(item_type, description,
-                                           classification)),
+                # classification; deposit charges and credits take DEP.
+                # build_seed runs first, so ac_by_code is set.
+                'accounting_category': c.ac_by_code.get(ac_code),
             })
             # Stash classification for the source-link builder; the LI model
             # itself has no item_type field, so this is the only place to
@@ -1830,6 +1989,22 @@ def build_invoices(c):
         c.invoice_totals[base_ref] = job_li_total
         if status == 'paid':
             inv_fields['qbo_amount_paid'] = f'{inv_total.quantize(Decimal("0.01")):.2f}'
+
+    # ------------------------------------------------------------------
+    # 4. Deposit claims: each paired credit claims its deposit line. Emitted
+    #    here (not by the heuristic build_invoice_line_item_sources, which
+    #    skips drafts) because a draft final holding a claimed credit is a
+    #    legal app state. Both lines exist: a credit only pairs with a
+    #    placed deposit invoice.
+    # ------------------------------------------------------------------
+    for credit_key, dep_key in sorted(plan.credits.items(),
+                                      key=lambda kv: li_pk_by_key[kv[0]]):
+        row_pk = c.next_pk('invoicing.invoicelineitemsource')
+        c.add_fixture('invoicing.invoicelineitemsource', row_pk, {
+            'invoice_line_item': li_pk_by_key[credit_key],
+            'source_type':       'deposit',
+            'source_pk':         li_pk_by_key[dep_key],
+        })
 
 
 def build_synthetic_estimate_sources(c):
@@ -1862,9 +2037,12 @@ def build_synthetic_estimate_sources(c):
         for f in c.fixture_data
         if f['model'] == 'estimates.estimatelineitemsource'
     }
+    archived = c.archived_job_pks
     tasks_by_job = {}
     for f in c.fixture_data:
         if f['model'] == 'jobs.task' and f['pk'] not in claimed_tasks:
+            if f['fields']['job'] in archived:
+                continue  # archived jobs carry only translated data (spec §6)
             tasks_by_job.setdefault(f['fields']['job'], []).append(f)
 
     est_to_job = {
@@ -1888,6 +2066,8 @@ def build_synthetic_estimate_sources(c):
             # (RM 2026-08-13 — reactivatable via unexpire).
             continue
         job_pk = est_to_job.get(f['fields']['estimate'])
+        if job_pk in archived:
+            continue  # archived jobs carry only translated data (spec §6)
         if job_pk is not None:
             lines_by_job.setdefault(job_pk, []).append(f)
 
@@ -1959,6 +2139,8 @@ def build_checklist_declines(c):
         est_pk = fields['estimate']
         if est_status.get(est_pk) != 'accepted':
             continue
+        if est_job.get(est_pk) in c.archived_job_pks:
+            continue  # archived jobs carry only translated data (spec §6)
         if job_status.get(est_job.get(est_pk)) not in _APPROVED_OR_BEYOND:
             continue
         if f['pk'] in sourced_lines:
@@ -2029,6 +2211,8 @@ def build_invoice_agreement_refs(c):
         base_ref = inv_base.get(inv_pk)
         if base_ref is None or base_ref not in desc_maps:
             continue
+        if inv_meta[inv_pk].get('job') in c.archived_job_pks:
+            continue  # archived jobs carry only translated data (spec §6)
         if inv_meta[inv_pk].get('status') == 'cancelled':
             continue
         desc = (f['fields'].get('description') or '').strip()
@@ -2103,6 +2287,8 @@ def build_invoice_line_item_sources(c):
 
     # Deterministic iteration: jobs by pk, invoices by pk, lines by line_number.
     for job_pk in sorted(invoices_by_job):
+        if job_pk in c.archived_job_pks:
+            continue  # archived jobs carry only translated data (spec §6)
         task_pool = sorted(tasks_by_job.get(job_pk, []))
         material_pool = sorted(materials_by_job.get(job_pk, []))
         invs = sorted(invoices_by_job[job_pk], key=lambda f: f['pk'])
@@ -2184,6 +2370,8 @@ def build_shipments(c):
     for base_ref, job_info in c.jobs.items():
         job_pk = job_info['job_pk']
         card = job_info['card']
+        if job_pk in c.archived_job_pks:
+            continue  # archived jobs carry only translated data (spec §6)
         job_fields = job_fixtures.get(job_pk)
         if job_fields is None:
             continue
@@ -2444,6 +2632,8 @@ def build_bleps_and_shifts(c):
 
     for counter, tf in enumerate(complete):
         fields = tf['fields']
+        if fields['job'] in c.archived_job_pks:
+            continue  # archived jobs carry only translated data (spec §6)
 
         # entered_qty complete tasks bill on actual_qty (no bleps drive it), so
         # invent one with the thirds rule vs est_qty (fallback base 1). Set for
@@ -2563,6 +2753,7 @@ def assign_current_work(c):
     in_progress_jobs = {
         f['pk'] for f in c.fixture_data
         if f['model'] == 'jobs.job' and f['fields'].get('status') == 'in_progress'
+        and f['pk'] not in c.archived_job_pks  # archived jobs carry only translated data (spec §6)
     }
     candidates = sorted(
         (f for f in c.fixture_data
@@ -2805,6 +2996,8 @@ def build_purchasing(c):
     materials_by_job = defaultdict(list)
     for f in c.fixture_data:
         if f['model'] == 'inventory.material':
+            if f['fields']['job'] in c.archived_job_pks:
+                continue  # archived jobs carry only translated data (spec §6)
             materials_by_job[f['fields']['job']].append(f['fields'])
 
     base_by_jobpk = {jp: base for base, jp in c.job_map.items()}
@@ -2974,6 +3167,31 @@ def build_purchasing(c):
               f'{consumed} materials consumed; {len(earmarks)} earmarks')
 
 
+def _archived_job_history(c, job_pk, job_fields, related, card, emit):
+    """Emit what ArchiveImportService leaves behind for one archived Job: a
+    ``_created`` audit per created record at the run clock, then the backdated
+    job action rows, then (checked pickup marker) the pickup note."""
+    now_s = c.now.isoformat()
+    emit('job', job_pk, now_s, 'audit', {'_created': True})
+    for model, rows in related.items():
+        for f in rows:
+            emit(_HISTORY_TRACKED_MODELS[model], f['pk'], now_s, 'audit', {'_created': True})
+
+    def action(text, when):
+        emit('job', job_pk, when, 'action', {'_action': text})
+
+    completed = job_fields.get('completed_date')
+    action('Created', job_fields.get('created_date') or _HISTORY_FALLBACK_DATE)
+    if job_fields.get('start_date'):
+        action('Started', job_fields['start_date'])
+    action(c.archived_outcome[job_pk].capitalize(), completed)
+    action('Imported from Kanban', now_s)
+    if card is not None and P.has_pickup_done(card):
+        # changes=None: what record_history writes for an importer note row.
+        emit('job', job_pk, completed, 'note', None,
+             text='Picked up/Delivered (Kanban checklist)')
+
+
 def build_history(c):
     """Emit HistoryEntry rows for every history-tracked object, ordered to match
     the real job lifecycle.
@@ -2995,7 +3213,7 @@ def build_history(c):
     """
     from collections import defaultdict
 
-    def emit(object_type, object_id, timestamp, entry_type, changes):
+    def emit(object_type, object_id, timestamp, entry_type, changes, text=''):
         model = _HISTORY_TABLE[object_type]
         c.add_fixture(model, c.next_pk(model), {
             'entry_type': entry_type,
@@ -3004,7 +3222,7 @@ def build_history(c):
             'user': None,
             'timestamp': timestamp,
             'changes': changes,
-            'text': '',
+            'text': text,
         })
 
     # Group tracked objects by Job; Contact/Business have no Job.
@@ -3034,7 +3252,12 @@ def build_history(c):
     # clamped tail chains +1s past the boundary, at most seconds beyond the
     # dataset-now instant — negligible next to real wall-clock now).
     now = _dataset_now(c)
+    card_by_job = {info['job_pk']: info.get('card') for info in c.jobs.values()}
     for job_pk, job_f in jobs.items():
+        if job_pk in c.archived_job_pks:
+            _archived_job_history(c, job_pk, job_f['fields'], by_job.get(job_pk, {}),
+                                  card_by_job.get(job_pk), emit)
+            continue
         base_str = job_f['fields'].get('created_date') or _HISTORY_FALLBACK_DATE
         base_dt = _parse_dt(base_str)
         events = sorted(_job_timeline(job_pk, job_f['fields'], by_job.get(job_pk, {})),

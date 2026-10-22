@@ -83,6 +83,15 @@ describe('TasksPanel per-job can_manage', () => {
   });
 });
 
+describe('TasksPanel archived job', () => {
+  it('hides Add Work on an archived job', async () => {
+    mockApi();
+    const { queryByRole } = render(TasksPanel, { props: { job: makeJob({ status: 'archived', can_manage: true }) } });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(queryByRole('button', { name: /add work/i })).toBeNull();
+  });
+});
+
 describe('TasksPanel — Add Work picker', () => {
   it('shows the Add Work toolbar button', async () => {
     mockApi();

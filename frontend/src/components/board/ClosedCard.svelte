@@ -14,6 +14,7 @@
   function borderColor() {
     if (job.status === 'completed') return '#7c3aed';
     if (job.status === 'rejected') return '#b91c1c';
+    if (job.status === 'archived') return '#9ca3af';
     return '#64748b';
   }
 
@@ -21,6 +22,7 @@
     if (job.status === 'completed') return 'Completed';
     if (job.status === 'rejected') return 'Rejected';
     if (job.status === 'cancelled') return 'Cancelled';
+    if (job.status === 'archived') return 'Archived';
     return job.status;
   }
 

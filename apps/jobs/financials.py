@@ -11,12 +11,15 @@ See docs/plans/2026-06-11-job-financials-header-design.md.
 """
 from decimal import Decimal, InvalidOperation
 
+from dateutil.relativedelta import relativedelta
 from django.db import models
 
 from apps.estimates.agreement import compose_agreement
 from apps.core.timeutils import timedelta_to_hours
+from apps.core.units import HOUR_UNIT
 
 CENTS = Decimal('0.01')
+DEFAULT_CUSTOMER_FINANCIALS_WINDOW_MONTHS = 12
 
 
 def _estimated(job):
@@ -87,6 +90,34 @@ def _blep_hours(job):
     return total_hours
 
 
+def _labor_hours(job):
+    """Labor hours: timeslip hours, plus — for ARCHIVED jobs only, which have no
+    timeslips — the actual_qty of every hour-unit task (any task status)."""
+    from apps.jobs.models import Job
+
+    hours = _blep_hours(job)
+    if job.status == Job.STATUS_ARCHIVED:
+        hours += sum(
+            ((t.actual_qty or Decimal('0'))
+             for t in job.tasks.all() if t.unit_label == HOUR_UNIT),
+            Decimal('0'),
+        )
+    return hours
+
+
+def load_customer_financials_window_months():
+    """Read `customer_financials_window_months` from Configuration (int >= 1;
+    default 12 when missing or unparseable). Read-only."""
+    from apps.core.models import Configuration
+
+    try:
+        n = int(Configuration.objects.get(
+            key='customer_financials_window_months').value)
+    except (Configuration.DoesNotExist, ValueError, TypeError):
+        return DEFAULT_CUSTOMER_FINANCIALS_WINDOW_MONTHS
+    return max(1, n)
+
+
 def spend_breakdown(job):
     """The job's spend, split into labor vs. cash-outlay materials.
 
@@ -129,7 +160,7 @@ def spend_breakdown(job):
     )
     materials_bought = expenses_total + materials_total
 
-    labor_hours = _blep_hours(job)
+    labor_hours = _labor_hours(job)
     labor = labor_hours * _average_labor_cost()
 
     # Quantize parts first, then derive total as their sum.
@@ -253,13 +284,18 @@ def compute_job_financials(job):
     }
 
 
-def compute_customer_financials(jobs):
+def compute_customer_financials(jobs, *, now=None):
     """Rollup for a customer-side detail page (a Contact's jobs, or every job
     under a Business). `jobs` is a Job queryset or iterable.
 
     Returns the per-job `invoiced` / `profit` sums plus the four
     "about now" facts the CustomerHeader banner shows:
 
+    - ``invoiced`` / ``profit`` sum only jobs in the rolling window: not closed,
+      or closed with ``completed_date`` within the last
+      ``customer_financials_window_months``. ``window_months`` and
+      ``includes_archived`` (any in-window job archived) are returned too.
+      The four facts below stay over ALL jobs.
     - ``open_jobs``: jobs not completed / rejected / cancelled
     - ``outstanding``: sum of (total - amount paid) over invoices in
       ``Invoice.UNPAID_STATUSES`` (open, partly-paid, defaulted); total is
@@ -273,15 +309,25 @@ def compute_customer_financials(jobs):
     from apps.jobs.models import Job
 
     jobs = list(jobs)
+    now = now or timezone.now()
+    window_months = load_customer_financials_window_months()
+    cutoff = now - relativedelta(months=window_months)
+
+    def in_window(j):
+        if j.status not in Job.CLOSED_STATUSES:
+            return True
+        return j.completed_date is not None and j.completed_date >= cutoff
+
+    windowed = [j for j in jobs if in_window(j)]
+    includes_archived = any(j.status == Job.STATUS_ARCHIVED for j in windowed)
     invoiced = Decimal('0')
     profit = Decimal('0')
-    for job in jobs:
+    for job in windowed:
         fin = compute_job_financials(job)
         invoiced += fin['invoiced']
         profit += fin['profit']
 
-    closed = {Job.STATUS_COMPLETED, Job.STATUS_REJECTED, Job.STATUS_CANCELLED}
-    open_jobs = sum(1 for j in jobs if j.status not in closed)
+    open_jobs = sum(1 for j in jobs if j.status not in Job.CLOSED_STATUSES)
 
     job_pks = [j.pk for j in jobs]
     unpaid = Invoice.objects.filter(
@@ -306,4 +352,6 @@ def compute_customer_financials(jobs):
         'outstanding': outstanding.quantize(CENTS),
         'first_job_date': _local_date(first),
         'last_job_start': _local_date(last),
+        'window_months': window_months,
+        'includes_archived': includes_archived,
     }

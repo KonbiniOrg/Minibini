@@ -19,6 +19,20 @@ describe('JobPicker', () => {
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ job_id: 1 }));
   });
 
+  it('excludeArchived appends exclude_archived=true; default does not', async () => {
+    api.get.mockResolvedValue({ results: [] });
+    const on = render(JobPicker, { props: { excludeArchived: true } });
+    await fireEvent.input(on.getByPlaceholderText('Search jobs…'), { target: { value: 'a' } });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(api.get).toHaveBeenCalledWith('/api/jobs/?search=a&page_size=25&exclude_archived=true');
+    on.unmount();
+    api.get.mockClear();
+    const off = render(JobPicker);
+    await fireEvent.input(off.getByPlaceholderText('Search jobs…'), { target: { value: 'b' } });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(api.get).toHaveBeenCalledWith('/api/jobs/?search=b&page_size=25');
+  });
+
   it('renders a prefilled label from selectedItem without a fetch', async () => {
     const { findByText } = render(JobPicker, {
       props: { value: 1, selectedItem: { job_id: 1, job_number: 'JOB-1', name: 'x' } },

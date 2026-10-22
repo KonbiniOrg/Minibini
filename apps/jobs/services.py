@@ -183,10 +183,22 @@ def _assert_party_active(contact, field='contact'):
         raise ValidationError({field: [f'{business.business_name} is inactive.']})
 
 
+def _assert_job_not_archived(job, action):
+    """An archived job is a read-only historical record: no user-driven
+    mutation, in any domain. Called first by _assert_job_not_frozen so every
+    mutator that honours the freeze honours this too."""
+    if job.status == Job.STATUS_ARCHIVED:
+        raise ValidationError(
+            f"Cannot {action}: this job is archived. Archived jobs are a "
+            f"historical record and cannot be changed."
+        )
+
+
 def _assert_job_not_frozen(job, action):
     """Spec 5.1: a job whose contact is inactive accepts no user-driven
     mutation. Mirrors _assert_job_not_on_hold; system transitions never
-    call this."""
+    call this. Archived jobs are refused first."""
+    _assert_job_not_archived(job, action)
     contact = job.contact
     if contact.is_active:
         return
@@ -582,6 +594,9 @@ class JobService:
         except Job.DoesNotExist:
             raise NotFoundError(f'Job {pk} not found')
         if not system_transition:
+            # Archived is refused before the same-business contact-swap
+            # carve-out below (which only exists to thaw inactive contacts).
+            _assert_job_not_archived(job, 'edit this job')
             new_contact = kwargs.get('contact')
             swap_only = set(kwargs) == {'contact'}
             if new_contact is not None:
@@ -821,6 +836,19 @@ class JobService:
         """
         from apps.estimates.models import ChangeOrder, Estimate
         from apps.invoicing.models import Invoice
+        from apps.purchasing.models import PurchaseOrderLineItem
+        if job.status == Job.STATUS_ARCHIVED:
+            # Deleting is the one allowed mutation of an archived job (the fix
+            # for a bad import is delete and re-import); must precede the
+            # frozen guard, which refuses archived jobs. PurchaseOrderLineItem
+            # .task is PROTECT, so a linked PO line would 409 the cascade
+            # after the user confirmed — refuse up front instead.
+            if PurchaseOrderLineItem.objects.filter(task__job=job).exists():
+                raise ValidationError(
+                    'This archived job has tasks linked from purchase order '
+                    'lines. Unlink those PO lines before deleting it.'
+                )
+            return
         _assert_job_not_frozen(job, 'delete this job')
         if Blep.objects.filter(task__job=job).exists():
             raise ValidationError(
@@ -843,6 +871,63 @@ class JobService:
                 'This job has a sent change order and cannot be deleted. '
                 'Cancel it instead.'
             )
+
+    @staticmethod
+    def _archived_history_keys(job):
+        """(object_type -> [ids]) for a job and its history-bearing children."""
+        return {
+            'job': [job.pk],
+            'task': list(job.tasks.values_list('pk', flat=True)),
+            'material': list(job.materials.values_list('pk', flat=True)),
+            'estimate': list(job.estimate_set.values_list('pk', flat=True)),
+            'invoice': list(job.invoice_set.values_list('pk', flat=True)),
+            'deliverable': list(job.deliverables.values_list('pk', flat=True)),
+            'shipment': list(job.shipments.values_list('pk', flat=True)),
+        }
+
+    @staticmethod
+    def job_deletion_impact(job):
+        """Counts shown before a confirmed delete. history_rows is the size of
+        the purge set (0 for a live job, whose history is kept);
+        linked_po_lines counts PO lines pointing at the job's tasks."""
+        from apps.core.models import JobHistory
+        from apps.purchasing.models import PurchaseOrderLineItem
+        history_rows = 0
+        if job.status == Job.STATUS_ARCHIVED:
+            for object_type, ids in JobService._archived_history_keys(job).items():
+                history_rows += JobHistory.objects.filter(
+                    object_type=object_type, object_id__in=ids).count()
+        return {
+            'tasks': job.tasks.count(),
+            'materials': job.materials.count(),
+            'deliverables': job.deliverables.count(),
+            'shipments': job.shipments.count(),
+            'estimates': job.estimate_set.count(),
+            'invoices': job.invoice_set.count(),
+            'history_rows': history_rows,
+            'linked_po_lines': PurchaseOrderLineItem.objects.filter(
+                task__job=job).count(),
+        }
+
+    @staticmethod
+    def delete_job(job):
+        """Hard-delete a job. An archived job (a historical import) also has
+        its history rows purged; a live job's history is left untouched."""
+        from apps.core.models import JobHistory
+        JobService.assert_job_deletable(job)
+        with transaction.atomic():
+            archived = job.status == Job.STATUS_ARCHIVED
+            keys = JobService._archived_history_keys(job) if archived else None
+            # ShipmentItem.deliverable is PROTECT, so the job cascade cannot
+            # reach a shipped deliverable; drop shipments (and their items)
+            # first.
+            for shipment in list(job.shipments.all()):
+                shipment.delete()
+            job.delete()
+            if archived:
+                for object_type, ids in keys.items():
+                    JobHistory.objects.filter(
+                        object_type=object_type, object_id__in=ids).delete()
 
     @staticmethod
     def maybe_complete_if_resolved(job):
@@ -1131,10 +1216,15 @@ class JobService:
         for material in Material.objects.filter(job=source_job).exclude(
             consumption_state=Material.CONSUMPTION_STATE_RELEASED,
         ).order_by('pk'):
+            fields = material.copy_fields()
+            # An imported (archived-job) cost is history; on the new job it is
+            # only a placeholder, so it reads as an unconfirmed estimate.
+            if fields.get('cost_source') == Material.COST_SOURCE_IMPORTED:
+                fields['cost_source'] = Material.COST_SOURCE_ESTIMATED
             MaterialService.create_on_job(
                 job=new_job,
                 task=task_map.get(material.task_id),
-                **material.copy_fields(),
+                **fields,
             )
 
     @staticmethod
@@ -1426,8 +1516,7 @@ class TaskService:
             raise NotFoundError(f'Task {task_pk} not found')
         _assert_job_not_frozen(task.job, 'delete this task')
         _assert_job_not_on_hold(task.job, 'delete this task')
-        if task.job.status in (Job.STATUS_COMPLETED, Job.STATUS_CANCELLED,
-                               Job.STATUS_REJECTED):
+        if task.job.status in Job.CLOSED_STATUSES:
             raise ValidationError(
                 'Cannot delete a task on a closed job.'
             )
@@ -2162,8 +2251,7 @@ class BoardService:
 
         # Closed: terminal states within retention
         closed_jobs = list(Job.objects.filter(
-            status__in=[Job.STATUS_COMPLETED, Job.STATUS_REJECTED,
-                        Job.STATUS_CANCELLED],
+            status__in=Job.CLOSED_STATUSES,
             completed_date__gte=cutoff,
         ).select_related('contact', 'project_manager').order_by('-completed_date'))
         closed_deposit_states = BoardService._deposit_states(
@@ -2384,8 +2472,7 @@ class BoardService:
         cutoff = timezone.now() - timedelta(days=retention_days)
 
         closed_jobs = list(Job.objects.filter(
-            status__in=[Job.STATUS_COMPLETED, Job.STATUS_REJECTED,
-                        Job.STATUS_CANCELLED],
+            status__in=Job.CLOSED_STATUSES,
             completed_date__gte=cutoff,
         ).select_related('contact', 'project_manager').order_by('-completed_date'))
         deposit_states = BoardService._deposit_states(
@@ -2440,7 +2527,7 @@ class BoardService:
             'status': job.status,
             # A quote-stage job appearing on a work surface is exceptional —
             # the flag drives its distinct card/chip treatment.
-            'pre_approval': job.status in (Job.STATUS_DRAFT, Job.STATUS_SUBMITTED),
+            'pre_approval': job.status in Job.PRE_APPROVAL_STATUSES,
             'on_hold': job.on_hold,
             'hold_reason': job.hold_reason,
             'sub_status': BoardService.compute_sub_status(job),

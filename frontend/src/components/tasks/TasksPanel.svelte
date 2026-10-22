@@ -1,4 +1,5 @@
 <script>
+  import { isClosedJob } from '../../lib/jobStatus.js';
   import { api, errorMessage } from '../../lib/api.js';
   import { showError, showSuccess } from '../../stores/messages.js';
   import { canMarkWorkComplete } from '../../lib/jobActions.js';
@@ -109,7 +110,7 @@
   let attachExpenseMaterial = $state(null);
 
   const jobLocked = $derived(
-    job && ['completed', 'cancelled', 'rejected'].includes(job.status)
+    job && isClosedJob(job.status)
   );
 
   // Estimate-context layer: the job's single non-superseded estimate (Task 1

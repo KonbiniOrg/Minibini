@@ -219,6 +219,21 @@ contacts panel renders anywhere. Exercised by
 `specs/contacts/import-skip-report.spec.js` (partial commit + skip
 report). Panels need no live QBO connection — only the pull button does.
 
+An **archived job** was appended by hand 2026-10-20 (archived-jobs,
+`jobs-and-tasks.md` §3.8), in dumpdata format mirroring what
+`ArchiveImportService` writes: job `OLD-1042` (pk 101, `status='archived'`)
+on contact 82, with two `complete` entered-quantity tasks (525: 12.5 h in
+the hour unit — the imported labor; 526: 1 ea), a deliverable (106), a
+`picked_up` shipment + item (13 / 13), a `paid` invoice `OLD-INV-1042` (29)
+with one line (137), and four job `action` history rows (1919–1922:
+Created, Started, "Completed in previous system", Imported). Its dates sit
+about three months before the rebase anchor, so after rebasing it is
+inside the default 12-month customer window and the customer banner shows
+the archive caveat. Exercised by `specs/archived-jobs/archived-job.spec.js`
+(customer-page window labels + caveat, read-only job page, search's
+Archived filter, email link, Duplicate…, PM-only persona sees no Delete…,
+and the two-phase Delete… — last, since it removes the job).
+
 **Rebase:** the seed is frozen history — left alone, the 7-day Recent
 Time window, the 30-hour blep-edit window, board retention, schedule
 forecasting, and estimate expiry would all drift out of test reach as it

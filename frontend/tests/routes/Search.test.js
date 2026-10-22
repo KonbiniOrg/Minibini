@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, waitFor } from '@testing-library/svelte';
+import { render, waitFor, fireEvent } from '@testing-library/svelte';
 import { tick } from 'svelte';
 
 vi.mock('@/lib/api.js', () => ({ api: { get: vi.fn() }, errorMessage: (e, fallback) => e?.message || fallback }));
@@ -34,6 +34,15 @@ beforeEach(() => {
   api.get.mockReset();
   api.get.mockResolvedValue(payload);
   viewMode.set('lite');
+});
+
+describe('Search job-status filter', () => {
+  it('offers an Archived option', async () => {
+    const { container, getByRole, findByText } = render(Search);
+    await waitFor(() => expect(container.querySelectorAll('table.data-table').length).toBeGreaterThan(0));
+    await fireEvent.click(getByRole('button', { name: /Job status/ }));
+    expect(await findByText('Archived')).toBeInTheDocument();
+  });
 });
 
 describe('Search results tables — DataTable pilot', () => {

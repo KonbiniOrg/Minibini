@@ -106,6 +106,17 @@ Tests load it into the auto-created test DB via
 service items, manual shifts — live in separate RM-managed fixture files
 loaded after the dataset; they are not the converter's concern.)
 
+**The output is not byte-stable across days.** The archive rule (§4,
+"Archived jobs") compares each job's `completed_date` to a cutoff of six
+calendar months before the run's clock (`NealsDataConverter(..., now=None)`
+defaults to the current UTC time, stored as `c.now`), so the same inputs
+produce different `archived` sets as time passes. Tests therefore assert
+the rule, not fixed counts, and inject `now` where they need a known
+boundary. With the real clock and the default `--limit 100` the regenerated
+dataset currently holds very few archived jobs:
+the spine is the newest 100 cards, and old cards compete for those same
+slots by design. Raise `--limit` to get more archives.
+
 ## 3. Pipeline at a glance
 
 `orchestrator.NealsDataConverter.convert()` runs these phases in order:
@@ -116,9 +127,9 @@ loaded after the dataset; they are not the converter's concern.)
    non-archived active-stage matches plus the newest other matches (up to
    `--limit` total) become the Jobs we'll build (§2).
 3. **`build_seed`**: copies users, accounting categories and rate schemes
-   verbatim from `fixtures/large_datasets/nealseed.json`. (Fixed charges no
-   longer need a "Flat Fee" scheme — they become `jobs.fee` atoms in
-   `derive_atoms`.) **Assigns
+   verbatim from `fixtures/large_datasets/nealseed.json`. (Fixed charges need
+   no "Flat Fee" scheme — there is no Fee model; they stay plain estimate
+   document lines, see `derive_atoms`.) **Assigns
    explicit pks to the (otherwise pk-less) seed users** and builds
    `c.user_by_username`, the blep-rotation pool `c.rotation_user_pks` (every
    active seed user except `system`), and `c.scheme_fields_by_pk` (each
@@ -200,13 +211,14 @@ loaded after the dataset; they are not the converter's concern.)
    so the customer-portal URL (`/portal/?token=…`) works for seeded data.
    Estimate line items are **kept**; downstream atoms (Task, Material,
    Deliverable) are *copies*, not moves.
-9. **`derive_atoms`**: for each Job, builds Tasks, Fees, Materials, and
+9. **`derive_atoms`**: for each Job, builds Tasks, Materials, and
    Deliverables from the Kanban Checklist and/or the estimate line items.
    Atoms live **directly on the Job at every status** (draft included) —
    there is no plan layer (the app's job-owns-atoms model; EstWorksheet /
    PlanTask / PlanMaterial no longer exist). A task-classified estimate
-   line that bills as a fixed charge becomes a `jobs.fee` claimed by its
-   source line (`source_type='fee'`). Materials get a `unit_cost` and an
+   line that bills as a fixed charge emits no atom at all: it stays a plain
+   document line (price included, already emitted by `build_estimates`).
+   Materials get a `unit_cost` and an
    `inventory_item` link via fuzzy matching (§4). This is where most of
    the interesting logic lives — see §4.
 9a. **`assign_worker_times`**: gives every Task an invented per-task
@@ -219,14 +231,25 @@ loaded after the dataset; they are not the converter's concern.)
     Job through the **Estimates sheet's `Invoice Reference` column**: each
     spine job's estimate rows contribute their `Invoice Reference` values,
     and an Invoices-sheet row whose `Reference` matches one of them belongs
-    to that job. Invoices no spine estimate points at are skipped. (The
-    FreeAgent `Project` column is not used here — it only feeds vendor
-    discovery in `build_contacts_and_businesses`.) Stashes each emitted line's classification (`task`,
-    `material`, `lineitem`, `skip`) on `c.invoice_line_kinds` for the
-    next phase. Sets `sent_date` on `open`/`paid` invoices (= the FreeAgent
+    to that job. Invoices no spine estimate points at are skipped — except
+    **deposit invoices**, which FreeAgent never links that way: they join a
+    job by the job number in their line's description or by the final
+    invoice that deducts them (`deposits.plan_deposits`; §4 "Deposits").
+    (The FreeAgent `Project` column is not used here — it only feeds vendor
+    discovery in `build_contacts_and_businesses`.) Stashes each emitted
+    line's classification (`task`, `material`, `lineitem`, `deposit`,
+    `deposit_credit`) on `c.invoice_line_kinds` for the next phase, and
+    emits the `invoicelineitemsource` claim row of every paired deposit
+    credit. Sets `sent_date` on `open`/`paid` invoices (= the FreeAgent
     invoice Date) and `qbo_amount_paid` on `paid` invoices (= that invoice's
     own line-item total; `draft` invoices stay null-dated — §8).
 11. **`reconcile`**: cross-model fixups in a fixed order — see §5.
+11a. **`archive_old_jobs`**: runs right after reconcile, before anything
+    else that reads final job state. Reshapes completed / rejected /
+    cancelled Jobs whose reconciled `completed_date` is on or before
+    `archive_cutoff(c.now)` (now minus `_ARCHIVE_AFTER_MONTHS = 6` calendar
+    months) into `archived` Jobs carrying only translated data — see "Archived
+    jobs" in §4. Every later builder skips them.
 12. **`build_shipments`**: runs *after* reconcile so it can see final Job
     status / dates. Builds a Shipment + ShipmentItems for any card whose
     checklist has a checked `Picked up/Delivered` line OR for any Job that
@@ -260,8 +283,9 @@ loaded after the dataset; they are not the converter's concern.)
     the consume event.)
 
 The RNG is seeded with a fixed constant at the top of `convert()` so the
-invented worker times and blep placement are byte-stable across regenerations
-unless the inputs change.
+invented worker times and blep placement are stable across regenerations
+unless the inputs change, for a given run clock (the output as a whole is not
+byte-stable across days; see the §2 note on the archive cutoff).
 
 ## 4. Building Tasks, Materials, and Deliverables
 
@@ -325,9 +349,9 @@ return, currently always an empty key list).
   always work); otherwise `_line_billing` infers the billing shape — a
   line with a time/quantity signal matches a seeded scheme by
   `(algorithm, rate)` (`_match_seed_scheme`), and a line with **no**
-  time/quantity signal is a **fixed charge → it becomes a `jobs.fee`
-  atom, not a Task** (`_emit_fee`; the retired flat-fee RateScheme is
-  gone).
+  time/quantity signal is a **fixed charge → it stays a plain document
+  line, no atom and no source row** (`_build_line_item_tasks`; there is no
+  Fee model and the retired flat-fee RateScheme is gone).
 
 If the named scheme isn't in nealseed, the closest match is used (see
 `_match_seed_scheme`). When you add new schemes to nealseed, this will pick
@@ -359,7 +383,7 @@ at the DB level and unenforced), but the dataset wants it populated:
   × pieces_per_hour)`, `pieces_per_hour` random 2–6 (min 1) — unless a source
   line set a qty. This also feeds the `entered_qty` actuals.
 
-(Fixed charges are `jobs.fee` atoms, not Tasks, so there is no flat-fee
+(Fixed charges are plain document lines, not Tasks, so there is no flat-fee
 case.)
 
 ### Bleps, Shifts, and entered_qty actuals
@@ -404,7 +428,7 @@ case.)
   so it doesn't invoice at zero. This is set for **every** complete task — even
   ones too old for a blep under the horizon — so historical work never invoices
   at zero. `elapsed_time` tasks derive qty from their bleps and need no
-  explicit actual (fixed charges are Fee atoms with no actuals at all).
+  explicit actual (fixed charges are plain document lines with no actuals at all).
 
 `assign_current_work` (after `build_bleps_and_shifts`) then populates **current**
 work: each rotation worker (excludes `system` + minted users) gets up to three
@@ -532,6 +556,58 @@ Pickup-marker checklist lines never become Tasks. The marker test itself
 reconcile pass 6.5, which uses it as the "all deliverables shipped" half
 of the completion gate.
 
+### Deposits (`deposits.py`, applied by `build_invoices`)
+
+Neal's collects a materials deposit on many jobs. FreeAgent has no deposit
+concept: the deposit is a separate single-line invoice ("Materials deposit
+for job 07445") and the final invoice later carries a negative line
+("Material Deposit (Inv 12345)"). The app models exactly this (invoicing doc
+§Deposits): a line in a deposit accounting category (`DEP`) on a paid invoice
+is a deposit; the final invoice deducts it with a credit line that *claims*
+the deposit line through an `invoicelineitemsource` row of type `deposit`.
+Designed 2026-10-21 (the rules below are the durable record).
+
+- **Recognising lines.** A *deposit charge* is a line whose description
+  contains "deposit" with `qty × price > 0`; an invoice with one is a
+  *deposit invoice*. A *deduction* is such a line with a negative total.
+  Numbers are pulled from descriptions as runs of **four or more digits**
+  (`number_tokens`), so dates and `-R2` suffixes never match. Job numbers
+  are zero-padded five digits and invoice references are unpadded, and the
+  ranges overlap, so the **leading zero** decides: a padded token is only
+  ever a job; an unpadded token on a deduction names a deposit invoice
+  first, a spine job second; a token that resolves to neither is noise.
+- **Placing a deposit invoice** on a spine job, first rule that applies:
+  the Estimates-sheet `Invoice Reference` link (wins over the description);
+  a single job token in its deposit line(s) (two distinct jobs → skipped as
+  ambiguous); or being named by a deduction that pairs (below). Otherwise
+  it is not emitted. A deposit never creates a job. A deposit on an
+  in-progress job (paid, nothing deducted yet) is emitted standalone — that
+  is the state the board's deposit pill and the wizard's credit atom exist
+  for (RM 2026-10-21).
+- **Pairing a deduction** (on a placed, non-cancelled invoice F on job J)
+  with a deposit line: candidates are the invoice its token names, else
+  the deposit invoices placed on J. A candidate pairs when **every present
+  test passes**: invoice token == the deposit's reference; `abs(deduction
+  total)` == the deposit line's total or the sheet's `Net Amount` /
+  `Total Value`; every job token on either line == J. The amount test is
+  always present; a missing invoice or job number is disregarded (RM). Plus
+  the app's own rules: the deposit must map to `paid` (never deduct money
+  not held); a deposit line pairs once (the model's `unique_together`), the
+  first deduction in sheet order wins; a `cancelled` F never pairs (the
+  app deletes claims on cancel) while a `draft` F may. No date-order test.
+- **Emission.** A deposit invoice is emitted like any other (status from
+  FreeAgent — recent deposits can be `open`), **exempt from the Neal's-
+  swimlane force-to-draft rule** (the deposit was sent long before the
+  final was drafted; the drafted final still holds its claim). Deposit
+  charge lines take `DEP`, kind `deposit`. A paired deduction becomes the
+  app's credit shape: qty `1.00`, price = negated deposit line total, `DEP`,
+  FreeAgent's description kept, kind `deposit_credit`, plus the claim row.
+  An unpaired deduction is a plain `SVC` line of kind `lineitem` (the
+  keyword pick would file "Material Deposit" under `MTL` and the wiring
+  pass would claim a Task for it). Neither deposit kind ever claims an atom.
+- **Verbose summary** prints placed / paired / standalone / skipped (non-
+  spine or ambiguous) / plain counts (`c.deposit_summary`).
+
 ### Units mapping
 
 `build_configuration` writes `units_list` mirroring
@@ -545,9 +621,80 @@ Deliverable row validates against the running app's canonical list.
 
 Deliverables default to `units='ea'` (canon form of `each`).
 
+### Archived jobs
+
+`build.archive_old_jobs(c, cutoff)` runs after `reconcile.reconcile(c)`
+(`orchestrator.convert()` passes `build.archive_cutoff(self.now)`). It has to
+run after reconcile because reconcile is what settles a job's final status
+and `completed_date` (pass 3 rejects on expiry, pass 6 downgrades, pass 5
+sets the date); classifying earlier would be a guess. A job qualifies when
+its status is in `_ARCHIVABLE_JOB_STATUSES` (completed, rejected, cancelled)
+and its `completed_date` is at or before the cutoff. A job that pass 6
+downgraded to `work_complete` for an unpaid invoice never qualifies. The
+pass records `c.archived_job_pks` and `c.archived_outcome` (job pk to its
+pre-archive status), and `--verbose` prints an `N jobs archived` summary
+line.
+
+The goal is that each archived job looks exactly like one
+`ArchiveImportService.create_archived_job` (`apps/jobs/archive.py`, see
+`docs/designs/jobs-and-tasks.md` §3.8) would have created, so RM can test
+archives on converted data. What that means per record:
+
+- **Job**: `status='archived'`, `project_manager` null. Number, contact,
+  name, description, dates as reconciled; `accent_color` is left as the
+  converter's round-robin value.
+- **Tasks**: kept with their reconciled `complete` / `cancelled` status. The
+  money block is plain values (`qty_source='entered_qty'`, rate, unit label,
+  accounting category); `source_scheme`, `service_item` and
+  `active_modifiers` are cleared. A line-derived task (pk in `c.line_est_qty`) keeps
+  its estimate line's own quantity even when `assign_est_quantities`
+  overwrote it on a live job; only a quantity the converter invented (pk in
+  `c.invented_est_qty`, no line quantity) is nulled. `est_worker_time`,
+  `actual_qty`, `assignee` and `worker_queue` are always null.
+- **Materials**: kept, marked `consumed` / `imported`, nothing released, no PO
+  line. A link to a converter-minted `LOT-*` transient lot is cleared and the
+  lot row removed if nothing else uses it; links to real price-list items stay.
+- **Estimates, estimate lines, invoices, invoice lines**: kept as reconciled,
+  version chains included. Invoice QBO fields are blanked (`qbo_amount_paid`,
+  `qbo_id`, `qbo_payment_status`) because the importer never sets them.
+- **Source rows** (`estimatelineitemsource`, `invoicelineitemsource`,
+  agreement-line refs): none; the importer cannot express them. The
+  estimate rows and deposit-credit claim rows are dropped by
+  `archive_old_jobs` itself (they exist before it runs); the heuristic
+  invoice wiring and agreement refs skip archived jobs. A paired deposit
+  credit keeps its `DEP` category and shape; without its claim row the app
+  reads it as a plain negative deposit-category line (`is_deposit_line`
+  needs a non-negative total), a shape the importer's spreadsheet can
+  carry.
+- **Deliverables, shipments, bleps, shifts, earmarks, POs and PO lines**:
+  none. Deliverable-shaped estimate lines stay as estimate lines, and a
+  `Fake Deliverable` is removed (the verbose count is decremented).
+
+The nine downstream builders that would otherwise add live-job data each
+carry an `# archived jobs carry only translated data (spec §6)` guard (the comment
+refers to the rule above: archived jobs keep only what the importer would write)
+(project managers, shipments, bleps and shifts, current work, purchasing,
+invoice line sources, agreement refs, synthetic estimate sources, checklist
+declines).
+
+`build_history` emits importer-shaped rows for archived jobs
+(`_archived_job_history`): a `_created` audit row per job, task, material,
+estimate and invoice at the run's `now`, then action rows on the job
+(`Created`, `Started` when there is a start date, the outcome, `Imported from
+Kanban`), plus a note row `Picked up/Delivered (Kanban checklist)` when the
+card had that marker checked. No transition rows for child records. All
+rows have `user=None`.
+
+Design call (RM): where the importer cannot express something, the
+converter **drops** it rather than the importer being extended to match. The
+one importer change this work needed was estimate version chains (`parent`,
+superseded versions).
+
 ## 5. Reconciliation passes
 
-`reconcile.reconcile()` runs after all builders, in this order:
+`reconcile.reconcile()` runs after all builders, in this order. Its
+"today" is the run clock (`c.now.date()`), not `date.today()`, so one run has
+one clock (§2).
 
 1. **Estimate version chains** — for any base reference with multiple
    versions, every version below the highest is marked `superseded` and
@@ -652,6 +799,7 @@ nealsdata/
     parsing.py            pure helpers: dates, decimals, names, references,
                           checklist parser, classification of line items
     build.py              all builders; the bulk of the code
+    deposits.py           deposit invoice placement + deduction pairing (§4 "Deposits")
     reconcile.py          cross-model fixups (the 9 passes above)
     orchestrator.py       NealsDataConverter — phase wiring + state container
 ```
@@ -726,6 +874,11 @@ The script invents data where the sources don't say:
   falls back to `_FALLBACK_YEAR-01-01T00:00:00+00:00` (currently 2025);
   otherwise it is the earliest estimate date − 1 day. The job_number itself is
   unaffected by this.
+- **Archived jobs carry no invented data.** Everything the converter
+  fabricates for live jobs (worker times, invented `est_qty`, bleps and
+  shifts, fake deliverables, shipments, PO and earmark state, transient
+  lots, QBO payment fields) is stripped from archived jobs, since the
+  importer could not have produced it (§4, "Archived jobs").
 - **PII** is replaced, never preserved. The dataset is intended to look
   realistic but contain nothing real.
 
@@ -756,10 +909,37 @@ The pipeline is covered by:
   priced via the markup, no negative QOH, consumption-by-task, earmarks only on
   pending Materials of active jobs, `received_in_full` POs linking Materials, and
   Bills linked to those POs.
+  The archive rule has its own classes: `RunClockTest` (`now` / `c.now`),
+  `EstQtyProvenanceTest` (`c.invented_est_qty`), `ArchiveOldJobsTest` (the
+  rule and every row of the §4 shape), `ArchivedJobsDownstreamSkipTest` (the
+  builder guards), `ArchivedJobHistoryTest` (importer-shaped history rows),
+  and `ConvertEndToEndTest.test_archive_rule_holds_end_to_end`.
+  `ConvertEndToEndTest.test_deposits_translated_end_to_end` asserts the
+  deposit invariants on the real export (claims point from a `DEP` credit
+  to a `DEP` line on a paid invoice of the same job, no double claim, no
+  deduction classified as work, a standalone deposit exists).
+- `tests/test_neals_deposits.py` — dataset-free tests of
+  `deposits.plan_deposits` (placement, every pairing test and refusal,
+  padded/unpadded tokens, noise, once-only pairing, two lines on one
+  deposit invoice), of `build_invoices` applying the plan (DEP lines,
+  credit shape, claim row, plain deductions, the force-to-draft exemption,
+  the wiring pass leaving both kinds alone), and of `archive_old_jobs`
+  dropping invoice claim rows.
 - `tests/test_neals_fixture.py` — loads the generated `converted.json`
   into the test database and runs `validate_data` over it. This is the
   end-to-end safety net; it also asserts bleps/shifts load and that the
-  enclosure / no-overlap / task-not-pending invariants report no errors.
+  enclosure / no-overlap / task-not-pending invariants report no errors, and
+  (`test_archived_jobs_present_and_valid`) that archived jobs load and pass
+  the archived-job checks, and (`test_deposits_load_as_the_app_models_them`)
+  that every converted deposit credit is a real deduction of a real deposit
+  line and a standalone paid deposit is offered as a credit atom by
+  `InvoiceWizardService.get_source_pool`.
+- `tests/test_neals_archive_parity.py` — `ConverterImporterParityTest` loads
+  `converted.json` and checks that every archived job is reproduced, field
+  for field, by `ArchiveImportService` from a payload built off that job.
+  `FarFutureParityTest` runs a conversion with a 2030 clock so every closed
+  job archives, covering materials, superseded chains and cancelled tasks
+  that the real-clock dataset's few archives lack.
 
 `validate_data` now also enforces the time-tracking invariants
 (`check_bleps_and_shifts`): a blep's task is never pending, every closed blep is
@@ -769,7 +949,8 @@ Run them with:
 
 ```bash
 python manage.py test tests.test_neals_parsing tests.test_neals_loaders \
-    tests.test_neals_builders tests.test_neals_fixture
+    tests.test_neals_builders tests.test_neals_deposits \
+    tests.test_neals_fixture tests.test_neals_archive_parity
 ```
 
 Per `CLAUDE.md`, only one agent/process may run the Django test suite at a

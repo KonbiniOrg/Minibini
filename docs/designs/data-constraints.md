@@ -135,7 +135,17 @@ rollup (`apps/jobs/financials.py`). A stand-in until per-worker pay/cost rates
 exist; missing or blank is treated as `0`, so labor contributes nothing until an
 operator sets it. Editable in **Settings → Setup → Defaults**; the settings API
 (`PATCH /api/settings/`) validates it as a non-negative number (blank allowed).
-See `jobs-and-tasks.md` §9.3.
+See `jobs-and-tasks.md` §9.3. (On an **archived** job, hour-unit task actuals
+count as labor hours too — `jobs-and-tasks.md` §3.8.)
+
+Customer totals: `customer_financials_window_months` (`12`) — integer ≥ 1; the
+rolling window for a customer's **Invoiced** / **Profit** banner figures
+(`compute_customer_financials`): a job is in the window when it is not closed
+(`Job.CLOSED_STATUSES`), or closed with `completed_date ≥ now − N months`.
+Missing or unparseable falls back to `12` (`load_customer_financials_window_months`);
+the settings API (`PATCH /api/settings/`) rejects non-int and `< 1` values.
+Editable in **Settings → Setup → Defaults** ("Customer totals window"). See
+`contacts-and-businesses.md` (financials rollup).
 
 Time tracking: `blep_minimum_minutes` (`1`) — below this elapsed duration
 (whole minutes; times are minute-granular) a blep is an accidental start.
@@ -630,6 +640,8 @@ Valid transitions:
 - `work_complete` → `completed`, `cancelled`, `in_progress`
 - `cancelled` → `in_progress`
 - `rejected`, `completed` → (terminal)
+- `archived` → (terminal; **no inbound transition** from any status — set only
+  at creation by `ArchiveImportService`, `jobs-and-tasks.md` §3.8)
 
 `work_complete → in_progress` and `cancelled → in_progress` are
 *reactivation* transitions (undo a premature completion / accidental
@@ -774,7 +786,37 @@ Non-CO holds resume manually.
 by the `DELETE /api/jobs/{id}/` endpoint) refuses when the job has any bleps,
 any invoice, or any non-draft estimate/change order — the cascade would destroy
 recorded work wholesale; those jobs are `cancelled` instead. An unworked draft
-quote still hard-deletes.
+quote still hard-deletes. Every job delete is two-phase (`ConfirmDeleteMixin`:
+impact counts first, `?confirm=true` executes). An **archived** job skips these
+checks, deletes with its `JobHistory` rows, and requires the `can_manage_jobs`
+atom (a PM reference alone is refused).
+
+#### Archived job invariants
+
+An `archived` job (`jobs-and-tasks.md` §3.8) sits outside the live-job
+invariants above by status — none of them names `archived`, and none gains an
+"unless archived" clause. Its own invariants, all established by
+`ArchiveImportService` and never mutated afterwards (`_assert_job_not_archived`
+refuses every user-driven write except delete):
+
+- No transition into or out of `archived`.
+- Tasks: `complete` or `cancelled`, `qty_source = entered_qty`.
+- Invoices: `paid` or `cancelled`, `invoice_number` non-null.
+- Estimates: latest version `accepted` / `rejected` / `expired`, at most one `accepted`,
+  version chains allowed: lower versions `superseded` with `parent` linked;
+  no `EstimateLineItemSource` / `InvoiceLineItemSource`
+  rows.
+- Shipments: `picked_up` only; per-deliverable shipped ≤ `qty_ordered`.
+- Materials: `consumption_state = consumed`, `cost_source = imported`; no
+  Earmark, no QOH movement.
+- No bleps, no expenses (`ExpenseService` refuses attribution), no open
+  estimates/COs.
+
+`validate_data` enforces: `check_archived_jobs` (error — an archived job's
+invoice outside {`paid`, `cancelled`}); `check_job_work_complete_gate`'s closed
+set includes `archived` (error — a non-terminal task on an archived job);
+`check_jobs`' date-consistency checks omit `archived` from every status set;
+`check_shipments`' "job has no accepted estimate" warning skips archived jobs.
 
 While held (`on_hold` flag), the following are blocked (purely by flag filter — no Task is touched):
 - New bleps (explicit `if job.on_hold` check in `_assert_job_allows_blep`, ahead of the status allow-list).
@@ -1538,12 +1580,18 @@ Either a description or a `inventory_item` must be present.
   released instead.
 - **po_line_item** (optional FK → PurchaseOrderLineItem, SET_NULL)
 - **cost_source**: `estimated` / `entered` / `po` / `expense` /
-  `customer_supplied`, or **NULL**. Provenance enum answering "is this cost
+  `customer_supplied` / `imported`, or **NULL**. Provenance enum answering "is this cost
   real?" and "who owns this?". **Invariant: `cost_source IS NULL` ⇔
   `inventory_item IS NULL`** — a material is *provisional* (no lot) exactly when
   it has no provenance, and *established* (lot-backed) exactly when it has one.
   `establish` sets it when it mints/attaches the lot. `po` overrides
   `estimated`/`entered` (sell price untouched). Set by service code only.
+  **`imported`** (2026-10-20) is carried by every material on an archived job
+  (`ArchiveImportService`) — a historical cost with no provenance claim. It is
+  the one exception to the NULL ⇔ no-lot invariant (an imported material may be
+  lot-less), and it is **non-minting**: `MaterialService.create_on_job` mints a
+  `LOT-` item only for `None`/`entered`. On duplicate, `_copy_work_to_job` maps
+  `imported` → `estimated` (`jobs-and-tasks.md` §3.6).
 - **Provisional refusals**: a provisional material (`inventory_item IS NULL`)
   cannot be **consumed** (`consume` raises), **ordered**, or **marked on-hand** —
   all require a lot first.

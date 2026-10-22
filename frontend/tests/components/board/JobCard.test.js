@@ -7,6 +7,15 @@ const baseJob = {
   sub_status: 'estimating',
 };
 
+describe('JobCard archived', () => {
+  it('labels an archived job with a completed date as Archived', () => {
+    const { getByText } = render(JobCard, {
+      props: { job: { ...baseJob, status: 'archived', completed_date: '2024-03-05T00:00:00Z' } },
+    });
+    expect(getByText(/^Archived /)).toBeInTheDocument();
+  });
+});
+
 describe('JobCard project manager line', () => {
   it('shows "PM: <name>" on the pipeline card, in place of the status pill', () => {
     const { getByText, container } = render(JobCard, {

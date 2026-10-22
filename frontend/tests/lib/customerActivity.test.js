@@ -13,6 +13,12 @@ describe('customerActivity — closed sets', () => {
     expect(isClosedJob({ status: 'in_progress' })).toBe(false);
     expect(isClosedJob({ status: 'work_complete' })).toBe(false);
   });
+  it('jobs: archived is closed and sorts into the closed split', () => {
+    expect(isClosedJob({ status: 'archived' })).toBe(true);
+    const { open, closed } = splitRows([{ status: 'archived' }, { status: 'approved' }], isClosedJob);
+    expect(closed).toHaveLength(1);
+    expect(open).toHaveLength(1);
+  });
   it('invoices: paid / cancelled / superseded are closed; partly-paid is open', () => {
     expect(isClosedInvoice({ status: 'paid' })).toBe(true);
     expect(isClosedInvoice({ status: 'superseded' })).toBe(true);

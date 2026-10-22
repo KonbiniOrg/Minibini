@@ -96,6 +96,7 @@ Job; only its generated children land there. Job has no parent.
 | `completed` | Fully closed (terminal). Gated on all deliverables shipped — see §3.3. |
 | `rejected` | Reactivatable (not fully terminal) — `EstimateService.unexpire` (`estimates-and-prices.md` §5.2b) can walk it back to `submitted` |
 | `cancelled` | Terminal, but billable — `BILLABLE_JOB_STATUSES` includes it so a job stopped early can still be invoiced for work done (see `invoicing-and-expenses.md`) |
+| `archived` | Terminal and read-only: a historical job imported from a previous system. Set only at creation by `ArchiveImportService`; no transition in or out — see §3.8 |
 
 Valid transitions (`Job.clean()` at `apps/jobs/models.py`):
 
@@ -108,6 +109,7 @@ work_complete → completed, cancelled, in_progress
 cancelled     → in_progress                  (reactivation — undo accidental cancel)
 rejected      → submitted                    (reactivation — estimate unexpire)
 completed     → (terminal)
+archived      → (terminal; no inbound edge from any status — §3.8)
 ```
 
 Both reactivation edges clear the job's `completed_date` (stamped on entry
@@ -525,6 +527,17 @@ projects the new Job's atoms (`estimates-and-prices.md` §7).
 Estimates, invoices, purchase orders, shipments, change orders,
 history entries, and bleps are never carried over to the new Job.
 
+#### Archived source
+
+An **archived** job (§3.8) is a valid duplicate source — duplicate is one
+of the few things an archive allows. The source's status is not checked
+(and must stay unchecked); `_assert_party_active` still applies to the
+chosen *new* contact. Imported materials carry `cost_source='imported'`,
+which `_copy_work_to_job` maps to `estimated` on the copy (a historical
+cost becomes the new job's placeholder), so duplicating never mints a
+`LOT-` item per lot-less imported material (`imported` is non-minting).
+Every other `cost_source` copies through unchanged.
+
 ### 3.7 Frozen jobs (inactive contact)
 
 (2026-10-11, contacts-refine; spec `docs/plans/2026-10-11-contacts-refine-design.md`
@@ -539,7 +552,9 @@ job is moved to an active contact. There is no stored flag — frozen is
 derived (`not job.contact.is_active`).
 
 **Guard.** `_assert_job_not_frozen(job, action)` in `apps/jobs/services.py`
-raises a plain `ValidationError` (a 400 `{detail}`):
+first calls `_assert_job_not_archived` (an archived job is refused with its
+own message — §3.8), then raises a plain `ValidationError` (a 400
+`{detail}`) for an inactive contact:
 
 > Cannot {action}: this job's contact, {name}, is inactive. Reactivate the
 > contact, or move the job to an active contact at {business}, before making
@@ -605,6 +620,234 @@ model so the invariant stays true at the model level.)
 `contact_business_is_active` (the last two are `null` for a business-less
 contact) — what the SPA needs to render the banner and scope the swap
 picker, with no extra fetch.
+
+### 3.8 Archived jobs
+
+(2026-10-20, archived-jobs; design discussed with RM 2026-10-20 and folded into this section.)
+
+An **archived** job is a historical job brought in from a shop's previous
+system (or paper): it can be opened, read, searched for, found from its
+customer's page, counted in the customer's windowed totals, duplicated and
+deleted — and nothing else. It lives in the ordinary tables (Job, Task,
+Material, Estimate, Invoice, Deliverable, Shipment, JobHistory); there is
+no parallel schema. The fix for a bad import is delete and re-import.
+
+**A status, not a flag.** `Job.STATUS_ARCHIVED = 'archived'` (label
+"Archived") is terminal with `VALID_TRANSITIONS[archived] = []` and no live
+status lists it as a target, so the status actions cannot reach it and a
+PATCH to `status='archived'` is refused by `Job.clean`. Only the import
+service sets it, at creation. Because nearly every structural invariant is
+keyed on status (completed ⇒ invoices paid and deliverables shipped,
+work_complete ⇒ tasks terminal, invoices only on approved-or-later, the
+validator), an archived job simply matches none of them — no live rule
+gains an "unless archived" clause. The old system's outcome
+(completed/cancelled) is recorded as a history row, not a field.
+
+**Status groupings.** Three recurring status sets are named on `Job`
+(class attributes, mirroring `Invoice.UNPAID_STATUSES`), with a frontend
+twin in `frontend/src/lib/jobStatus.js` (`PRE_APPROVAL_JOB_STATUSES`,
+`CLOSED_JOB_STATUSES`, `WORK_FROZEN_JOB_STATUSES` as `Set`s, the
+`isPreApprovalJob` / `isClosedJob` / `isWorkFrozenJob` predicates, and
+`JOB_STATUS_LABELS` / `jobStatusLabel`):
+
+| Attribute | Membership | Used by (examples) |
+|---|---|---|
+| `Job.PRE_APPROVAL_STATUSES` | draft, submitted | earmark gating (inventory ×3), estimate start, schedule and board `pre_approval` flags; SPA: overview pre-approval branches |
+| `Job.CLOSED_STATUSES` | completed, rejected, cancelled, **archived** | `?open=true`, customer `open_jobs`, email-retention finality, task-delete guard, the board's Closed lane; SPA: header Edit/transitions, TasksPanel / TaskDetail lock, customer page closed list, overview spend block frozen text |
+| `Job.WORK_FROZEN_STATUSES` | `CLOSED_STATUSES` + work_complete | validator earmark check; SPA: overview work block's settled-facts line |
+
+`archived` joins the **closed** group, which is what removes it from
+pickers (`?open=true`), sorts it under the customer page's closed list,
+freezes the overview blocks and hides Edit. The deliberately bespoke
+allow-lists (schedule work-active, board pipeline / in-progress / unpaid
+lanes, timeslip-allowed statuses, `BILLABLE_JOB_STATUSES`, hold-allowed,
+auto-complete / auto-advance gates, `_EARMARK_RELEASING_STATUSES`, the
+accent-colour active set) stay bespoke and exclude `archived`
+automatically — hence no timeslips, holds, schedule bars, board lanes, new
+estimates, earmarks or auto-advance on an archive. See
+`architecture-and-conventions.md` for the convention.
+
+The board's **Closed lane** (`CLOSED_STATUSES` within
+`board_closed_retention_days` by `completed_date`) does show an archived
+job whose imported `completed_date` falls inside the window — accepted
+(RM 2026-10-20). `ClosedCard` / `JobCard` carry an "Archived" label and a
+muted grey colour.
+
+**Read-only guard.** `_assert_job_not_archived(job, action)`
+(`apps/jobs/services.py`) raises a plain `ValidationError`:
+
+> Cannot {action}: this job is archived. Archived jobs are a historical
+> record and cannot be changed.
+
+`_assert_job_not_frozen` calls it **first** (§3.7), so every call site of
+the frozen guard — and `JobService.assert_mutable` — refuses an archived
+job: header edit, hold/release, notes, tasks (add/edit/delete/reorder/
+complete/block/cancel), timeslips, materials (add/edit/restock — including
+the PO↔Material resolver's `MaterialService.create_on_job`), estimates and
+change orders, deliverables and shipments, invoices, the wizard.
+`update_job` calls it explicitly before the same-business contact-swap
+carve-out, so that carve-out never thaws an archive. The narrow helper is
+also called on its own by `ExpenseService` (create, and re-attribution on
+edit): an expense cannot be attributed to an archived job, while late
+receipts on completed / inactive-contact jobs stay allowed
+(`invoicing-and-expenses.md`).
+
+**Explicitly allowed:**
+
+- **Read**, everywhere a live job is readable.
+- **Duplicate** (§3.6 "Archived source").
+- **Delete** (below).
+- **Email link / unlink** (`EmailRecord.job` is a reference held by the
+  email, not a job change): `link_to_job` / `unlink_from_job` check
+  nothing about job state, and `EmailLinkModal`'s picker uses the default
+  job query, so archived jobs are offered.
+- **PO line → task link** at the API/model level (`PurchaseOrderLineItem.task`
+  is a PO-side write; the PO then surfaces on the job through
+  `_linked_po_variances`). Not reachable from the UI: `TaskLinkPicker`
+  queries `?open=true`, which excludes archives (picker variant: LATER.md).
+  The Material path is refused by the guard — the asymmetry is deliberate.
+- **Contact deactivation**: the deactivation blockers are an allow-list of
+  open statuses, so a customer with only archived jobs can be deactivated.
+  The job page then shows the archived banner, not the inactive-contact
+  banner.
+
+**Deletion.** `JobViewSet` uses `ConfirmDeleteMixin` for every job delete:
+the first `DELETE /api/jobs/{id}/` returns `confirm_required` plus
+`JobService.job_deletion_impact(job)` counts (`tasks`, `materials`,
+`deliverables`, `shipments`, `estimates`, `invoices`, `history_rows`,
+`linked_po_lines` — PO lines whose `task` is one of the job's tasks; the
+SPA modal lists each, ending with "linked PO line(s)");
+`?confirm=true` runs `JobService.delete_job`. Live-job rules are unchanged
+(`assert_job_deletable` still refuses anything with bleps, invoices or a
+sent estimate/CO). For an archived job:
+
+- `assert_job_deletable` **short-circuits** before the frozen guard and the
+  history checks — delete is the one allowed mutation — with one refusal:
+  if any `PurchaseOrderLineItem.task` (`PROTECT`) points at one of the
+  job's tasks it raises "This archived job has tasks linked from purchase
+  order lines. Unlink those PO lines before deleting it." (so the refusal
+  lands at the impact phase, not as a 409 after confirm).
+- Permission is status-conditional: `destroy` keeps `CanManageJobOrPM` for
+  live jobs, but an archived job additionally requires the
+  `can_manage_jobs` atom (or superuser) — a PM reference alone is refused
+  (403). The SPA gates its Delete… button on the `canManageJobs` store,
+  not on the serializer's `can_manage`.
+- **History purge**: `_archived_history_keys` collects the job's and its
+  children's ids (tasks, materials, estimates, invoices, deliverables,
+  shipments) and the matching `JobHistory` rows are deleted after the
+  cascade, inside the same transaction. Live-job deletes keep their
+  history (`history_rows` is 0 in their impact).
+- `delete_job` deletes the job's **shipments first** (for every job):
+  `ShipmentItem.deliverable` is `PROTECT`, so the job cascade alone cannot
+  remove a shipped deliverable.
+
+**Labor.** Archived jobs have no timeslips. `apps/jobs/financials.py`
+`_labor_hours(job)` is `_blep_hours(job)` plus, **for archived jobs only**,
+the `actual_qty` of every task whose `unit_label` is `HOUR_UNIT` (any task
+status — a cancelled task's hours were worked). `spend_breakdown` reads it
+for `labor_hours`; `labor = labor_hours × average_labor_cost` as for live
+jobs. Tasks in any other unit (pieces, minutes) are billing quantities and
+contribute nothing; a live entered-quantity hour task still contributes
+nothing (its workers would be timeslipping). An archive with no hour tasks
+reports zero labor — the customer banner's caveat covers that
+(`contacts-and-businesses.md`).
+
+**Import service.** `ArchiveImportService.create_archived_job(payload, *,
+user=None)` in `apps/jobs/archive.py` builds one archived job and all its
+children from a plain dict in one `transaction.atomic()`. The whole
+payload is validated before any write and every problem is collected into
+one `ValidationError` keyed by payload path (`'tasks[2].status'`,
+`'estimates[0].estimate_number'`, `'shipments[1].items[0].qty'`) so a
+future spreadsheet importer can map errors back to rows. Unrecognised
+top-level keys (e.g. a typo'd `invoice`) are one `non_field_errors` entry
+(`Unknown payload keys: invoice, foo.`) rather than silently dropped; keys
+inside child rows stay permissive. Numbers above 10⁸ in magnitude (incl.
+`'1e30'`), non-finite or > 100,000-hour durations, and estimate/invoice
+numbers repeated within the payload case- and whitespace-insensitively
+(matching MySQL's collation) are path-keyed field errors. Children are
+written with ORM `create()` — never the domain services, whose guards and
+status-coupled side effects an archive must avoid — so model `save()`
+hooks still run (`_created` audits, Material's `_populate_from_pli`,
+sort-order assignment). Creating documents directly at a settled status is
+not a status *change*, so estimate-acceptance crystallisation, invoice
+job-completion and `Job.save` auto-dates do not fire; no earmarks, no QOH
+change, no `EstimateLineItemSource` / `InvoiceLineItemSource` rows.
+`NumberGenerationService` is not consulted.
+
+| Section | Fields | Restrictions |
+|---|---|---|
+| header | **`job_number`** (≤ 50, kept from the old system), **`contact`** (pk; may be inactive — `_assert_party_active` is not applied), `name`, `description`, `customer_po_number`, `project_manager` (User pk), `created_date`, `start_date`, `due_date`, `completed_date`, `outcome`, `source` | `job_number` must not already exist (`{'job_number': [...]}`, never a renumber); dates land as given |
+| `notes[]` | `text` (required), `timestamp`, `user` | — |
+| `tasks[]` | `name` (required), `description`, `sort_order`, `status`, `unit_label`, `rate`, `est_qty`, `actual_qty`, `est_worker_time`, `accounting_category`, `service_item` | `status` ∈ {complete, cancelled} (default complete); `qty_source` always `entered_qty` |
+| `deliverables[]` | `description` (required), `qty_ordered` (required, > 0), `units`, `sort_order` | — |
+| `materials[]` | `description`, `quantity`, `units`, `unit_cost`, `sell_price`, `accounting_category` (required without an item), `inventory_item`, `po_line_item`, `task` (index into `tasks`) | always `consumption_state=consumed`, `cost_source=imported`, `released_qty=0` |
+| `estimates[]` | **`estimate_number`**, **`status`**, `version` (default 1), `created_date`, `sent_date`, `closed_date`, `expiration_date`, `lines[]` | rows sharing `estimate_number` form a chain: versions contiguous from 1, lower versions `superseded` (`parent` set to the previous version; `closed_date` defaults to the successor's `created_date`), highest ∈ {accepted, rejected, expired}; at most one accepted; number unique in the DB at any version and `(number, version)` unique in the payload |
+| `invoices[]` | **`invoice_number`**, **`status`**, `created_date`, `sent_date`, `closed_date` (defaults to `created_date` when paid), `lines[]` | `status` ∈ {paid, cancelled} — a job with an open invoice must be live; number required and unique |
+| `shipments[]` | **`picked_up_date`**, `prepared_date` (defaults to `picked_up_date`), `notes`, `items[]` (`deliverable` index, `qty` > 0) | `status` picked_up only; ≥ 1 item; a deliverable once per shipment; total shipped ≤ `qty_ordered`; `sequence` assigned 1-based |
+
+Document `lines[]` are `{description, qty, units, price, accounting_category,
+is_comment}` (a comment line carries no qty or price) and are created with
+explicit 1-based `line_number`s in payload order.
+
+*History.* Outside a request there is no `HistoryContext`, so the service
+opens `HistoryContext(user=user)` for the transaction and flushes the
+queued `@history` `_created` audits itself, attributed to the importing
+user (true history: "imported on … by …"). It then writes **backdated**
+job `action` rows via `record_history(..., timestamp=...)`: "Created" at
+`created_date`, "Started" at `start_date`, the `outcome` text (or
+"Closed") at `completed_date`, and an "Imported" / "Imported from
+{source}" marker at now; each `notes[]` entry becomes a `note` row at its
+`timestamp` (default now) by its `user` (default the importer). Documents
+get no backdated lifecycle rows.
+
+*Management command.* `python manage.py import_archived_job <file.json>
+[--user USERNAME]` reads one payload object or a list. History is
+attributed to `--user` (default: the first superuser). It stops at the
+first invalid payload, printing `payload[i]: <key>: <msg>` lines to stderr
+(earlier payloads stay imported), and prints `Imported <job_number> (pk N)`
+per success. It writes to whichever DB it runs against — never point it at
+a dev DB you don't own. There is no API endpoint yet (the spreadsheet
+format and upload UI are a follow-on; permission there will be
+`CanManageJobs`).
+
+*Known oddity.* `_estimated` branches on `start_date` alone, so an
+archived job with a `start_date` and only rejected/expired estimates shows
+Estimated $0; accepted as-is (the importer does not validate `start_date ⇒
+accepted estimate`).
+
+**Second producer: the nealsdata converter.** `nealsdata/converter/build.py`
+`archive_old_jobs` also produces archived jobs, for the Neal's Kanban/FreeAgent
+dataset: after reconcile, a completed/rejected/cancelled job whose
+`completed_date` is six or more calendar months before the run's clock is
+reshaped to `status='archived'` and stripped to exactly the data
+`ArchiveImportService` would have written (no bleps, shipments, deliverables,
+source rows, QBO fields or invented `est_qty`; importer-shaped
+history rows). `tests/test_neals_archive_parity.py` guards the shape parity
+by round-tripping each converted archived job through the importer. Rule,
+shape and caveats: `nealsdata/convert.md` (§4 "Archived jobs").
+
+**SPA treatment.**
+
+- `JobHeader`: `VALID_TRANSITIONS.archived = []`, **no status pill** (the
+  banner below stands in its slot and already says Archived — a pill was a
+  fourth line in the fixed three-line header and pushed the status row's
+  actions out of the band; RM 2026-10-21), no status select / hold / Edit
+  (`isClosedJob`), **Duplicate…**, and on archived jobs only **Delete…**
+  (gated on `$canManageJobs`) — a two-phase in-modal confirm listing the
+  impact counts, then `?confirm=true`, then navigation to the customer
+  page.
+- `ArchivedJobBanner` ("**Archived:** this job was imported as a
+  historical record and cannot be changed.") is pill-sized and sized to
+  its text, rendered inside the status row ahead of Duplicate… / Delete…;
+  the `FrozenPartyBanner` is suppressed on an archived job.
+- Every section page renders read-only through the existing closed-job
+  branches. The overview spend block's frozen text names the labor's
+  provenance: `$X labor (N hours imported) · $Y materials · $Z total`.
+- Search's job-status checkbox list gains **Archived**; the customer
+  page's closed list ("show N completed") holds archived jobs.
+- `JobPicker` `excludeArchived` → `?exclude_archived=true` (drops only
+  archived jobs) on the expense form; `?open=true` pickers drop them via
+  `CLOSED_STATUSES`.
 
 ## 4. Task
 
@@ -1745,7 +1988,8 @@ Spent figure into its labor/materials parts —
 terms quantized to cents. `total` is the same value `_spent(job)`
 returns (by construction — `_spent` just calls `spend_breakdown(job)['total']`
 — so the header figure and the split can never drift apart). `labor`
-= all blep hours on the job × `average_labor_cost`; `materials_bought`
+= all blep hours on the job (`_labor_hours`; on an archived job also its
+hour-unit task actuals, §3.8) × `average_labor_cost`; `materials_bought`
 = non-rejected, non-stock-receipt job expenses + consumed materials
 with no linked expense at cost (the same two terms the Spent bullet
 above describes, just not summed with labor). This is the job

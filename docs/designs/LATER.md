@@ -765,6 +765,16 @@ Billing mechanics and money-record lifecycle.
 
 ## Purchasing & inventory
 
+- **PO line task picker can't offer archived tasks.** — _added 2026-10-21 (archived-jobs, spec §3.4)_
+  Linking a PO line to a task on an archived job (`PurchaseOrderLineItem.task`)
+  is allowed at the API/model level, but `TaskLinkPicker.svelte` queries
+  `?open=true`, which excludes archived jobs (`Job.CLOSED_STATUSES`) — and must,
+  since that picker also serves work that must never attach to an archive. A
+  migrated shop that imports its old POs may want to link them to archived tasks.
+  Take up with the spreadsheet importer once the need is concrete.
+  _Done when:_ a picker variant that offers archived tasks exists for the
+  PO-line task link (and only there), or the need is ruled out.
+
 (The procurement-machinery items moved into the freeform-materials plan
 2026-07-04; the plan shipped 2026-07-05 and the still-open ones returned below.)
 
@@ -999,6 +1009,36 @@ Billing mechanics and money-record lifecycle.
   are frozen.
 
 ## Platform & conventions
+
+- **`python-dateutil` is imported but not pinned in `requirements.txt`.** — _added 2026-10-21_
+  `apps/jobs/financials.py` and the nealsdata converter (`archive_cutoff`) both import
+  `dateutil.relativedelta`; it arrives transitively today. Pin it explicitly so a
+  dependency bump cannot drop it.
+  _Done when:_ `python-dateutil` has its own line in `requirements.txt`.
+
+- **`InvoiceListPage` has no stale-response guard.** — _added 2026-10-21 (archived-jobs final review)_
+  `frontend/src/routes/invoices/InvoiceListPage.svelte` `load()` assigns
+  whatever response arrives last, so changing the Status filter while the
+  initial `status=open` fetch is in flight can leave the Draft filter
+  showing open invoices. Surfaced as an order-dependent e2e failure in
+  `specs/deposits/deposit-creation.spec.js` (now waits for the first list
+  before filtering). Other list pages with the same `$effect(load)` shape
+  likely share it.
+  _Done when:_ list loads ignore superseded responses (request token or
+  AbortController) and the spec's wait is no longer needed.
+
+- **Seed RateScheme "knife cutting" (pk 9) is `elapsed_time` in minutes.** —
+  _added 2026-10-20 (noticed during the archived-jobs design)_
+  `RateScheme.clean` pins elapsed-time schemes to `HOUR_UNIT`, but
+  `fixtures/large_datasets/nealseed.json` and `fixtures/playwright/seed.json`
+  both carry scheme pk 9 with `algorithm='elapsed_time', unit_label='min'`,
+  loaded via `loaddata` (which skips `clean`). It predates the pin. Harmless
+  until something re-saves the row, at which point `full_clean()` rejects it
+  with a unit error. nealseed is RM-managed — do not regenerate it; fix the
+  row by hand (or re-stamp it as `entered_qty`/min like its siblings) when RM
+  next touches the seeds.
+  _Done when:_ no fixture scheme has `elapsed_time` with a non-hour unit, or
+  the pin is relaxed on purpose.
 
 - **Contact.email uniqueness is collation-dependent; never case-folded.** —
   _added 2026-09-24 (nealseed load failure)_

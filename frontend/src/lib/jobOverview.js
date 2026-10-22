@@ -1,5 +1,6 @@
 import { materialStatus } from './materialStatus.js';
 import { formatMoney } from './format.js';
+import { PRE_APPROVAL_JOB_STATUSES, WORK_FROZEN_JOB_STATUSES, CLOSED_JOB_STATUSES } from './jobStatus.js';
 
 // jobOverview.js — the pure view-model for the job overview page's six
 // lifecycle blocks (Scope → Work → Materials → Spend → Invoicing → Delivery).
@@ -274,12 +275,10 @@ function responseClock(sentDate, status, now) {
 // ===========================================================================
 // 2. WORK — progress, tasks, due, who's working now.
 // ===========================================================================
-const PRE_APPROVAL_JOB_STATUSES = ['draft', 'submitted'];
 const WORK_DONE_JOB_STATUSES = ['work_complete', 'completed'];
 // Work freezes on completion AND on the terminal statuses that stop work for
-// good (cancelled/rejected) — those get the same settled facts line as
-// work_complete, not the active in-progress rendering.
-const WORK_FROZEN_JOB_STATUSES = [...WORK_DONE_JOB_STATUSES, 'cancelled', 'rejected'];
+// good (cancelled/rejected/archived) — those get the same settled facts line
+// as work_complete (lib/jobStatus.js WORK_FROZEN_JOB_STATUSES).
 
 export function workBlock({ job, overview, tasksPlanned = 0 }) {
   const work = (overview && overview.work) || {};
@@ -288,7 +287,7 @@ export function workBlock({ job, overview, tasksPlanned = 0 }) {
   const href = section(job && job.job_id, 'tasks');
 
   // Dormant — job not yet approved.
-  if (PRE_APPROVAL_JOB_STATUSES.includes(status)) {
+  if (PRE_APPROVAL_JOB_STATUSES.has(status)) {
     const planned = tasksPlanned || num(work.tasks_total);
     const text = planned > 0
       ? `${planned} tasks planned · starts when the scope is accepted`
@@ -297,7 +296,7 @@ export function workBlock({ job, overview, tasksPlanned = 0 }) {
   }
 
   // Frozen — work complete, or the job stopped for good.
-  if (WORK_FROZEN_JOB_STATUSES.includes(status)) {
+  if (WORK_FROZEN_JOB_STATUSES.has(status)) {
     const hours = fmtHours((overview.spend && overview.spend.labor_hours) || 0);
     return { state: 'frozen', frozenText: `${num(work.tasks_total)} tasks · ${hours}h logged`, href };
   }
@@ -505,7 +504,6 @@ function poDueTone(dueDate, now) {
 // ===========================================================================
 // 4. SPEND — labor / materials / total, against scope.
 // ===========================================================================
-const TERMINAL_JOB_STATUSES = ['completed', 'rejected', 'cancelled'];
 
 export function spendBlock({ job, overview, scopeTotal = 0 }) {
   const spend = (overview && overview.spend) || {};
@@ -526,10 +524,14 @@ export function spendBlock({ job, overview, scopeTotal = 0 }) {
   const totalStr = fmtMoney(total);
 
   // Frozen — terminal job: the same three figures as settled facts.
-  if (TERMINAL_JOB_STATUSES.includes(status)) {
+  if (CLOSED_JOB_STATUSES.has(status)) {
+    // An archived job's hours were imported, not tracked here — say so.
+    const laborText = status === 'archived'
+      ? `${labor} labor (${fmtHours(spend.labor_hours)} hours imported)`
+      : `${labor} labor`;
     return {
       state: 'frozen',
-      frozenText: `${labor} labor · ${materials} materials · ${totalStr} total`,
+      frozenText: `${laborText} · ${materials} materials · ${totalStr} total`,
       href,
     };
   }

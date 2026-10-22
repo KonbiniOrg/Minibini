@@ -2,7 +2,7 @@
 import json
 import random
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from nealsdata.converter.loaders import ExcelDataLoader, KanbanCsvLoader
@@ -32,10 +32,17 @@ def _is_active_card(card):
 class NealsDataConverter:
     def __init__(self, excel_path, csv_path, output_path,
                  limit=100, verbose=False, seed_path=None,
-                 all_vendors=False):
+                 all_vendors=False, now=None):
         self.loader = ExcelDataLoader(excel_path, verbose=verbose)
         self.csv_loader = KanbanCsvLoader(csv_path)
         self.output_path = output_path
+        # One run clock: every 'today' decision (expiry, archival cutoff)
+        # reads this, so a run is reproducible and testable.
+        self.now = now or datetime.now(timezone.utc)
+        self.invented_est_qty = set()   # jobs.task pks whose est_qty the converter invented
+        self.line_est_qty = {}          # jobs.task pk -> est_qty taken from its estimate line
+        self.archived_job_pks = set()   # jobs reshaped to 'archived' by archive_old_jobs
+        self.archived_outcome = {}      # {job_pk: 'completed' | 'rejected' | 'cancelled'}
         self.limit = limit
         # Vendors: by default a vendor Business exists only because a Bill
         # of theirs synthesized a PO (build_purchasing creates it on demand).
@@ -71,7 +78,8 @@ class NealsDataConverter:
         self.cut_task = {}          # base_ref -> task_pk (first task whose name has 'cut')
         self.invoice_totals = {}    # base_ref -> Decimal total of qty*price across job's invoice lines
         self.fake_deliverable_count = 0  # jobs that got a synthetic 'Fake Deliverable'
-        self.invoice_line_kinds = {}  # invoicelineitem pk -> 'task' | 'material' | 'lineitem' | 'skip'
+        self.invoice_line_kinds = {}  # invoicelineitem pk -> 'task' | 'material' | 'lineitem' | 'deposit' | 'deposit_credit'
+        self.deposit_summary = {}     # build_invoices: placed/paired/standalone/skipped/plain counts
 
     # --- fixture plumbing -------------------------------------------------
     def next_pk(self, model):
@@ -141,6 +149,9 @@ class NealsDataConverter:
         build.assign_est_quantities(self)  # real-task est_qty heuristic (needs worker times)
         build.build_invoices(self)
         reconcile.reconcile(self)
+        # After reconcile (final statuses/dates), before every builder that
+        # would reference the rows it strips (shipments, purchasing, history).
+        build.archive_old_jobs(self, build.archive_cutoff(self.now))
         build.assign_project_managers(self)  # after reconcile: needs final job status
         build.build_shipments(self)   # after reconcile: needs final job dates
         build.build_bleps_and_shifts(self)  # after reconcile: needs final task status/dates
@@ -174,8 +185,15 @@ class NealsDataConverter:
 
     def _print_summary(self):
         from collections import Counter
+        from nealsdata.converter import build
         c = self
         counts = Counter(row['model'] for row in self.fixture_data)
         for model, n in sorted(counts.items()):
             print(f'  {n:6} {model}')
+        print(f'  {len(c.archived_job_pks)} jobs archived (completed/rejected/cancelled on or before {build.archive_cutoff(c.now):%Y-%m-%d})')
         print(f'  {c.fake_deliverable_count} jobs got a synthetic \'Fake Deliverable\' (review these)')
+        d = c.deposit_summary
+        print(f"  {d.get('placed', 0)} deposit invoices placed "
+              f"({d.get('paired', 0)} paired with a deduction, {d.get('standalone', 0)} standalone); "
+              f"{d.get('skipped', 0)} deposit invoices on non-spine or ambiguous jobs skipped; "
+              f"{d.get('plain', 0)} deductions left as plain lines")

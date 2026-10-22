@@ -3,12 +3,14 @@
   import { api } from '../lib/api.js';
   import { PICKER_PAGE_SIZE } from '../lib/pagination.js';
   // openOnly: exclude dead jobs (completed/cancelled/rejected) — for pickers
-  // that attach new work or spend (PO lines).
+  // that attach new work or spend (PO lines). excludeArchived: drop only the
+  // read-only archived jobs (expense attach).
   let { value = $bindable(null), selectedItem = null,
-        onSelect = () => {}, disabled = false, openOnly = false } = $props();
+        onSelect = () => {}, disabled = false, openOnly = false,
+        excludeArchived = false } = $props();
   const label = (j) => `${j.job_number} — ${j.name ?? j.description ?? ''}`;
   const search = (q) =>
-    api.get(`/api/jobs/?search=${encodeURIComponent(q)}&page_size=${PICKER_PAGE_SIZE}${openOnly ? '&open=true' : ''}`)
+    api.get(`/api/jobs/?search=${encodeURIComponent(q)}&page_size=${PICKER_PAGE_SIZE}${openOnly ? '&open=true' : ''}${excludeArchived ? '&exclude_archived=true' : ''}`)
        .then((d) => ({ rows: d.results || d, total: d.count ?? (d.results || d).length }));
   const resolveLabel = (id, item) =>
     item ? Promise.resolve(label(item))

@@ -495,7 +495,7 @@ class InventoryService:
         from apps.inventory.models import Material
         from apps.jobs.models import Job as _Job
 
-        if job.status in (_Job.STATUS_DRAFT, _Job.STATUS_SUBMITTED):
+        if job.status in _Job.PRE_APPROVAL_STATUSES:
             return
 
         # Exclude already-consumed materials: a material consumed pre-approval
@@ -592,7 +592,7 @@ class MaterialService:
         """Reserve stock only for committed (approved+) jobs — pre-approval
         jobs earmark in bulk at acceptance (create_earmarks_for_job)."""
         from apps.jobs.models import Job as _Job
-        _PRE_APPROVAL = (_Job.STATUS_DRAFT, _Job.STATUS_SUBMITTED)
+        _PRE_APPROVAL = _Job.PRE_APPROVAL_STATUSES
         if material.job.status not in _PRE_APPROVAL:
             InventoryService._mutate_earmark(
                 material.inventory_item, material.job, material.quantity)
@@ -1010,7 +1010,7 @@ class MaterialService:
         MaterialService._assert_not_invoiced(material)
         qty = material.quantity
         from apps.jobs.models import Job as _Job
-        _PRE_APPROVAL = (_Job.STATUS_DRAFT, _Job.STATUS_SUBMITTED)
+        _PRE_APPROVAL = _Job.PRE_APPROVAL_STATUSES
         with transaction.atomic():
             pli = material.inventory_item
             if pli and qty > Decimal('0.00'):

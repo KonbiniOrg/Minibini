@@ -37,3 +37,29 @@ class CostSourceFieldTests(TestCase):
         self.assertFalse(m.is_customer_supplied)
         m.cost_source = Material.COST_SOURCE_CUSTOMER
         self.assertTrue(m.is_customer_supplied)
+
+
+class ImportedCostSourceTests(TestCase):
+    def setUp(self):
+        self.cat = AccountingCategory.objects.create(
+            name='Materials', is_active=True, code='MAT')
+        self.contact = Contact.objects.create(
+            first_name='J', last_name='D', email='j@d.com', phones=[{'number': '5', 'label': 'mobile'}])
+        self.job = Job.objects.create(
+            contact=self.contact, status=Job.STATUS_APPROVED,
+            job_number='JOB-2026-0001')
+
+    def test_imported_is_a_choice_and_does_not_mint(self):
+        from apps.inventory.models import InventoryItem
+        from apps.inventory.services import MaterialService
+        before = InventoryItem.objects.count()
+        m = MaterialService.create_on_job(
+            job=self.job, description='Ply', quantity=Decimal('1'),
+            unit_cost=Decimal('5.00'),
+            cost_source=Material.COST_SOURCE_IMPORTED,
+            accounting_category=self.cat)
+        m.refresh_from_db()
+        self.assertEqual(m.cost_source, 'imported')
+        self.assertIn(('imported', 'Imported'), Material.COST_SOURCE_CHOICES)
+        self.assertIsNone(m.inventory_item)
+        self.assertEqual(InventoryItem.objects.count(), before)

@@ -1,4 +1,5 @@
 <script>
+  import { isClosedJob } from '../../lib/jobStatus.js';
   import { link } from 'svelte-spa-router';
   import { api, errorMessage } from '../../lib/api.js';
   import { showError } from '../../stores/messages.js';
@@ -80,7 +81,7 @@
 
   // Same lock the job task list uses: terminal jobs freeze everything.
   const jobLocked = $derived(
-    job != null && ['completed', 'cancelled', 'rejected'].includes(job.status)
+    job != null && isClosedJob(job.status)
   );
 
   // Material rows here are the same shared fragment (MaterialRow) the job

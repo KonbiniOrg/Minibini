@@ -1,12 +1,17 @@
 <script>
+  import { isClosedJob, jobStatusLabel } from '../../lib/jobStatus.js';
   import { api, errorMessage } from '../../lib/api.js';
-  import { showError } from '../../stores/messages.js';
+  import { showError, showSuccess } from '../../stores/messages.js';
+  import { triageError } from '../../lib/errorTriage.js';
+  import { canManageJobs as canManageJobsAtom } from '../../stores/permissions.js';
+  import { push } from 'svelte-spa-router';
   import { notifyEstimateLinesChanged } from '../../stores/estimateLines.js';
   import FormMessage from '../FormMessage.svelte';
   import Modal from '../Modal.svelte';
   import JobEditModal from './JobEditModal.svelte';
   import DuplicateJobModal from './DuplicateJobModal.svelte';
   import FrozenPartyBanner from '../FrozenPartyBanner.svelte';
+  import ArchivedJobBanner from './ArchivedJobBanner.svelte';
   import ChangeContactModal from '../ChangeContactModal.svelte';
 
   const {
@@ -50,21 +55,11 @@
     rejected: [],
     completed: [],
     cancelled: ['in_progress'],
-  };
-
-  const STATUS_LABELS = {
-    in_progress: 'In Progress',
-    work_complete: 'Work Complete',
-    draft: 'Draft',
-    submitted: 'Submitted',
-    approved: 'Approved',
-    rejected: 'Rejected',
-    completed: 'Completed',
-    cancelled: 'Cancelled',
+    archived: [],
   };
 
   function statusLabel(s) {
-    return STATUS_LABELS[s] || s;
+    return jobStatusLabel(s);
   }
 
   // Trigger labels: the pill names the *act*, not the resulting status, for
@@ -97,9 +92,7 @@
 
   // A closed job doesn't offer Edit (Duplicate stays — cloning a finished
   // job is a normal way to start the next one).
-  let isTerminal = $derived(
-    ['completed', 'rejected', 'cancelled'].includes(job.status)
-  );
+  let isTerminal = $derived(isClosedJob(job.status));
 
   let showStatusSelect = $derived(
     canManageJobs && (validNextStatuses.length > 0 || canHold || job.on_hold)
@@ -234,6 +227,46 @@
       showError(errorMessage(e, 'Failed to release the hold.'));
     }
   }
+
+  // Delete… on an archived job: atom-gated (not the per-job can_manage, which
+  // a PM-only user also has), two-phase like the contact delete.
+  const IMPACT_LABELS = [
+    ['tasks', 'task(s)'], ['materials', 'material(s)'], ['deliverables', 'deliverable(s)'],
+    ['shipments', 'shipment(s)'], ['estimates', 'estimate(s)'], ['invoices', 'invoice(s)'],
+    ['history_rows', 'history row(s)'], ['linked_po_lines', 'linked PO line(s)'],
+  ];
+  let deleteImpact = $state(null);
+  let deleting = $state(false);
+
+  async function requestDelete() {
+    try {
+      const result = await api.delete(`/api/jobs/${job.job_id}/`);
+      if (result && result.confirm_required) {
+        deleteImpact = result.impact || {};
+      } else {
+        showSuccess('Job deleted.');
+        push(`/contacts/${job.contact}`);
+      }
+    } catch (e) {
+      const t = triageError(e);
+      showError(t.overlay || t.message);
+    }
+  }
+
+  async function confirmDelete() {
+    deleting = true;
+    try {
+      await api.delete(`/api/jobs/${job.job_id}/?confirm=true`);
+      deleteImpact = null;
+      showSuccess('Job deleted.');
+      push(`/contacts/${job.contact}`);
+    } catch (e) {
+      const t = triageError(e);
+      showError(t.overlay || t.message);
+    } finally {
+      deleting = false;
+    }
+  }
 </script>
 
 <div class="job-header">
@@ -245,17 +278,26 @@
         {#if job.contact_is_active === false}<span class="status-badge status-inactive">inactive</span>{/if}
       {/if}
     </p>
-    {#if job.contact_is_active === false}
+    {#if job.status !== 'archived' && job.contact_is_active === false}
       <FrozenPartyBanner kind="job" partyName={contact?.name ?? job.contact_name} partyHref={`#/contacts/${job.contact}`}
         businessName={job.contact_business_name} businessActive={!!job.contact_business_is_active}
         onChangeContact={canManageJobs ? () => { swapOpen = true; } : null} />
     {/if}
     <div class="status-row">
+      {#if job.status === 'archived'}
+        <!-- The header is a fixed three-line budget: the archived banner takes
+             the status pill's slot (it already says "Archived") so the row's
+             actions stay inside the band. Wins over the frozen-party banner. -->
+        <ArchivedJobBanner />
+      {/if}
       {#if canManageJobs}
         {#if !isTerminal}
           <button type="button" class="edit-link header-action" onclick={() => { editOpen = true; }}>Edit</button>
         {/if}
         <button type="button" class="edit-link header-action" onclick={() => { dupOpen = true; }}>Duplicate…</button>
+      {/if}
+      {#if job.status === 'archived' && $canManageJobsAtom}
+        <button type="button" class="edit-link header-action danger" onclick={requestDelete}>Delete…</button>
       {/if}
       {#if showStatusSelect}
         <span class="status-select-wrapper">
@@ -283,7 +325,7 @@
             {/if}
           </select>
         </span>
-      {:else}
+      {:else if job.status !== 'archived'}
         <span class="status-badge {job.on_hold ? 'on-hold-pill' : `status-${job.status}`}">{pillLabel}</span>
       {/if}
       {#if job.on_hold && job.hold_reason}
@@ -345,6 +387,21 @@
   open={dupOpen}
   onClose={() => { dupOpen = false; }}
 />
+
+<Modal open={deleteImpact != null} onSave={confirmDelete} onCancel={() => { deleteImpact = null; }}
+  busy={deleting} maxWidth="480px" label="Delete job">
+  <h3>Delete {job.job_number}?</h3>
+  <p>This cannot be undone.</p>
+  <ul class="impact">
+    {#each IMPACT_LABELS as [key, label] (key)}
+      <li>{deleteImpact?.[key] ?? 0} {label}</li>
+    {/each}
+  </ul>
+  <div class="modal-actions">
+    <button type="button" onclick={() => { deleteImpact = null; }} disabled={deleting}>Cancel</button>
+    <button type="button" class="danger" onclick={confirmDelete} disabled={deleting}>{deleting ? 'Deleting…' : 'Delete job'}</button>
+  </div>
+</Modal>
 
 <style>
   /* Fixed-height banner: the left titleblock is a hard three-line budget
@@ -434,4 +491,8 @@
   .hold-modal-label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px; }
   #hold-reason-input { width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 13px; }
   .hold-modal-actions { display: flex; gap: 8px; margin-top: 12px; }
+  /* Delete… modal — same treatment as ContactDetailPage's delete modal. */
+  .impact { margin: 8px 0 14px; padding: 10px 12px 10px 28px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; font-size: 13px; color: #7f1d1d; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .modal-actions .danger { background: #b91c1c; border-color: #b91c1c; color: #fff; font-weight: 600; }
 </style>

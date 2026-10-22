@@ -266,6 +266,15 @@ def settings_view(request):
                 {'activity_recent_days': 'must be an integer >= 1'},
                 status=400,
             )
+    if 'customer_financials_window_months' in request.data:
+        try:
+            if int(request.data['customer_financials_window_months']) < 1:
+                raise ValueError
+        except (TypeError, ValueError):
+            return Response(
+                {'customer_financials_window_months': 'must be an integer >= 1'},
+                status=400,
+            )
     if 'average_labor_cost' in request.data:
         from decimal import Decimal, InvalidOperation
         raw = request.data['average_labor_cost']

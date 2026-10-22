@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from decimal import Decimal
 from nealsdata.converter import build
 from nealsdata.converter import parsing as P
@@ -813,9 +814,10 @@ class InvoiceBuilderTest(unittest.TestCase):
         # Invoice lines have no source-linked atom to inherit an AC from at
         # load time, so the converter must emit one on every line (mirrors
         # the estimate-line rule above). The value must be one of the four
-        # seeded categories.
+        # seeded categories, or DEP for deposit charges and credits
+        # (convert.md §4 "Deposits").
         build.build_invoices(self.c)
-        seeded = {self.c.ac_by_code[code] for code in ('SVC', 'MTL', 'PRD', 'DLV')}
+        seeded = {self.c.ac_by_code[code] for code in ('SVC', 'MTL', 'PRD', 'DLV', 'DEP')}
         lis = self._models('invoicing.invoicelineitem')
         self.assertTrue(lis, 'expected invoice line items in the fixture')
         for li in lis:
@@ -1830,6 +1832,101 @@ class ConvertEndToEndTest(unittest.TestCase):
         self.assertNotIn('"jobs.fee"', raw)
         self.assertNotIn('"source_type": "fee"', raw)
 
+    @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
+                         'datasets not present')
+    def test_archive_rule_holds_end_to_end(self):
+        from datetime import datetime, timezone as tz
+        fd, path = tempfile.mkstemp(suffix='.json')
+        os.close(fd)
+        self.addCleanup(os.unlink, path)
+        now = datetime(2030, 1, 1, tzinfo=tz.utc)   # far future: every closed job is old
+        c = NealsDataConverter(XLSX, CSV, output_path=path, limit=40, now=now)
+        c.convert()
+        cutoff = build.archive_cutoff(now)
+        jobs = [f for f in c.fixture_data if f['model'] == 'jobs.job']
+        archived = {f['pk'] for f in jobs if f['fields']['status'] == 'archived'}
+        self.assertEqual(archived, c.archived_job_pks)
+        self.assertGreater(len(archived), 0)
+        closed = ('completed', 'rejected', 'cancelled')
+        for f in jobs:
+            st = f['fields']['status']
+            cd = build._aware(f['fields'].get('completed_date'))
+            if st == 'archived':
+                # archived => it was an old closed job
+                self.assertIn(c.archived_outcome[f['pk']], closed)
+                self.assertIsNotNone(cd)
+                self.assertLessEqual(cd, cutoff)
+            elif st in closed:
+                # a closed job left live => it is younger than the cutoff
+                self.assertTrue(cd is None or cd > cutoff, f['fields']['job_number'])
+        # nothing invented survives on an archive
+        for f in c.fixture_data:
+            if f['model'] in ('deliverables.deliverable', 'deliverables.shipment',
+                              'inventory.earmark'):
+                self.assertNotIn(f['fields'].get('job'), archived, f['model'])
+        # bleps and PO lines carry no `job`: resolve it through their task
+        task_job = {f['pk']: f['fields'].get('job')
+                    for f in c.fixture_data if f['model'] == 'jobs.task'}
+        for f in c.fixture_data:
+            fl = f['fields']
+            if f['model'] == 'jobs.blep':
+                self.assertNotIn(task_job.get(fl['task']), archived, 'blep on archived job')
+            elif f['model'] == 'purchasing.purchaseorderlineitem':
+                self.assertNotIn(task_job.get(fl.get('task')), archived,
+                                 'PO line on archived job task')
+            elif f['model'] == 'inventory.material' and fl.get('job') in archived:
+                # the material side of the PO link is nulled on an archive
+                self.assertIsNone(fl.get('po_line_item'), 'archived material keeps PO line')
+
+
+    @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
+                         'datasets not present')
+    def test_deposits_translated_end_to_end(self):
+        """convert.md §4 "Deposits": deposit invoices land on their jobs, paired
+        deductions are credits claiming a DEP line on a paid invoice of the
+        same job, and no deduction masquerades as work."""
+        fd, path = tempfile.mkstemp(suffix='.json')
+        os.close(fd)
+        self.addCleanup(os.unlink, path)
+        c = NealsDataConverter(XLSX, CSV, output_path=path, limit=60)
+        c.convert()
+        dep_ac = c.ac_by_code['DEP']
+        inv_job = {f['pk']: f['fields']['job'] for f in c.fixture_data
+                   if f['model'] == 'invoicing.invoice'}
+        inv_status = {f['pk']: f['fields']['status'] for f in c.fixture_data
+                      if f['model'] == 'invoicing.invoice'}
+        lines = {f['pk']: f['fields'] for f in c.fixture_data
+                 if f['model'] == 'invoicing.invoicelineitem'}
+        claims = [f['fields'] for f in c.fixture_data
+                  if f['model'] == 'invoicing.invoicelineitemsource'
+                  and f['fields']['source_type'] == 'deposit']
+        self.assertGreater(c.deposit_summary['paired'], 0)
+        self.assertGreater(c.deposit_summary['standalone'], 0)
+        self.assertEqual(len(claims), len({cl['source_pk'] for cl in claims}),
+                         'a deposit line claimed twice')
+        for cl in claims:
+            credit, dep = lines[cl['invoice_line_item']], lines[cl['source_pk']]
+            self.assertEqual(credit['accounting_category'], dep_ac)
+            self.assertEqual(dep['accounting_category'], dep_ac)
+            self.assertLess(Decimal(credit['price']), 0)
+            self.assertEqual(credit['qty'], '1.00')
+            self.assertEqual(Decimal(credit['price']),
+                             -(Decimal(dep['qty']) * Decimal(dep['price'])))
+            self.assertEqual(inv_job[credit['invoice']], inv_job[dep['invoice']])
+            self.assertEqual(inv_status[dep['invoice']], 'paid')
+            self.assertEqual(c.invoice_line_kinds[cl['invoice_line_item']], 'deposit_credit')
+            self.assertEqual(c.invoice_line_kinds[cl['source_pk']], 'deposit')
+        for pk, fl in lines.items():
+            if 'deposit' in fl['description'].lower() and Decimal(fl['price']) * Decimal(fl['qty']) < 0:
+                self.assertIn(c.invoice_line_kinds[pk], ('deposit_credit', 'lineitem'),
+                              f'deduction {pk} classified as work')
+        # a standalone paid deposit exists and is a DEP line on a paid invoice
+        claimed = {cl['source_pk'] for cl in claims}
+        standalone = [pk for pk, fl in lines.items()
+                      if c.invoice_line_kinds.get(pk) == 'deposit' and pk not in claimed]
+        self.assertTrue(standalone)
+        self.assertTrue(all(lines[pk]['accounting_category'] == dep_ac for pk in standalone))
+
 
 @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
                      'datasets not present')
@@ -2017,6 +2114,92 @@ class DocumentCounterReconcileTest(unittest.TestCase):
         # No POs emitted at reconcile time (build_purchasing runs later and
         # advances po_counter itself) — the pass writes the honest zero.
         self.assertEqual(appstate['po_counter'], '0')
+
+
+class ArchivedJobHistoryTest(unittest.TestCase):
+    """build_history gives archived jobs exactly what ArchiveImportService leaves."""
+
+    NOW = datetime(2026, 10, 21, 12, 0, tzinfo=timezone.utc)
+    NOW_S = NOW.isoformat()
+
+    def _converter(self):
+        c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json',
+                               now=self.NOW)
+        return c
+
+    def _rows(self, c, job_objs):
+        models = ('core.jobhistory', 'core.crmhistory', 'core.purchasinghistory')
+        out = []
+        for r in c.fixture_data:
+            if r['model'] not in models:
+                continue
+            f = r['fields']
+            if (f['object_type'], f['object_id']) in job_objs:
+                self.assertIsNone(f['user'])
+                out.append((f['entry_type'], f['object_type'], f['object_id'],
+                            f['changes'], f['text'], f['timestamp']))
+        return sorted(out, key=lambda t: (t[5], t[0], t[1], t[2], t[4]))
+
+    def _build(self, c, start_date, completed_date, status, checklist, outcome):
+        c.add_fixture('jobs.job', 1, {
+            'created_date': '2020-01-01T00:00:00+00:00', 'start_date': start_date,
+            'completed_date': completed_date, 'status': 'archived'})
+        c.add_fixture('jobs.task', 2, {'job': 1})
+        c.add_fixture('estimates.estimate', 3, {'job': 1, 'created_date': '2020-01-02T00:00:00+00:00'})
+        c.add_fixture('inventory.material', 4, {'job': 1})
+        c.add_fixture('invoicing.invoice', 7, {'job': 1, 'created_date': '2020-02-01T00:00:00+00:00'})
+        c.archived_job_pks = {1}
+        c.archived_outcome = {1: outcome}
+        c.jobs['K1'] = {'job_pk': 1, 'card': {'Checklist': checklist}}
+        build.build_history(c)
+
+    def _audits(self):
+        return [('audit', t, i, {'_created': True}, '', self.NOW_S)
+                for t, i in (('job', 1), ('task', 2), ('material', 4),
+                             ('estimate', 3), ('invoice', 7))]
+
+    def test_completed_archive_rows(self):
+        c = self._converter()
+        self._build(c, '2020-01-05T00:00:00+00:00', '2020-03-01T00:00:00+00:00',
+                    'archived', '[X] Picked up/Delivered', 'completed')
+        objs = {('job', 1), ('task', 2), ('material', 4), ('estimate', 3), ('invoice', 7)}
+        expected = self._audits() + [
+            ('action', 'job', 1, {'_action': 'Created'}, '', '2020-01-01T00:00:00+00:00'),
+            ('action', 'job', 1, {'_action': 'Started'}, '', '2020-01-05T00:00:00+00:00'),
+            ('action', 'job', 1, {'_action': 'Completed'}, '', '2020-03-01T00:00:00+00:00'),
+            # changes None, not {}: record_history's default for a note row
+            ('note', 'job', 1, None, 'Picked up/Delivered (Kanban checklist)',
+             '2020-03-01T00:00:00+00:00'),
+            ('action', 'job', 1, {'_action': 'Imported from Kanban'}, '', self.NOW_S),
+        ]
+        key = lambda t: (t[5], t[0], t[1], t[2], t[4])
+        self.assertEqual(self._rows(c, objs), sorted(expected, key=key))
+
+    def test_rejected_archive_rows(self):
+        c = self._converter()
+        self._build(c, None, '2020-03-01T00:00:00+00:00', 'archived',
+                    '[ ] Picked up/Delivered', 'rejected')
+        objs = {('job', 1), ('task', 2), ('material', 4), ('estimate', 3), ('invoice', 7)}
+        expected = self._audits() + [
+            ('action', 'job', 1, {'_action': 'Created'}, '', '2020-01-01T00:00:00+00:00'),
+            ('action', 'job', 1, {'_action': 'Rejected'}, '', '2020-03-01T00:00:00+00:00'),
+            ('action', 'job', 1, {'_action': 'Imported from Kanban'}, '', self.NOW_S),
+        ]
+        key = lambda t: (t[5], t[0], t[1], t[2], t[4])
+        self.assertEqual(self._rows(c, objs), sorted(expected, key=key))
+
+    def test_live_jobs_unchanged(self):
+        c = self._converter()
+        c.add_fixture('jobs.job', 1, {'created_date': '2025-03-01T00:00:00+00:00', 'status': 'rejected'})
+        c.add_fixture('estimates.estimate', 10, {'job': 1, 'status': 'expired'})
+        c.archived_job_pks = {99}
+        c.archived_outcome = {}
+        build.build_history(c)
+        labels = [r['fields']['changes'].get('_action') for r in c.fixture_data
+                  if r['model'] == 'core.jobhistory' and r['fields']['object_type'] == 'estimate']
+        self.assertIn('Expired', labels)
+        self.assertNotIn(self.NOW_S, [r['fields']['timestamp'] for r in c.fixture_data
+                                      if r['model'] == 'core.jobhistory'])
 
 
 class BuildHistoryUnitTest(unittest.TestCase):
@@ -3020,3 +3203,537 @@ class SpineActiveCardPolicyTest(unittest.TestCase):
                             stage='In Progress') for i in range(1, 5)]
         c = self._converter(cards, [f['External ID'] for f in cards], limit=2)
         self.assertEqual(len(c.select_spine()), 4)
+
+
+class RunClockTest(unittest.TestCase):
+    def test_now_defaults_to_aware_utc_and_is_injectable(self):
+        from datetime import datetime, timezone as tz
+        c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
+        self.assertIsNotNone(c.now.tzinfo)
+        fixed = datetime(2030, 1, 15, tzinfo=tz.utc)
+        self.assertEqual(NealsDataConverter('/dev/null', '/dev/null',
+                                            output_path='/tmp/x.json', now=fixed).now, fixed)
+
+    def _expiry_status(self, now):
+        c = NealsDataConverter('/dev/null', '/dev/null',
+                               output_path='/tmp/x.json', now=now)
+        c.add_fixture('estimates.estimate', 1, {
+            'status': 'open', 'created_date': '2029-12-01T00:00:00Z',
+            'closed_date': None})
+        c.estimates = {'EST-1': [{'est_pk': 1, 'version': 1, 'status': 'open',
+                                  'created_date': '2029-12-01'}]}
+        index = {(f['model'], f.get('pk')): f for f in c.fixture_data}
+        reconcile._pass_estimate_expiry(c, index)
+        return index[('estimates.estimate', 1)]['fields']['status']
+
+    def test_expiry_uses_run_clock(self):
+        from datetime import datetime, timezone as tz
+        self.assertEqual(self._expiry_status(datetime(2030, 1, 15, tzinfo=tz.utc)),
+                         'expired')
+        self.assertEqual(self._expiry_status(datetime(2029, 12, 20, tzinfo=tz.utc)),
+                         'open')
+
+
+class EstQtyProvenanceTest(unittest.TestCase):
+    def test_records_invented_est_qty(self):
+        c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
+        c.add_fixture('jobs.task', 1, {'qty_source': 'elapsed_time', 'est_qty': None,
+                                       'est_worker_time': '02:00:00'})
+        c.add_fixture('jobs.task', 2, {'qty_source': 'entered_qty', 'est_qty': '4.00',
+                                       'est_worker_time': '02:00:00'})
+        c.add_fixture('jobs.task', 3, {'qty_source': 'entered_qty', 'est_qty': None,
+                                       'est_worker_time': '02:00:00'})
+        build.assign_est_quantities(c)
+        self.assertEqual(c.invented_est_qty, {1, 3})
+
+    def test_build_line_item_tasks_records_line_qty(self):
+        from unittest import mock
+        c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
+        c.cut_task = {}
+        lines = [{'description': 'Hours', 'qty': Decimal('3')},
+                 {'description': 'Plain', 'qty': Decimal('9')}]
+        billing = iter([('task', None, []), ('plain', None, None)])
+        with mock.patch.object(build, '_line_billing', lambda c_, li: next(billing)), \
+                mock.patch.object(build, '_stamp_money_block', lambda *a: {}):
+            build._build_line_item_tasks(c, 'B1', 1, lines)
+        task_pk = next(f['pk'] for f in c.fixture_data if f['model'] == 'jobs.task')
+        self.assertEqual(c.line_est_qty, {task_pk: '3.00'})
+
+
+class ArchiveOldJobsTest(unittest.TestCase):
+    """archive_old_jobs reshapes old completed/rejected jobs into archived jobs."""
+
+    CUTOFF = datetime(2026, 4, 21, tzinfo=timezone.utc)
+
+    def _c(self):
+        c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json',
+                               now=datetime(2026, 10, 21, tzinfo=timezone.utc))
+        c.jobs = {}
+        return c
+
+    def _add_job(self, c, status, completed_date, checklist=''):
+        pk = c.next_pk('jobs.job')
+        c.add_fixture('jobs.job', pk, {
+            'job_number': f'JOB{pk}', 'name': 'j', 'contact': 1, 'status': status,
+            'created_date': '2025-01-01T00:00:00+00:00',
+            'start_date': '2025-01-01T00:00:00+00:00', 'due_date': None,
+            'completed_date': completed_date, 'project_manager': 7,
+            'customer_po_number': '', 'description': '', 'accent_color': '#f97066',
+        })
+        c.jobs[f'BASE{pk}'] = {'job_pk': pk, 'card': {'Checklist': checklist}}
+        return pk
+
+    def _add_task(self, c, job_pk, **over):
+        pk = c.next_pk('jobs.task')
+        fields = {
+            'job': job_pk, 'name': 't', 'description': '', 'est_qty': '2.00',
+            'est_worker_time': '01:00:00', 'actual_qty': '1.00',
+            'status': 'complete', 'blocked_reason': '', 'worker_queue': 3,
+            'assignee': 4, 'parent_task': None, 'sort_order': 1,
+            'source_scheme': 5, 'qty_source': 'elapsed_time', 'rate': '90.00',
+            'unit_label': 'hr', 'accounting_category': 2,
+            'active_modifiers': [{'key': 'rush', 'label': 'Rush', 'percent': '10'}],
+        }
+        fields.update(over)
+        c.add_fixture('jobs.task', pk, fields)
+        return pk
+
+    def _add_lot(self, c):
+        pk = c.next_pk('inventory.inventoryitem')
+        c.add_fixture('inventory.inventoryitem', pk, {'code': 'LOT-x', 'name': 'lot'})
+        return pk
+
+    def _add_pli(self, c):
+        pk = c.next_pk('inventory.inventoryitem')
+        c.add_fixture('inventory.inventoryitem', pk, {'code': 'MDF.75', 'name': 'MDF'})
+        return pk
+
+    def _add_material(self, c, job_pk, inventory_item, **over):
+        pk = c.next_pk('inventory.material')
+        fields = {
+            'job': job_pk, 'task': None, 'description': 'm', 'quantity': '3.00',
+            'units': 'ea', 'unit_cost': '10.00', 'sell_price': '20.00',
+            'accounting_category': 1, 'inventory_item': inventory_item,
+            'cost_source': 'entered', 'consumption_state': 'pending',
+            'released_qty': '1.00', 'po_line_item': 9,
+        }
+        fields.update(over)
+        c.add_fixture('inventory.material', pk, fields)
+        return pk
+
+    def _add_deliverable(self, c, job_pk, description='Widget'):
+        pk = c.next_pk('deliverables.deliverable')
+        c.add_fixture('deliverables.deliverable', pk, {
+            'job': job_pk, 'description': description, 'qty_ordered': '1.00',
+            'units': 'ea', 'sort_order': 10})
+        return pk
+
+    def _add_source(self, c, li_pk, source_type, source_pk):
+        pk = c.next_pk('estimates.estimatelineitemsource')
+        c.add_fixture('estimates.estimatelineitemsource', pk, {
+            'estimate_line_item': li_pk, 'source_type': source_type,
+            'source_pk': source_pk})
+        return pk
+
+    def _add_invoice(self, c, job_pk, status, qbo_amount_paid):
+        pk = c.next_pk('invoicing.invoice')
+        c.add_fixture('invoicing.invoice', pk, {
+            'job': job_pk, 'invoice_number': f'I{pk}', 'status': status,
+            'created_date': '2025-02-01T00:00:00+00:00',
+            'sent_date': '2025-02-02T00:00:00+00:00',
+            'closed_date': '2025-03-01T00:00:00+00:00',
+            'qbo_id': '55', 'qbo_payment_status': 'paid',
+            'qbo_amount_paid': qbo_amount_paid})
+        return pk
+
+    def _row(self, c, model, pk):
+        for f in c.fixture_data:
+            if f['model'] == model and f['pk'] == pk:
+                return f['fields']
+        return None
+
+    def _job(self, c, pk):
+        return self._row(c, 'jobs.job', pk)
+
+    def test_archives_completed_and_rejected_at_or_before_cutoff(self):
+        c = self._c()
+        old_completed = self._add_job(c, 'completed', '2026-04-21T00:00:00+00:00')
+        old_rejected = self._add_job(c, 'rejected', '2025-12-01T00:00:00+00:00')
+        recent = self._add_job(c, 'completed', '2026-04-22T00:00:00+00:00')
+        wc = self._add_job(c, 'work_complete', None)
+        ip = self._add_job(c, 'in_progress', None)
+        build.archive_old_jobs(c, self.CUTOFF)
+        self.assertEqual(c.archived_job_pks, {old_completed, old_rejected})
+        self.assertEqual(c.archived_outcome,
+                         {old_completed: 'completed', old_rejected: 'rejected'})
+        self.assertEqual(self._job(c, old_completed)['status'], 'archived')
+        self.assertEqual(self._job(c, old_completed)['project_manager'], None)
+        self.assertEqual(self._job(c, old_completed)['completed_date'],
+                         '2026-04-21T00:00:00+00:00')
+        self.assertEqual(self._job(c, recent)['status'], 'completed')
+        self.assertEqual(self._job(c, recent)['project_manager'], 7)
+        self.assertEqual(self._job(c, wc)['status'], 'work_complete')
+        self.assertEqual(self._job(c, ip)['status'], 'in_progress')
+
+    def test_archives_on_reconciled_completed_date_whatever_its_source(self):
+        c = self._c()
+        no_card = self._add_job(c, 'completed', '2025-06-01T00:00:00+00:00')
+        stale_card = self._add_job(c, 'work_complete', None)
+        c.jobs[f'BASE{stale_card}']['card']['Archived at'] = '2024-01-01'
+        build.archive_old_jobs(c, self.CUTOFF)
+        self.assertEqual(c.archived_job_pks, {no_card})
+        self.assertEqual(self._job(c, stale_card)['status'], 'work_complete')
+
+    def test_line_derived_elapsed_task_keeps_line_qty(self):
+        c = self._c()
+        jp = self._add_job(c, 'completed', '2025-06-01T00:00:00+00:00')
+        pk = self._add_task(c, jp, qty_source='elapsed_time', est_qty='7.50')
+        c.invented_est_qty.add(pk)
+        c.line_est_qty[pk] = '3.00'
+        build.archive_old_jobs(c, self.CUTOFF)
+        self.assertEqual(self._row(c, 'jobs.task', pk)['est_qty'], '3.00')
+
+    def test_task_quantities(self):
+        c = self._c()
+        jp = self._add_job(c, 'completed', '2025-06-01T00:00:00+00:00')
+        invented = self._add_task(c, jp)
+        c.invented_est_qty.add(invented)
+        entered = self._add_task(c, jp, qty_source='entered_qty', est_qty='4.00')
+        other = self._add_task(c, jp, status='pending')
+        build.archive_old_jobs(c, self.CUTOFF)
+        self.assertIsNone(self._row(c, 'jobs.task', invented)['est_qty'])
+        self.assertEqual(self._row(c, 'jobs.task', entered)['est_qty'], '4.00')
+        for pk, status in ((invented, 'complete'), (entered, 'complete'),
+                           (other, 'pending')):
+            t = self._row(c, 'jobs.task', pk)
+            self.assertEqual(t['qty_source'], 'entered_qty')
+            for k in ('est_worker_time', 'actual_qty', 'assignee',
+                      'worker_queue', 'source_scheme', 'service_item'):
+                self.assertIsNone(t[k], k)
+            self.assertEqual(t['active_modifiers'], [])
+            self.assertEqual(t['rate'], '90.00')
+            self.assertEqual(t['unit_label'], 'hr')
+            self.assertEqual(t['accounting_category'], 2)
+            self.assertEqual(t['status'], status)
+
+    def test_materials_and_lots(self):
+        c = self._c()
+        jp = self._add_job(c, 'completed', '2025-06-01T00:00:00+00:00')
+        task = self._add_task(c, jp)
+        pli = self._add_pli(c)
+        lot = self._add_lot(c)
+        a = self._add_material(c, jp, pli, task=task)
+        b = self._add_material(c, jp, lot)
+        build.archive_old_jobs(c, self.CUTOFF)
+        ma = self._row(c, 'inventory.material', a)
+        self.assertEqual(ma['inventory_item'], pli)
+        self.assertEqual(ma['consumption_state'], 'consumed')
+        self.assertEqual(ma['cost_source'], 'imported')
+        self.assertEqual(ma['released_qty'], '0.00')
+        self.assertIsNone(ma['po_line_item'])
+        self.assertEqual((ma['unit_cost'], ma['quantity'], ma['units'], ma['task']),
+                         ('10.00', '3.00', 'ea', task))
+        self.assertIsNone(self._row(c, 'inventory.material', b)['inventory_item'])
+        self.assertIsNone(self._row(c, 'inventory.inventoryitem', lot))
+        self.assertIsNotNone(self._row(c, 'inventory.inventoryitem', pli))
+
+    def test_shared_transient_lot_survives(self):
+        c = self._c()
+        old = self._add_job(c, 'completed', '2025-06-01T00:00:00+00:00')
+        live = self._add_job(c, 'in_progress', None)
+        lot = self._add_lot(c)
+        a = self._add_material(c, old, lot)
+        b = self._add_material(c, live, lot)
+        build.archive_old_jobs(c, self.CUTOFF)
+        self.assertIsNone(self._row(c, 'inventory.material', a)['inventory_item'])
+        self.assertEqual(self._row(c, 'inventory.material', b)['inventory_item'], lot)
+        self.assertIsNotNone(self._row(c, 'inventory.inventoryitem', lot))
+        self.assertEqual(self._row(c, 'inventory.material', b)['consumption_state'],
+                         'pending')
+
+    def test_deliverables_sources_and_invoices(self):
+        c = self._c()
+        old = self._add_job(c, 'completed', '2025-06-01T00:00:00+00:00')
+        live = self._add_job(c, 'in_progress', None)
+        c.fake_deliverable_count = 2
+        d1 = self._add_deliverable(c, old, 'Fake Deliverable')
+        d2 = self._add_deliverable(c, old, 'Real')
+        d3 = self._add_deliverable(c, live, 'Fake Deliverable')
+        t_old = self._add_task(c, old)
+        m_old = self._add_material(c, old, None)
+        t_live = self._add_task(c, live)
+        s1 = self._add_source(c, 1, 'task', t_old)
+        s2 = self._add_source(c, 2, 'material', m_old)
+        s3 = self._add_source(c, 3, 'task', t_live)
+        # a material source whose pk is not one of the archived job's materials
+        s4 = self._add_source(c, 4, 'material', m_old + 1000)
+        i_old = self._add_invoice(c, old, 'paid', '100.00')
+        i_live = self._add_invoice(c, live, 'open', '5.00')
+        build.archive_old_jobs(c, self.CUTOFF)
+        self.assertIsNone(self._row(c, 'deliverables.deliverable', d1))
+        self.assertIsNone(self._row(c, 'deliverables.deliverable', d2))
+        self.assertIsNotNone(self._row(c, 'deliverables.deliverable', d3))
+        self.assertEqual(c.fake_deliverable_count, 1)
+        M = 'estimates.estimatelineitemsource'
+        self.assertIsNone(self._row(c, M, s1))
+        self.assertIsNone(self._row(c, M, s2))
+        self.assertIsNotNone(self._row(c, M, s3))
+        self.assertIsNotNone(self._row(c, M, s4))
+        inv = self._row(c, 'invoicing.invoice', i_old)
+        self.assertIsNone(inv['qbo_amount_paid'])
+        self.assertIsNone(inv['qbo_id'])
+        self.assertEqual(inv['qbo_payment_status'], '')
+        self.assertEqual(inv['status'], 'paid')
+        self.assertEqual(inv['closed_date'], '2025-03-01T00:00:00+00:00')
+        live_inv = self._row(c, 'invoicing.invoice', i_live)
+        self.assertEqual((live_inv['qbo_amount_paid'], live_inv['qbo_id']),
+                         ('5.00', '55'))
+
+    def test_cutoff_helper(self):
+        self.assertEqual(
+            build.archive_cutoff(datetime(2026, 10, 21, 12, tzinfo=timezone.utc)),
+            datetime(2026, 4, 21, 12, tzinfo=timezone.utc))
+
+
+class ArchivedJobsDownstreamSkipTest(unittest.TestCase):
+    """Every builder that runs after archive_old_jobs leaves archived jobs
+    alone (spec §6) while a twin live job in the same converter is handled
+    as before. Dataset-free synthetic state."""
+
+    def _c(self):
+        c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
+        c.jobs = {}
+        c.job_map = {}
+        c.rotation_user_pks = [1, 2, 3]
+        c.user_by_username = {'u1': 1, 'u2': 2, 'u3': 3}
+        c._pk_counters['core.user'] = 3
+        return c
+
+    def _job(self, c, status, archived=False, checklist='', completed=None):
+        pk = c.next_pk('jobs.job')
+        c.add_fixture('jobs.job', pk, {
+            'job_number': f'JOB{pk}', 'name': 'j', 'contact': 1,
+            'status': 'archived' if archived else status,
+            'created_date': '2026-01-01T00:00:00+00:00',
+            'start_date': '2026-01-01T00:00:00+00:00', 'due_date': None,
+            'completed_date': completed, 'project_manager': None,
+            'customer_po_number': '', 'description': '', 'accent_color': '#f97066',
+        })
+        c.jobs[f'BASE{pk}'] = {'job_pk': pk, 'card': {'Checklist': checklist},
+                               'estimate_rows': [], 'primary_ref': f'BASE{pk}'}
+        c.job_map[f'BASE{pk}'] = pk
+        if archived:
+            c.archived_job_pks.add(pk)
+        return pk
+
+    def _task(self, c, job, status='complete', **over):
+        pk = c.next_pk('jobs.task')
+        fields = {
+            'job': job, 'name': f't{pk}', 'status': status,
+            'qty_source': 'entered_qty', 'est_qty': '2.00',
+            'est_worker_time': '01:00:00', 'actual_qty': None,
+            'assignee': None, 'worker_queue': None, 'sort_order': 1,
+        }
+        fields.update(over)
+        c.add_fixture('jobs.task', pk, fields)
+        return pk
+
+    def _m(self, c, model):
+        return [f for f in c.fixture_data if f['model'] == model]
+
+    def _fields(self, c, model, pk):
+        return next(f['fields'] for f in c.fixture_data
+                    if f['model'] == model and f['pk'] == pk)
+
+    def test_project_manager_skips_archived(self):
+        import random as _random
+        _random.seed(1)
+        c = self._c()
+        arch = self._job(c, 'completed', archived=True)
+        live = self._job(c, 'in_progress')
+        build.assign_project_managers(c)
+        self.assertIsNone(self._fields(c, 'jobs.job', arch)['project_manager'])
+        self.assertIn(self._fields(c, 'jobs.job', live)['project_manager'], (1, 2, 3))
+
+    def test_shipments_skip_archived(self):
+        c = self._c()
+        arch = self._job(c, 'completed', archived=True,
+                         checklist='[X] Picked up/Delivered')
+        live = self._job(c, 'completed', checklist='[X] Picked up/Delivered',
+                         completed='2026-05-01T00:00:00+00:00')
+        for jp in (arch, live):
+            dp = c.next_pk('deliverables.deliverable')
+            c.add_fixture('deliverables.deliverable', dp, {
+                'job': jp, 'description': 'Widget', 'qty_ordered': '1.00'})
+        build.build_shipments(c)
+        ships = self._m(c, 'deliverables.shipment')
+        self.assertEqual([s['fields']['job'] for s in ships], [live])
+
+    def test_bleps_skip_archived(self):
+        c = self._c()
+        arch = self._job(c, 'completed', archived=True,
+                         completed='2026-02-05T00:00:00+00:00')
+        live = self._job(c, 'in_progress')
+        at = self._task(c, arch)
+        lt = self._task(c, live)
+        build.build_bleps_and_shifts(c)
+        self.assertEqual([b['fields']['task'] for b in self._m(c, 'jobs.blep')],
+                         [lt])
+        self.assertIsNone(self._fields(c, 'jobs.task', at)['actual_qty'])
+        self.assertIsNone(self._fields(c, 'jobs.task', at)['assignee'])
+        self.assertIsNotNone(self._fields(c, 'jobs.task', lt)['actual_qty'])
+
+    def test_current_work_skips_archived(self):
+        import random as _random
+        _random.seed(1)
+        c = self._c()
+        arch = self._job(c, 'in_progress', archived=True)
+        # Restore the live status so only the archived guard can exclude it.
+        self._fields(c, 'jobs.job', arch)['status'] = 'in_progress'
+        live = self._job(c, 'in_progress')
+        at = self._task(c, arch, 'pending')
+        lt = self._task(c, live, 'pending')
+        build.assign_current_work(c)
+        self.assertIsNone(self._fields(c, 'jobs.task', at)['assignee'])
+        self.assertIn(self._fields(c, 'jobs.task', lt)['assignee'], (1, 2, 3))
+
+    def test_purchasing_skips_archived(self):
+        c = self._c()
+        arch = self._job(c, 'in_progress', archived=True)
+        live = self._job(c, 'in_progress')
+        ip = c.next_pk('inventory.inventoryitem')
+        c.add_fixture('inventory.inventoryitem', ip, {
+            'code': 'X', 'qty_on_hand': '0.00', 'qty_sold': '0.00'})
+        for jp in (arch, live):
+            # Task-linked to a complete task: the live one counts as sold; the
+            # archived one would too, were it not skipped.
+            tp = self._task(c, jp)
+            mp = c.next_pk('inventory.material')
+            c.add_fixture('inventory.material', mp, {
+                'job': jp, 'task': tp, 'inventory_item': ip,
+                'quantity': '3.00', 'consumption_state': 'consumed',
+                'po_line_item': None})
+        build.build_purchasing(c)
+        # Only the live twin's material moves qty_sold.
+        self.assertEqual(self._fields(c, 'inventory.inventoryitem', ip)['qty_sold'],
+                         '3.00')
+        self.assertEqual(self._fields(c, 'inventory.inventoryitem', ip)['qty_on_hand'],
+                         '0.00')
+        self.assertEqual(self._m(c, 'inventory.earmark'), [])
+
+    def test_purchasing_skips_archived_pending_material(self):
+        # A pending archived material on an earmark-eligible job must not
+        # earmark or raise QOH; the live twin earmarks.
+        c = self._c()
+        arch = self._job(c, 'approved', archived=True)
+        # Restore the live status so only the archived guard can exclude it.
+        self._fields(c, 'jobs.job', arch)['status'] = 'approved'
+        live = self._job(c, 'approved')
+        ip = c.next_pk('inventory.inventoryitem')
+        c.add_fixture('inventory.inventoryitem', ip, {
+            'code': 'X', 'qty_on_hand': '0.00', 'qty_sold': '0.00'})
+        for jp in (arch, live):
+            mp = c.next_pk('inventory.material')
+            c.add_fixture('inventory.material', mp, {
+                'job': jp, 'task': None, 'inventory_item': ip,
+                'quantity': '3.00', 'consumption_state': 'pending',
+                'po_line_item': None})
+        build.build_purchasing(c)
+        self.assertEqual([e['fields']['job'] for e in self._m(c, 'inventory.earmark')],
+                         [live])
+        self.assertEqual(self._fields(c, 'inventory.inventoryitem', ip)['qty_on_hand'],
+                         '3.00')
+
+    def _invoice_with_line(self, c, job, kind='task', desc='cut'):
+        ip = c.next_pk('invoicing.invoice')
+        c.add_fixture('invoicing.invoice', ip, {'job': job, 'status': 'paid'})
+        lp = c.next_pk('invoicing.invoicelineitem')
+        c.add_fixture('invoicing.invoicelineitem', lp, {
+            'invoice': ip, 'line_number': 1, 'description': desc})
+        c.invoice_line_kinds[lp] = kind
+        return ip, lp
+
+    def test_invoice_sources_skip_archived(self):
+        c = self._c()
+        arch = self._job(c, 'completed', archived=True)
+        live = self._job(c, 'completed')
+        self._task(c, arch)
+        lt = self._task(c, live)
+        self._invoice_with_line(c, arch)
+        _, live_line = self._invoice_with_line(c, live)
+        build.build_invoice_line_item_sources(c)
+        srcs = self._m(c, 'invoicing.invoicelineitemsource')
+        self.assertEqual(len(srcs), 1)
+        self.assertEqual(srcs[0]['fields']['invoice_line_item'], live_line)
+        self.assertEqual(srcs[0]['fields']['source_pk'], lt)
+
+    def _agreement_state(self, c, job):
+        base = f'BASE{job}'
+        ep = c.next_pk('estimates.estimate')
+        c.add_fixture('estimates.estimate', ep, {
+            'job': job, 'status': 'accepted', 'version': 1})
+        c.estimates[base] = [{'est_pk': ep, 'version': 1}]
+        lp = c.next_pk('estimates.estimatelineitem')
+        c.add_fixture('estimates.estimatelineitem', lp, {
+            'estimate': ep, 'line_number': 1, 'description': 'cut'})
+        c.line_items[ep] = [{'line_item_pk': lp, 'description': 'cut'}]
+        return lp
+
+    def test_agreement_refs_skip_archived(self):
+        c = self._c()
+        arch = self._job(c, 'completed', archived=True)
+        live = self._job(c, 'completed')
+        self._agreement_state(c, arch)
+        live_est_line = self._agreement_state(c, live)
+        _, arch_line = self._invoice_with_line(c, arch)
+        _, live_line = self._invoice_with_line(c, live)
+        build.build_invoice_agreement_refs(c)
+        self.assertIsNone(
+            self._fields(c, 'invoicing.invoicelineitem', arch_line)
+            .get('agreement_estimate_line'))
+        self.assertEqual(
+            self._fields(c, 'invoicing.invoicelineitem', live_line)
+            .get('agreement_estimate_line'), live_est_line)
+
+    def _est_with_line(self, c, job, status='accepted'):
+        ep = c.next_pk('estimates.estimate')
+        c.add_fixture('estimates.estimate', ep, {
+            'job': job, 'status': status, 'version': 1})
+        lp = c.next_pk('estimates.estimatelineitem')
+        c.add_fixture('estimates.estimatelineitem', lp, {
+            'estimate': ep, 'line_number': 1, 'description': 'cut',
+            'adjustment_service': None, 'accounting_category': None,
+            'service_item': None, 'inventory_item': None, 'is_material': False})
+        return lp
+
+    def test_synthetic_sources_skip_archived(self):
+        c = self._c()
+        arch = self._job(c, 'archived', archived=True)
+        live = self._job(c, 'in_progress')
+        self._est_with_line(c, arch)
+        live_line = self._est_with_line(c, live)
+        self._task(c, arch)
+        lt = self._task(c, live)
+        build.build_synthetic_estimate_sources(c)
+        rows = self._m(c, 'estimates.estimatelineitemsource')
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['fields']['estimate_line_item'], live_line)
+        self.assertEqual(rows[0]['fields']['source_pk'], lt)
+
+    def test_checklist_declines_skip_archived(self):
+        c = self._c()
+        # An archived job whose (unreset) status would otherwise qualify.
+        arch = self._job(c, 'completed', archived=True)
+        live = self._job(c, 'completed')
+        arch_line = self._est_with_line(c, arch)
+        live_line = self._est_with_line(c, live)
+        # Status literal is 'archived' on the job row; declines must still
+        # skip it explicitly, so also check against a qualifying status.
+        self._fields(c, 'jobs.job', arch)['status'] = 'completed'
+        build.build_checklist_declines(c)
+        self.assertFalse(
+            self._fields(c, 'estimates.estimatelineitem', arch_line)
+            .get('work_declined', False))
+        self.assertTrue(
+            self._fields(c, 'estimates.estimatelineitem', live_line)
+            .get('work_declined'))

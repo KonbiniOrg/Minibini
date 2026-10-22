@@ -28,7 +28,7 @@
 
   function deadlineText() {
     if (job.completed_date) {
-      const label = job.status === 'rejected' ? 'Rejected' : job.status === 'cancelled' ? 'Cancelled' : 'Completed';
+      const label = job.status === 'rejected' ? 'Rejected' : job.status === 'cancelled' ? 'Cancelled' : job.status === 'archived' ? 'Archived' : 'Completed';
       return `${label} ${new Date(job.completed_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
     }
     if (!job.due_date) return '';

@@ -50,4 +50,25 @@ describe('GeneralSettings', () => {
     }));
     expect(await findByText('Numbering saved.')).toBeInTheDocument();
   });
+
+  it('loads and saves the customer totals window with the other defaults', async () => {
+    api.get.mockResolvedValue({ customer_financials_window_months: '18' });
+    const { getByRole, findByDisplayValue, findByText } = render(GeneralSettings);
+    const input = await findByDisplayValue('18');
+    expect(input).toHaveAttribute('type', 'number');
+    expect(input).toHaveAttribute('min', '1');
+    await fireEvent.click(getByRole('button', { name: 'Save defaults' }));
+    expect(api.patch).toHaveBeenCalledWith('/api/settings/', expect.objectContaining({
+      est_expire_days: '', board_closed_retention_days: '', average_labor_cost: '',
+      customer_financials_window_months: '18',
+    }));
+    expect(await findByText('Defaults saved.')).toBeInTheDocument();
+  });
+
+  it('surfaces a customer totals window validation error', async () => {
+    api.patch.mockRejectedValue({ data: { customer_financials_window_months: 'must be at least 1' } });
+    const { getByRole, findByText } = render(GeneralSettings);
+    await fireEvent.click(getByRole('button', { name: 'Save defaults' }));
+    expect(await findByText('must be at least 1')).toBeInTheDocument();
+  });
 });

@@ -148,6 +148,18 @@ class ConfigurationAPITest(BaseTestCase):
         response = self.client.get('/api/settings/')
         self.assertEqual(response.status_code, 200)
 
+    def test_customer_financials_window_months_validation(self):
+        for bad in (0, 'abc'):
+            r = self.client.patch('/api/settings/', {
+                'customer_financials_window_months': bad}, format='json')
+            self.assertEqual(r.status_code, 400)
+            self.assertIn('customer_financials_window_months', r.data)
+        r = self.client.patch('/api/settings/', {
+            'customer_financials_window_months': '6'}, format='json')
+        self.assertEqual(r.status_code, 200)
+        r = self.client.get('/api/settings/')
+        self.assertEqual(r.data['customer_financials_window_months'], '6')
+
     def test_list_accounting_categories(self):
         response = self.client.get('/api/accounting-categories/')
         self.assertEqual(response.status_code, 200)

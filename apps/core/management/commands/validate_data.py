@@ -145,6 +145,7 @@ class Command(BaseCommand):
         self.check_earmark_job_status()
         self.check_invoice_job_status()
         self.check_job_work_complete_gate()
+        self.check_archived_jobs()
         self.check_estimate_source_job_consistency()
         self.check_invoice_source_job_consistency()
         self.check_agreement_line_invoice_exclusivity()
@@ -196,6 +197,8 @@ class Command(BaseCommand):
     def check_jobs(self):
         from apps.jobs.models import Job
         valid_statuses = {s[0] for s in Job.JOB_STATUS_CHOICES}
+        # Archived jobs are deliberately absent from every date set below: they
+        # are historical imports whose start/completed dates are not expected.
         for j in Job.objects.all():
             if j.status not in valid_statuses:
                 self.errors.append(f'Job {j.job_number}: invalid status "{j.status}"')
@@ -680,6 +683,7 @@ class Command(BaseCommand):
     def check_shipments(self):
         from apps.deliverables.models import Shipment
         from apps.estimates.models import Estimate
+        from apps.jobs.models import Job
         valid_statuses = {s[0] for s in Shipment.STATUS_CHOICES}
         for s in Shipment.objects.select_related('job').all():
             if s.status not in valid_statuses:
@@ -690,7 +694,8 @@ class Command(BaseCommand):
             if s.status == Shipment.STATUS_PREPARED and s.picked_up_date:
                 self.errors.append(f'Shipment {s.pk}: prepared but picked_up_date is set')
             # A shipment should only exist once the job has an accepted estimate
-            if s.job_id and not Estimate.objects.filter(
+            # (archived jobs are historical imports with no estimate behind them)
+            if s.job_id and s.job.status != Job.STATUS_ARCHIVED and not Estimate.objects.filter(
                     job_id=s.job_id, status=Estimate.STATUS_ACCEPTED).exists():
                 self.warnings.append(
                     f'Shipment {s.pk}: job {s.job_id} has no accepted estimate'
@@ -892,7 +897,7 @@ class Command(BaseCommand):
         from apps.inventory.models import Earmark
 
         for em in Earmark.objects.select_related('job', 'inventory_item').all():
-            if em.job.status in (Job.STATUS_WORK_COMPLETE, Job.STATUS_COMPLETED, Job.STATUS_CANCELLED, Job.STATUS_REJECTED):
+            if em.job.status in Job.WORK_FROZEN_STATUSES:
                 self.warnings.append(
                     f'Earmark {em.pk}: {em.inventory_item.code} earmarked for '
                     f'job {em.job.job_number} which is "{em.job.status}"'
@@ -914,6 +919,20 @@ class Command(BaseCommand):
                     f'status is "{inv.job.status}" (expected approved or later)'
                 )
 
+    def check_archived_jobs(self):
+        """Archived jobs are read-only historical imports: every invoice on
+        one must already be settled (paid or cancelled). Task terminality is
+        covered by check_job_work_complete_gate."""
+        from apps.invoicing.models import Invoice
+
+        for inv in Invoice.objects.select_related('job').filter(
+            job__status=Job.STATUS_ARCHIVED,
+        ).exclude(status__in=(Invoice.STATUS_PAID, Invoice.STATUS_CANCELLED)):
+            self.errors.append(
+                f'Archived job {inv.job.job_number}: invoice {inv.display_number} '
+                f'is {inv.status}; archived invoices must be paid or cancelled'
+            )
+
     def check_job_work_complete_gate(self):
         """work_complete (and completed) means every task terminal and every
         material resolved — JobService.update_job enforces this on every path
@@ -922,7 +941,7 @@ class Command(BaseCommand):
         from apps.jobs.models import Task
         from apps.inventory.models import Material
 
-        closed = (Job.STATUS_WORK_COMPLETE, Job.STATUS_COMPLETED)
+        closed = (Job.STATUS_WORK_COMPLETE, Job.STATUS_COMPLETED, Job.STATUS_ARCHIVED)
         for t in Task.objects.select_related('job').filter(
             job__status__in=closed,
         ).exclude(status__in=(Task.STATUS_COMPLETE, Task.STATUS_CANCELLED)):
