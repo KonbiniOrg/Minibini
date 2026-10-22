@@ -107,8 +107,8 @@ services:
     ports:
       - '3306:3306'
     volumes:
-      # Named volume so the database survives container recreation.
-      - minibini_db_data:/var/lib/mysql
+      # bind mount to /home/minibin/mysql
+      - ./mysql:/var/lib/mysql
     restart: always
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--su-mysql", "--connect", "--innodb_initialized"]
@@ -138,6 +138,3 @@ services:
     volumes:
       - ./certbot/conf:/etc/letsencrypt
       - ./certbot/www:/var/www/certbot
-
-volumes:
-  minibini_db_data:
