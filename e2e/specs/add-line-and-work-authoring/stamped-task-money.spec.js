@@ -96,7 +96,7 @@ test.describe('worker creates a stamped task — no money inputs', () => {
     // The stamping happened server-side regardless of who created the task —
     // task detail shows the preset's rate and provenance even though the
     // worker never touched a money field directly.
-    await page.getByRole('button', { name: taskName }).click();
+    await page.getByRole('button', { name: taskName, exact: true }).click();
     await expect(page.getByRole('heading', { name: taskName })).toBeVisible();
     await expect(schemeChipOf(page)).toContainText(scheme.name);
     await expect(rateChipOf(page)).toContainText(`$${scheme.rate}/${scheme.unit_label}`);
@@ -202,7 +202,7 @@ test.describe('PM overrides money fields at Add-Task-time (create-time overrides
     // The created task shows the OVERRIDDEN amount, and provenance still
     // names the scheme it stamped from — an override never disturbs
     // source_scheme (estimates-and-prices.md §3.6c).
-    await page.getByRole('button', { name: taskName }).click();
+    await page.getByRole('button', { name: taskName, exact: true }).click();
     await expect(page.getByRole('heading', { name: taskName })).toBeVisible();
     await expect(rateChipOf(page)).toContainText(`$${overriddenRate}/${scheme.unit_label}`);
     await expect(schemeChipOf(page)).toContainText(scheme.name);

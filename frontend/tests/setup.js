@@ -34,3 +34,14 @@ afterEach(() => {
   localStorage.clear();
   sessionStorage.clear();
 });
+
+// ResizeObserver shim. jsdom has none; dnd-kit (drag-and-drop row reorder,
+// issue #513) constructs one when a sortable mounts. Layout never changes
+// under jsdom, so a no-op observer is faithful. Only installed if absent.
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}

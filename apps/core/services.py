@@ -889,6 +889,44 @@ class ReorderService:
         current_obj.save()
         swap_obj.save()
 
+    @staticmethod
+    def set_order(items_qs, ids, *, field='sort_order', start=1, error_field='ids'):
+        """Put a container's items in exactly the order of `ids` — the shared
+        full-order reorder behind every drag-and-drop list (issue #513).
+
+        items_qs: queryset of every item in one container (a job's tasks, an
+          estimate's line items, ...). Callers check their own guards
+          (frozen, on hold, draft) first.
+        ids: pks in the new order; must name every item in items_qs exactly
+          once. A partial, duplicated, or foreign list is refused rather than
+          guessed at, so a stale client can't silently drop an item to the end.
+        field / start: the order column and its first value (tasks:
+          'sort_order' from 1; line items: 'line_number' from 1).
+        error_field: the request field validation errors are reported under.
+
+        Locks the rows and saves per instance — never QuerySet.update(), so
+        Model.save() normalization and history capture run — and only for
+        items whose position actually changed.
+        """
+        if not isinstance(ids, list) or not all(
+            isinstance(i, int) and not isinstance(i, bool) for i in ids
+        ):
+            raise ValidationError({error_field: ['Must be a list of ids.']})
+        if len(set(ids)) != len(ids):
+            raise ValidationError({error_field: ['Each item may appear only once.']})
+
+        with transaction.atomic():
+            items = {obj.pk: obj for obj in items_qs.select_for_update()}
+            if set(ids) != set(items):
+                raise ValidationError({error_field: [
+                    'Must list every item here, and only these items.'
+                ]})
+            for position, pk in enumerate(ids, start=start):
+                obj = items[pk]
+                if getattr(obj, field) != position:
+                    setattr(obj, field, position)
+                    obj.save()
+
 
 # Backward-compat alias for callers that still import BundlingService
 BundlingService = ReorderService

@@ -5,6 +5,7 @@
 import { expect, test } from '@playwright/test';
 import { apiAs } from '../../fixtures/api.js';
 import { personas } from '../../fixtures/personas.js';
+import { baseURL } from '../../lib/slot.js';
 
 const stamp = `e2e-${Date.now().toString(36)}`;
 
@@ -49,7 +50,7 @@ test.describe('Unexpire — can_manage_jobs holder', () => {
       page.on('dialog', (d) => d.accept());
       await page.getByRole('button', { name: 'Unexpire' }).click();
       // Same URL throughout — no duplication, no navigation.
-      await expect(page).toHaveURL(`http://localhost:9100/#/jobs/${job.job_id}/estimate/${estimateId}`);
+      await expect(page).toHaveURL(`${baseURL}/#/jobs/${job.job_id}/estimate/${estimateId}`);
       await expect(page.locator('select.status-open')).toBeVisible();
       await expect(page.getByRole('button', { name: 'Unexpire' })).toHaveCount(0);
     });

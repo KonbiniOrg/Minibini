@@ -68,7 +68,7 @@ test('hour-unit task: single Estimated-hours input, one estimate shown, assign n
     // restates Est Time (backend pair-fills them) — the old
     // duplicate-suppression '-' read as missing data (RM 2026-08-06).
     await expect(row.getByText('2.00 hour', { exact: true }).first()).toBeVisible();
-    await page.getByRole('button', { name: taskName }).click();
+    await page.getByRole('button', { name: taskName, exact: true }).click();
   });
 
   await test.step('Task detail shows both Est Time and Est Qty chips (pair-filled, both visible)', async () => {

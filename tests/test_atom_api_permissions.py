@@ -226,7 +226,7 @@ class TestCanManageJobsAPI(AtomPermissionTestBase):
     WORK_ORDER_WRITE_ENDPOINTS = [
         ('post', '/api/jobs/1/work-complete/', {}),
         ('post', '/api/jobs/1/populate-from-template/', {'template_id': 1}),
-        ('post', '/api/jobs/1/reorder-tasks/', {'task_id': 1, 'direction': 'up'}),
+        ('post', '/api/jobs/1/reorder-tasks/', {'task_ids': [1]}),
     ]
 
     # ── Email action writes ─────────────────────────────────────────

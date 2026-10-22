@@ -373,33 +373,10 @@ class JobViewSet(JobScopedPermissionMixin, ConfirmDeleteMixin, StatusTransitionM
     @action(detail=True, methods=['post'], url_path='reorder-tasks')
     def reorder_tasks(self, request, pk=None):
         job = self.get_object()
-        task_id = request.data.get('task_id')
-        direction = request.data.get('direction')
-        if not task_id:
-            return Response(
-                {'task_id': ['This field is required.']},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if direction not in ('up', 'down'):
-            return Response(
-                {'direction': ['Must be "up" or "down".']},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        # Verify the task belongs to this job
-        try:
-            Task.objects.get(pk=task_id, job=job)
-        except Task.DoesNotExist:
-            return Response(
-                {'task_id': ['Task not found on this job.']},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-        try:
-            TaskService.reorder_tasks(task_id, direction)
-        except NotFoundError as e:
-            return Response(
-                {'detail': e.message if hasattr(e, 'message') else str(e)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        # `task_ids` lists every task on the job in its new order (issue #513,
+        # drag-and-drop). The service's ValidationError renders through the
+        # central handler in contract shape.
+        TaskService.set_task_order(job, request.data.get('task_ids'))
         return Response({'status': 'ok'})
 
     @action(detail=True, methods=['post'], url_path='materials',

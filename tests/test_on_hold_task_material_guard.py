@@ -3,7 +3,7 @@ Tests that Task and Material mutations are rejected while a Job is on_hold.
 
 Coverage:
 - TaskLifecycleService: complete_task, block_task, unblock_task, cancel_task
-- TaskService: create_direct, update_task, delete_task, reorder_tasks, assign,
+- TaskService: create_direct, update_task, delete_task, set_task_order, assign,
   create_from_template
 - MaterialService: create_on_job, update_pricing
 
@@ -298,7 +298,7 @@ class ReorderTasksOnHoldTest(OnHoldGuardBase):
         t2.stamp_from_scheme(self.scheme)
         t2.save()
         with self.assertRaises(ValidationError) as ctx:
-            TaskService.reorder_tasks(t1.pk, 'down')
+            TaskService.set_task_order(job, [t2.pk, t1.pk])
         self.assertIn('on hold', str(ctx.exception).lower())
 
     def test_reorder_tasks_allowed_on_in_progress_job(self):
@@ -309,7 +309,7 @@ class ReorderTasksOnHoldTest(OnHoldGuardBase):
         t2 = Task(job=job, name='T2', sort_order=2)
         t2.stamp_from_scheme(self.scheme)
         t2.save()
-        TaskService.reorder_tasks(t1.pk, 'down')
+        TaskService.set_task_order(job, [t2.pk, t1.pk])
         t1.refresh_from_db()
         t2.refresh_from_db()
         self.assertEqual(t1.sort_order, 2)

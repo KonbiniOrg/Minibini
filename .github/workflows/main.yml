@@ -5,6 +5,11 @@ on:
     branches: [main]
     types: [closed]
 
+# Deploys run `docker compose` against one server; never let two overlap.
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
 jobs:
   build-test-push:
     name: Build, Test and Push Docker Image

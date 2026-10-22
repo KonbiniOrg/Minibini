@@ -560,12 +560,12 @@
     reload();
   }
 
-  // Reorder handler
-  async function handleReorder(taskId, direction) {
+  // Reorder handler (issue #513): the task tree hands over the job's task
+  // ids in their new order after a drag; the server applies it atomically.
+  async function handleReorder(taskIds) {
     try {
       await api.post(`/api/jobs/${job.job_id}/reorder-tasks/`, {
-        task_id: taskId,
-        direction,
+        task_ids: taskIds,
       });
       await reload();
     } catch (e) {
