@@ -302,11 +302,13 @@ describe('JobHeader in-flight transition guard', () => {
 });
 
 describe('JobHeader Edit/Duplicate', () => {
-  it('archived job: Archived pill, no select, no Edit, Duplicate stays', () => {
-    const { queryByRole, getByRole, getByText, container } = render(JobHeader, {
+  it('archived job: no status pill, no select, no Edit, Duplicate stays', () => {
+    const { queryByRole, getByRole, container } = render(JobHeader, {
       props: { job: { ...job, status: 'archived', can_manage: true } },
     });
-    expect(getByText('Archived')).toBeInTheDocument();
+    // The banner already says "Archived"; a pill would be a fourth header
+    // line and only repeat it (RM 2026-10-21).
+    expect(container.querySelector('.status-badge')).toBeNull();
     expect(container.querySelector('select')).toBeNull();
     expect(queryByRole('button', { name: 'Edit' })).toBeNull();
     expect(getByRole('button', { name: 'Duplicate…' })).toBeInTheDocument();
@@ -465,9 +467,13 @@ describe('JobHeader archived treatment', () => {
   const archived = { ...job, status: 'archived', contact: 7 };
   const impact = { tasks: 2, materials: 1, deliverables: 1, shipments: 1, estimates: 1, invoices: 1, history_rows: 9, linked_po_lines: 0 };
 
-  it('shows the archived banner', () => {
-    const { getByText } = render(JobHeader, { props: { job: archived } });
+  it('shows the archived banner in the status row, in place of the pill', () => {
+    const { getByText, container } = render(JobHeader, { props: { job: archived } });
     expect(getByText(/imported as a historical record/)).toBeTruthy();
+    // Header is a fixed three-line budget: the banner takes the status row's
+    // slot rather than adding a line above it.
+    expect(container.querySelector('.status-row [role="status"]')).not.toBeNull();
+    expect(container.querySelector('.status-row .status-badge')).toBeNull();
   });
 
   it('archived banner wins over the frozen-party banner', () => {

@@ -53,7 +53,9 @@ test.describe('archived job', () => {
     await test.step('banner and pill', async () => {
       await expect(header.getByRole('status')).toContainText('Archived:');
       await expect(header.getByText(BANNER)).toBeVisible();
-      await expect(header.locator('.status-row .status-badge')).toHaveText('Archived');
+      // No status pill: the banner sits in the status row and already says Archived.
+      await expect(header.locator('.status-row [role="status"]')).toContainText('Archived:');
+      await expect(header.locator('.status-badge')).toHaveCount(0);
     });
     await test.step('no Edit, no status select, no hold', async () => {
       await expect(header.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0);

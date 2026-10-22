@@ -278,14 +278,18 @@
         {#if job.contact_is_active === false}<span class="status-badge status-inactive">inactive</span>{/if}
       {/if}
     </p>
-    {#if job.status === 'archived'}
-      <ArchivedJobBanner />
-    {:else if job.contact_is_active === false}
+    {#if job.status !== 'archived' && job.contact_is_active === false}
       <FrozenPartyBanner kind="job" partyName={contact?.name ?? job.contact_name} partyHref={`#/contacts/${job.contact}`}
         businessName={job.contact_business_name} businessActive={!!job.contact_business_is_active}
         onChangeContact={canManageJobs ? () => { swapOpen = true; } : null} />
     {/if}
     <div class="status-row">
+      {#if job.status === 'archived'}
+        <!-- The header is a fixed three-line budget: the archived banner takes
+             the status pill's slot (it already says "Archived") so the row's
+             actions stay inside the band. Wins over the frozen-party banner. -->
+        <ArchivedJobBanner />
+      {/if}
       {#if canManageJobs}
         {#if !isTerminal}
           <button type="button" class="edit-link header-action" onclick={() => { editOpen = true; }}>Edit</button>
@@ -321,7 +325,7 @@
             {/if}
           </select>
         </span>
-      {:else}
+      {:else if job.status !== 'archived'}
         <span class="status-badge {job.on_hold ? 'on-hold-pill' : `status-${job.status}`}">{pillLabel}</span>
       {/if}
       {#if job.on_hold && job.hold_reason}

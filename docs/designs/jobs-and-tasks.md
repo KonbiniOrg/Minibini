@@ -828,15 +828,18 @@ shape and caveats: `nealsdata/convert.md` (§4 "Archived jobs").
 
 **SPA treatment.**
 
-- `JobHeader`: `VALID_TRANSITIONS.archived = []`, the "Archived" pill
-  (`.status-archived`, muted grey), no status select / hold / Edit
+- `JobHeader`: `VALID_TRANSITIONS.archived = []`, **no status pill** (the
+  banner below stands in its slot and already says Archived — a pill was a
+  fourth line in the fixed three-line header and pushed the status row's
+  actions out of the band; RM 2026-10-21), no status select / hold / Edit
   (`isClosedJob`), **Duplicate…**, and on archived jobs only **Delete…**
   (gated on `$canManageJobs`) — a two-phase in-modal confirm listing the
   impact counts, then `?confirm=true`, then navigation to the customer
   page.
 - `ArchivedJobBanner` ("**Archived:** this job was imported as a
-  historical record and cannot be changed.") occupies the
-  `FrozenPartyBanner` slot and takes precedence over it.
+  historical record and cannot be changed.") is pill-sized and sized to
+  its text, rendered inside the status row ahead of Duplicate… / Delete…;
+  the `FrozenPartyBanner` is suppressed on an archived job.
 - Every section page renders read-only through the existing closed-job
   branches. The overview spend block's frozen text names the labor's
   provenance: `$X labor (N hours imported) · $Y materials · $Z total`.
