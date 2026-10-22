@@ -10,6 +10,7 @@
   // into the blocks. It derives only list/number shapes — every rule, the
   // materials coverage signal included, lives in lib/jobOverview.js.
   import JobShell from './JobShell.svelte';
+  import TabHeader from '../TabHeader.svelte';
   import ScopeBlock from './overview/ScopeBlock.svelte';
   import WorkBlock from './overview/WorkBlock.svelte';
   import MaterialsBlock from './overview/MaterialsBlock.svelte';
@@ -67,7 +68,8 @@
 </script>
 
 {#snippet overviewBody()}
-  <div class="page-body">
+  <section class="page-body" aria-labelledby="tab-overview">
+    <TabHeader id="tab-overview" title="Overview" titleHidden />
     {#if job.status === 'draft' && job.latest_change_request}
       <div class="change-request-banner">
         <strong>Customer requested changes:</strong>
@@ -90,7 +92,7 @@
       <InvoicingBlock jobId={job.job_id} invoices={invoiceList} {scopeTotal} {invoicedTotal} {now} />
       <DeliveryBlock shipments={shipmentList} {deliverableCount} {job} {now} />
     </div>
-  </div>
+  </section>
 {/snippet}
 
 {#if chromeless}
@@ -104,7 +106,7 @@
 <style>
   /* 10px here + .page-body's 10px = 20px — the blocks' left/right edges line
      up with the context band's panels above (.context-band-grid's 20px). */
-  .summary-blocks { padding: 18px 10px 40px; }
+  .summary-blocks { padding: 10px 10px 40px; }
 
   .change-request-banner {
     background: #ffedd5;

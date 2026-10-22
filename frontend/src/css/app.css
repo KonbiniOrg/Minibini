@@ -534,8 +534,8 @@ dd {
 .doc-edit-table tbody tr:nth-child(even) { background: transparent; }
 /* Doc-header stat strip (estimate/invoice panels) — same chip family as the
    task page, just spaced under the toolbar. */
-/* Rides the right end of the document title row (.toolbar is flex). */
-.doc-stat-chips { margin-left: auto; }
+/* The document tab's key numbers: their own row under the TabHeader. */
+.doc-stat-chips { margin-bottom: 8px; }
 .doc-newline .cta { color:#2e6e73; font-weight:600; }
 /* View-mode band — same band family as the doc subnav, tinted by the
    surface's colorway. The switchers are centred text chips (no button

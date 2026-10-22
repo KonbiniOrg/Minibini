@@ -10,7 +10,9 @@
   // without it the vocabulary's default blue applies.
   //
   // The card IS the link (2026-07-28, reversing the 2026-07-09 "no block-level
-  // links" decision — see jobs-and-tasks.md §9.1a). `model.href` is decided in
+  // links" decision — see jobs-and-tasks.md §9.1a). The title is the block's
+  // <h3> under the Overview tab's <h2> (a heading inside a link is valid; the
+  // link's name still reads title + facts). `model.href` is decided in
   // jobOverview.js; this component never picks a target. A plain <a> wrapping
   // the card is valid only because the card renders NO interactive
   // descendants — adding a button or link inside would invalidate the markup
@@ -27,7 +29,7 @@
 
 {#if model.state === 'active'}
   <a class="summary-block active {accentClass}" href={model.href}>
-    <div class="section-title summary-block-title">{title}</div>
+    <h3 class="section-title summary-block-title">{title}</h3>
     <div class="stat-spread">
       {#each model.stats as stat}
         <div class="stat">
@@ -55,12 +57,12 @@
   </a>
 {:else if model.state === 'frozen'}
   <a class="summary-block frozen {accentClass}" href={model.href}>
-    <span class="section-title summary-block-title">{title}</span>
+    <h3 class="section-title summary-block-title">{title}</h3>
     <span>{model.frozenText}</span>
   </a>
 {:else}
   <a class="summary-block dormant {accentClass}" href={model.href}>
-    <span class="section-title summary-block-title">{title}</span>
+    <h3 class="section-title summary-block-title">{title}</h3>
     <span>{model.dormantText}</span>
   </a>
 {/if}

@@ -1,6 +1,8 @@
 <script>
   import { api, errorMessage } from '../../lib/api.js';
   import LoadState from '../LoadState.svelte';
+  import TabHeader from '../TabHeader.svelte';
+  import EmptyState from '../EmptyState.svelte';
 
   let { job, onJobChange = () => {} } = $props();
 
@@ -271,12 +273,10 @@
   }
 </script>
 
-<div class="page">
-  <LoadState {loading}>
-    <div class="page-body">
-    <header class="page-header">
-      <h2>Shipments</h2>
-      <div class="action-row">
+<LoadState {loading}>
+  <section class="page-body" aria-labelledby="tab-shipments">
+    <TabHeader id="tab-shipments" title="Shipments" titleHidden>
+      {#snippet actions()}
         <button type="button" onclick={addShipment}>+ Add shipment</button>
         <button type="button" onclick={saveChanges} disabled={!hasChanges || saving}>
           {saving ? 'Saving...' : 'Save changes'}
@@ -285,14 +285,14 @@
         {#if hasChanges}
           <span class="pending-note">unsaved changes</span>
         {/if}
-      </div>
-      {#if errorMsg}<p class="err">{errorMsg}</p>{/if}
-    </header>
+      {/snippet}
+    </TabHeader>
+    {#if errorMsg}<p class="err">{errorMsg}</p>{/if}
 
     {#if deliverables.length === 0}
-      <p>This job has no deliverables yet.</p>
+      <EmptyState text="This job has no deliverables yet. Add deliverables to the job before shipping." />
     {:else if displayedShipments.length === 0}
-      <p>No shipments yet. Click "+ Add shipment" to create one.</p>
+      <EmptyState text={'No shipments yet. Click "+ Add shipment" to create one.'} />
     {:else}
       <table class="matrix">
         <thead>
@@ -349,6 +349,8 @@
               <td class="num">{d.qty_remaining}</td>
             </tr>
           {/each}
+        </tbody>
+        <tfoot>
           <tr class="totals">
             <td colspan="3"><strong>Shipment total</strong></td>
             {#each displayedShipments as sh (shipmentKey(sh))}
@@ -356,24 +358,14 @@
             {/each}
             <td></td>
           </tr>
-        </tbody>
+        </tfoot>
       </table>
     {/if}
-  </div>
-  </LoadState>
-</div>
+  </section>
+</LoadState>
 
 <style>
-  .page { padding: 0 0 20px 0; }
-  .page-header { padding: 0; }
-  .page-header h2 { margin-top: 16px; }
   .matrix { margin: 0 24px; width: calc(100% - 48px); }
-  .action-row {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    margin: 8px 0;
-  }
   .pending-note {
     font-style: italic;
     color: #b45309;

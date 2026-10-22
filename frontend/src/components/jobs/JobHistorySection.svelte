@@ -6,6 +6,8 @@
   import FormMessage from '../FormMessage.svelte';
   import { milestoneRows, groupRowsByDay, timeLabel } from '../../lib/historyLog.js';
   import LoadState from '../LoadState.svelte';
+  import TabHeader from '../TabHeader.svelte';
+  import EmptyState from '../EmptyState.svelte';
 
   let { job, onJobChange = () => {} } = $props();
   const jobId = $derived(job?.job_id);
@@ -168,12 +170,9 @@
   }
 </script>
 
-<div class="page">
-  <LoadState {loading} error={loadError}>
-    <div class="page-body">
-    <header class="page-header">
-      <h2>History</h2>
-    </header>
+<LoadState {loading} error={loadError}>
+  <section class="page-body" aria-labelledby="tab-history">
+    <TabHeader id="tab-history" title="History" titleHidden />
 
     <div class="body">
       {#if job?.status !== 'archived'}
@@ -257,7 +256,7 @@
           {/each}
         </ul>
       {:else}
-        <p>No history yet.</p>
+        <EmptyState text="No history yet. Add a note above to start the record." />
       {/if}
       {/if}
 
@@ -286,18 +285,14 @@
             {/each}
           </table>
         {:else}
-          <p>No milestones yet.</p>
+          <EmptyState text="No milestones yet." />
         {/if}
       {/if}
     </div>
-  </div>
-  </LoadState>
-</div>
+  </section>
+</LoadState>
 
 <style>
-  .page { padding: 0 0 20px 0; }
-  .page-header { padding: 0; }
-  .page-header h2 { margin-top: 16px; margin-bottom: 4px; }
   .body { max-width: 820px; padding: 0 24px; }
   /* Tabs are the shared .page-tabs; the log table is the shared .data-table (app.css). */
 

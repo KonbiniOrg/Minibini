@@ -214,6 +214,53 @@ just the two idioms every consumer of the kit follows:
   a silent refresh, then show a specific "…refreshed" message via the
   global overlay instead of the generic error text.
 
+### Job tab structure
+
+Every tab of the job page (Overview, Estimates — change orders ride this
+tab — Tasks, Invoices, Shipments, POs, Emails, History) has one semantic
+shape (2026-10-21):
+
+```
+<section class="page-body" aria-labelledby="tab-<name>">   one region per tab
+  <TabHeader id="tab-<name>" title=… {badges} {actions} />  <header><h2>…</h2> badges, actions right
+  key numbers (the document tabs' stat chips), own row
+  <section><h3>Sub-section</h3> … table (thead; tfoot for totals)</section>
+  <EmptyState text="One sentence saying what to do next." {action} />
+</section>
+```
+
+- **Headings:** the job's `<h1>` (JobHeader) → one `<h2>` per tab (the
+  TabHeader title) → `<h3>` per sub-section. No skipped levels; modals are
+  their own outline. Overview's six summary-block titles are `<h3>`s.
+- **`TabHeader.svelte`** (`src/components/`): `id`, `title`, optional
+  `badges` / `actions` snippets, `muted` (superseded document), `class`,
+  `titleHidden`. With `titleHidden` the h2 stays (screen readers, heading
+  order) but isn't shown: Overview, Tasks, Shipments, POs, Emails, and
+  History pass it, because their title only repeats the rail tab. The rail
+  tab is the visible title there (`JobNavRail` marks it `aria-current="page"`
+  and weights it). The document tabs keep a visible title: it's the
+  document's number, not the tab name. With no documents yet, the Estimates
+  and Invoices tabs hide their title too ("Estimates" / "Invoices" only
+  repeats the rail).
+  The document tabs (estimate, change order, invoice) and Tasks pass
+  `class="toolbar"` to keep the shared `.toolbar` button look. Shaped like
+  the shadcn plan's PageHeader so it can be swapped later.
+- **Document tabs:** the document's title ("Estimate: EST-…-2", "CO-3",
+  "Invoice: …") is the h2; status pill/select goes in `badges`;
+  `DocSubnav` stays above the region and `DocModeBar` inside it,
+  unchanged. With no document yet, the h2 is the tab name ("Estimates").
+- **Actions** that persist live in the header's right-hand group. An
+  action that only exists because the tab is empty (Start Estimate, Start
+  Invoice, Add Deposit Invoice) rides the empty state instead.
+- **Empty states:** `EmptyState.svelte` (`text`, optional `action`
+  snippet). A text-only empty list inside a `DataTable` keeps using its
+  `emptyText` (same muted look).
+- **Loading:** `LoadState` everywhere, including the Emails tab.
+
+Tests: `tests/routes/JobTabStructure.test.js` (one case per tab: region,
+h2 in the header, actions in the header, heading order) and
+`e2e/specs/job-tabs-structure.spec.js` (same checks on a seeded job).
+
 ### Timestamps: day names expire after a week
 
 App-wide display convention (RM, 2026-07-06): a bare day name ("Sat

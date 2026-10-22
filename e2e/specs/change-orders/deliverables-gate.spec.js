@@ -55,7 +55,8 @@ test('Send to customer on a CO whose job has no deliverables routes through the 
   });
 
   await test.step('Deleting the last row in the CO section refreshes the band above it (no reload)', async () => {
-    const section = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Deliverables' }) });
+    // The CO tab is itself a <section> holding this one, so name the inner region.
+    const section = page.getByRole('region', { name: 'Deliverables' });
     await section.getByRole('button', { name: 'Delete' }).click();
     await expect(band).toContainText('No deliverables yet');
   });

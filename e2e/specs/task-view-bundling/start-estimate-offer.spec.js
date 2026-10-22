@@ -202,7 +202,8 @@ test('State C (no room): job stuck on "approved" behind an unanswered work decis
   // ordinary toolbar action and the (empty but rendered) task tree still
   // show — confirms the page loaded before asserting the offer's absence.
   await expect(page.getByRole('button', { name: 'Add Work' })).toBeVisible();
-  await expect(page.locator('table.task-tree-table')).toBeVisible();
+  // Nothing on the job yet: the empty state stands in for the table.
+  await expect(page.getByText('No tasks yet. Use Add Work to plan this job.')).toBeVisible();
 
   await expect(page.locator('table.task-tree-table input[type="checkbox"]')).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Bundle \d+ selected into a line/ })).toHaveCount(0);

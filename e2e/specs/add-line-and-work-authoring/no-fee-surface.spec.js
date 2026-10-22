@@ -66,7 +66,8 @@ test('fee-less surfaces: picker offers Task/Material only; a plain hand line rea
   await test.step('The task list shows no Fees section and no rows for the plain line', async () => {
     await page.goto(`/#/jobs/${job.job_id}/tasks`);
     await page.reload(); // same-fragment goto doesn't renavigate a hash router
-    await expect(page.locator('table.task-tree-table')).toBeVisible();
+    // A job with nothing on it shows the tab's empty state instead of an empty table.
+    await expect(page.getByText('No tasks yet. Use Add Work to plan this job.')).toBeVisible();
     await expect(page.getByText('Fees', { exact: true })).toHaveCount(0);
     await expect(page.locator('table.task-tree-table tbody tr')).toHaveCount(0);
   });

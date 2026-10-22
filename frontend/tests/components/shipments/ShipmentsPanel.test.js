@@ -33,7 +33,7 @@ describe('ShipmentsPanel', () => {
     mockApi({ deliverables: [] });
     const { getByText, findByText } = render(ShipmentsPanel, { props: { job } });
     expect(getByText('Loading...')).toBeInTheDocument();
-    expect(await findByText('This job has no deliverables yet.')).toBeInTheDocument();
+    expect(await findByText('This job has no deliverables yet. Add deliverables to the job before shipping.')).toBeInTheDocument();
     expect(api.get).toHaveBeenCalledWith('/api/jobs/3/deliverables/');
     expect(api.get).toHaveBeenCalledWith('/api/shipments/?job=3');
   });

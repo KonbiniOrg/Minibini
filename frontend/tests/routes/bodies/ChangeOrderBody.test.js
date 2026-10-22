@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, waitFor } from '@testing-library/svelte';
+import { render, waitFor, within } from '@testing-library/svelte';
 
 vi.mock('@/lib/api.js', () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
@@ -42,12 +42,12 @@ describe('ChangeOrderBody', () => {
       props: { job, params: { jobId: '9', coId: '3' } },
     });
     await findByText('Line items');
-    await waitFor(() => expect(container.querySelector('.page-title')).toHaveTextContent('CO-3'));
+    await waitFor(() => expect(within(container).queryByRole('heading', { level: 2 })).toHaveTextContent('CO-3'));
 
     // Fresh params object, same jobId — what svelte-spa-router hands the
     // still-mounted workspace on a subnav navigation.
     await rerender({ job, params: { jobId: '9', coId: '4' } });
-    await waitFor(() => expect(container.querySelector('.page-title')).toHaveTextContent('CO-4'));
+    await waitFor(() => expect(within(container).queryByRole('heading', { level: 2 })).toHaveTextContent('CO-4'));
     expect(api.get.mock.calls.filter(([u]) => u === '/api/jobs/9/')).toHaveLength(0);
   });
 });

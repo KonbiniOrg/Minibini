@@ -32,7 +32,7 @@ describe('POPanel', () => {
   it('shows a plain empty state with no create affordance when the job has no purchase orders', async () => {
     api.get.mockResolvedValue({ results: [] });
     const { findByText, queryByRole } = render(POPanel, { props: { job } });
-    expect(await findByText('No purchase orders touch this job yet.')).toBeInTheDocument();
+    expect(await findByText('No purchase orders touch this job yet. Order its materials from Purchasing.')).toBeInTheDocument();
     expect(queryByRole('button', { name: /new purchase order/i })).toBeNull();
     expect(queryByRole('link', { name: /new purchase order/i })).toBeNull();
   });
