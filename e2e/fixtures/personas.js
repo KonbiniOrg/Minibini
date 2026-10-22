@@ -6,10 +6,13 @@
 //   test.use({ storageState: personas.worker.storageState });
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { slot } from '../lib/slot.js';
 
 export const E2E_PASSWORD = 'e2e_password';
 
-const authDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '.auth');
+// Per-slot subdir: sessions belong to one slot's DB, so two slots run from the
+// same checkout must not share them (docs/designs/e2e-testing.md §4.1).
+const authDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '.auth', ...(slot ? [`s${slot}`] : []));
 
 export const personas = {
   worker: {

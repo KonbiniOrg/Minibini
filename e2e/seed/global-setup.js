@@ -4,6 +4,7 @@
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { dbName } from '../lib/slot.js';
 
 const seedDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -14,6 +15,6 @@ export default function globalSetup() {
   }
   execFileSync('bash', [path.join(seedDir, 'reset_db.sh')], {
     stdio: 'inherit',
-    env: { ...process.env, DATABASE_NAME: 'minibini_e2e' },
+    env: { ...process.env, DATABASE_NAME: dbName },
   });
 }

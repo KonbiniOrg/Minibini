@@ -2,8 +2,9 @@
 // e2e-testing.md §2). Used to read backdrop data and, sparingly, to create
 // objects — only when the flow under test is the creation of that object.
 import { request } from '@playwright/test';
+import { baseURL } from '../lib/slot.js';
 
-const BASE_URL = 'http://localhost:9100';
+const BASE_URL = baseURL;
 
 // An APIRequestContext authenticated as a persona, with Django's CSRF
 // convention wired up (csrftoken cookie → X-CSRFToken header on writes).

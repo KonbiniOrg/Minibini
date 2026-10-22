@@ -34,7 +34,7 @@ python manage.py loaddata unit_test_data.json  # Load test fixtures
 # Testing
 python manage.py test                   # Run all tests
 python manage.py test tests.test_foo    # Run specific test module
-cd e2e && npx playwright test           # E2E suite (own ports 8100/9100; dev servers can stay up)
+cd e2e && npx playwright test           # E2E suite (own ports 8100/9100, or per MINIBINI_SLOT; dev servers can stay up)
 
 # Docker
 docker compose up                       # Full stack (app, mysql, nginx)
@@ -361,11 +361,11 @@ Estimates support versioning via parent-child relationships (`POST /api/estimate
 - Tests in `/tests/` directory using Django TestCase
 - Fixtures in `/fixtures/` (JSON format)
 - Base test classes: `BaseTestCase`, `FixtureTestCase` in `tests/base.py`
-- **NEVER run `python manage.py test` from multiple subagents in parallel.** They all share one MySQL database and will deadlock fighting over test database creation/destruction. Only one agent at a time may run tests.
-- **Always pass `--noinput` to `manage.py test`.** A stale test database (left behind by any killed run) otherwise triggers an interactive delete prompt that hangs non-interactive shells forever. Both this rule and the no-parallel rule are **hook-enforced** (`.claude/hooks/check-django-test.sh`, wired in `.claude/settings.json`): a `manage.py test` command missing `--noinput`, or issued while another Django test run is alive, is denied before it executes — fix the command per the denial message and re-run.
+- **Never run two `python manage.py test` runs on the same test database at once.** They deadlock fighting over its creation/destruction. Within one checkout (including its subagents) that means one run at a time. Separate checkouts can run in parallel when each has a distinct `MINIBINI_SLOT` (1–9) in its `.claude/settings.local.json` env — see `docs/designs/e2e-testing.md` §4.1.
+- **Always pass `--noinput` to `manage.py test`.** A stale test database (left behind by any killed run) otherwise triggers an interactive delete prompt that hangs non-interactive shells forever. Both this rule and the no-parallel rule are **hook-enforced** (`.claude/hooks/check-django-test.sh`, wired in `.claude/settings.json`): a `manage.py test` command missing `--noinput`, or issued while another Django test run on the same test database (same `MINIBINI_SLOT`) is alive, is denied before it executes — fix the command per the denial message and re-run.
 - **NEVER judge test pass/fail by a piped command's exit code.** `python manage.py test ... | tail` (or any pipe) reports the *last* command's exit code (`tail`'s, always 0), NOT Django's — so a green-looking exit can hide real failures. To gate on results, read the actual `OK` / `FAILED (failures=…, errors=…)` summary line and the `Ran N tests` count from the output (e.g. write to a file and grep it, or run without a pipe so the exit code is Django's). This applies to background runs especially.
 - **Front-end (Svelte SPA):** component/unit tests use Vitest, in `frontend/tests/`; run `npm run test:run` from `frontend/`. Extend TDD to the SPA — add/update a component's test in the same change. Patterns, conventions, and the behavior-vs-display triage live in `docs/designs/frontend-testing.md`.
-- **E2E (Playwright):** full-stack browser tests in `e2e/`, driven from the `docs/ui-flows/` checklists, against a dedicated `minibini_e2e` DB rebuilt from migrations + the committed seed every run (never the dev DB). Run `npx playwright test` from `e2e/`; it starts its own servers on ports 8100/9100, so the dev stack can stay up. Setup, seed pipeline, personas, and spec conventions live in `docs/designs/e2e-testing.md`.
+- **E2E (Playwright):** full-stack browser tests in `e2e/`, driven from the `docs/ui-flows/` checklists, against a dedicated `minibini_e2e` DB rebuilt from migrations + the committed seed every run (never the dev DB). Run `npx playwright test` from `e2e/`; it starts its own servers on ports 8100/9100 (81N0/91N0 and DB `minibini_e2e_sN` with `MINIBINI_SLOT=N`), so the dev stack can stay up. Setup, seed pipeline, personas, and spec conventions live in `docs/designs/e2e-testing.md`.
 - **E2E is part of Definition of Done for new work and fixes** (RM, 2026-07-20): every change with a user-reachable flow ships an e2e spec in the same session, alongside (never instead of) its backend/Vitest tests. Do NOT backfill e2e for unchanged areas on your own initiative — RM commissions those explicitly. Pure-backend work with no browser-reachable surface is exempt; note the exemption rather than forcing a fake flow.
 
 ## Development Features

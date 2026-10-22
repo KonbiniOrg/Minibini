@@ -19,6 +19,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv(BASE_DIR / '.env')
 
+# Parallel checkouts: MINIBINI_SLOT=1..9 gives this checkout its own Django test
+# database and e2e ports/DB, so several checkouts can run tests at once
+# (docs/designs/e2e-testing.md §4). Unset = the shared defaults.
+MINIBINI_SLOT = os.getenv('MINIBINI_SLOT', '')
+if MINIBINI_SLOT and MINIBINI_SLOT not in set('123456789'):
+    raise ValueError(f'MINIBINI_SLOT must be a single digit 1-9, got {MINIBINI_SLOT!r}')
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
@@ -54,6 +61,10 @@ CSRF_TRUSTED_ORIGINS = [
     'http://minibini-vite:9000',
     'http://minibini-django:9000',
 ]
+if MINIBINI_SLOT:
+    # This checkout's e2e vite (e2e/lib/slot.js)
+    _e2e_vite_port = 9100 + 10 * int(MINIBINI_SLOT)
+    CSRF_TRUSTED_ORIGINS += [f'http://localhost:{_e2e_vite_port}', f'http://127.0.0.1:{_e2e_vite_port}']
 
 # Application definition
 
@@ -126,6 +137,8 @@ DATABASES = {
         'PASSWORD': os.getenv("DATABASE_PASSWORD", "dev_password"),
         'HOST': os.getenv("DATABASE_HOST", "localhost"),
         'PORT': '3306',
+        # None = Django's default (test_<NAME>); a MINIBINI_SLOT checkout gets its own.
+        'TEST': {'NAME': f'test_minibini_db_s{MINIBINI_SLOT}' if MINIBINI_SLOT else None},
     }
 }
 

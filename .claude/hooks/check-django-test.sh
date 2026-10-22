@@ -4,11 +4,14 @@
 #   1. `manage.py test` without --noinput: a stale test DB (left by any
 #      killed run) triggers an interactive delete prompt that hangs
 #      non-interactive shells (subagents) forever.
-#   2. Parallel Django test runs: they share ONE MySQL test database and
-#      deadlock fighting over its creation/destruction.
+#   2. Two Django test runs on the SAME test database: they deadlock fighting
+#      over its creation/destruction. Runs in checkouts with different
+#      MINIBINI_SLOT values use different test DBs and may run side by side
+#      (docs/designs/e2e-testing.md §4).
 # Reads the Bash tool call as JSON on stdin; prints a deny decision when
 # a rule trips, stays silent otherwise.
-c=$(jq -r '.tool_input.command // ""' 2>/dev/null)
+input=$(cat)
+c=$(printf '%s' "$input" | jq -r '.tool_input.command // ""' 2>/dev/null)
 case "$c" in
   *"manage.py test"*) ;;
   *) exit 0 ;;
@@ -20,7 +23,19 @@ deny() {
 if ! printf '%s' "$c" | grep -q -- '--noinput'; then
   deny "Blocked: manage.py test must include --noinput. A stale test database from any killed run otherwise triggers an interactive delete prompt that hangs non-interactive shells forever. Re-run exactly the same command with --noinput added after: manage.py test"
 fi
-if pgrep -f 'manage\.py[^ ]* test|manage\.py test' >/dev/null 2>&1; then
-  deny "Blocked: another Django test run is already in progress. Parallel runs share one MySQL test database and deadlock. Wait for the running suite to finish (check with: ps aux | grep manage.py), then re-run."
-fi
+
+# A checkout's slot: MINIBINI_SLOT in its .claude/settings.local.json env
+# (where per-checkout slots are assigned); empty = the shared default test DB.
+checkout_root() { git -C "$1" rev-parse --show-toplevel 2>/dev/null || (cd "$1" 2>/dev/null && jj root --ignore-working-copy 2>/dev/null); }
+slot_of() { jq -r '.env.MINIBINI_SLOT // empty' "$1/.claude/settings.local.json" 2>/dev/null; }
+
+cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
+mine=${MINIBINI_SLOT-$(slot_of "$(checkout_root "${cwd:-$PWD}")")}
+for pid in $(pgrep -f 'manage\.py[^ ]* test|manage\.py test' 2>/dev/null); do
+  their_cwd=$(lsof -a -d cwd -p "$pid" -Fn 2>/dev/null | sed -n 's/^n//p')
+  theirs=$(slot_of "$(checkout_root "$their_cwd")")
+  if [ "$theirs" = "$mine" ]; then
+    deny "Blocked: another Django test run (pid $pid, in ${their_cwd:-unknown dir}) uses the same test database (MINIBINI_SLOT='${mine}'). Two runs on one test DB deadlock. Wait for it to finish (check with: ps aux | grep manage.py), then re-run."
+  fi
+done
 exit 0

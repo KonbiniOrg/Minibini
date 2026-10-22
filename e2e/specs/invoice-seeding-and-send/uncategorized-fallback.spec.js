@@ -29,6 +29,7 @@
 import { expect, test } from '@playwright/test';
 import { apiAs } from '../../fixtures/api.js';
 import { personas } from '../../fixtures/personas.js';
+import { baseURL } from '../../lib/slot.js';
 
 test.use({ storageState: personas.finjobs.storageState });
 
@@ -83,7 +84,7 @@ test('null-AC task line seeds the uncategorized→fallback chip; correcting it v
   const configCtx = await browser.newContext({ storageState: personas.configtime.storageState });
   const configPage = await configCtx.newPage();
   await test.step('Settings → Accounting: designate the fallback accounting category', async () => {
-    await configPage.goto('http://localhost:9100/#/settings');
+    await configPage.goto(`${baseURL}/#/settings`);
     const fieldset = configPage.getByRole('group', { name: 'Fallback Accounting Category' });
     await expect(fieldset).toBeVisible();
     await fieldset.locator('#fallback-accounting-category').selectOption({ label: fallbackCat.name });
