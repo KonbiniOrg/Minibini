@@ -260,7 +260,7 @@ class TaskCancelOnHoldTest(OnHoldAPIGuardBase):
 
 class TaskReorderOnHoldTest(OnHoldAPIGuardBase):
 
-    def test_reorder_tasks_returns_400_when_job_on_hold(self):
+    def test_full_order_returns_400_when_job_on_hold(self):
         job = _on_hold_job(self.contact)
         t1 = Task(job=job, name='T1', sort_order=1)
         t1.stamp_from_scheme(self.scheme)
@@ -269,8 +269,10 @@ class TaskReorderOnHoldTest(OnHoldAPIGuardBase):
         t2.stamp_from_scheme(self.scheme)
         t2.save()
         url = f'/api/jobs/{job.pk}/reorder-tasks/'
-        response = self.client.post(url, {'task_id': t1.pk, 'direction': 'down'}, format='json')
+        response = self.client.post(url, {'task_ids': [t2.pk, t1.pk]}, format='json')
         self.assert_400_on_hold(response)
+        t1.refresh_from_db()
+        self.assertEqual(t1.sort_order, 1)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

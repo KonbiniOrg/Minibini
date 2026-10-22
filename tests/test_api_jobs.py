@@ -366,7 +366,7 @@ class JobTaskSubResourceTest(TestCase):
         self.client.force_authenticate(user=worker)
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/reorder-tasks/',
-            {'task_id': task.pk, 'direction': 'up'},
+            {'task_ids': [task.pk]},
             format='json',
         )
         self.assertEqual(response.status_code, 403)
@@ -606,43 +606,73 @@ class JobReorderTasksTest(TestCase):
         self.b = _stamp_task(self.job, self.scheme, 'B', sort_order=1)
         self.c = _stamp_task(self.job, self.scheme, 'C', sort_order=2)
 
-    def test_reorder_down(self):
+    def _order(self):
+        return list(
+            Task.objects.filter(job=self.job)
+            .order_by('sort_order', 'pk').values_list('name', flat=True)
+        )
+
+    def test_full_order_moves_a_task_several_places_at_once(self):
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/reorder-tasks/',
-            {'task_id': self.a.pk, 'direction': 'down'},
+            {'task_ids': [self.c.pk, self.a.pk, self.b.pk]},
             format='json',
         )
         self.assertEqual(response.status_code, 200, response.data)
-        self.a.refresh_from_db()
-        self.b.refresh_from_db()
-        self.assertEqual(self.a.sort_order, 1)
-        self.assertEqual(self.b.sort_order, 0)
+        self.assertEqual(self._order(), ['C', 'A', 'B'])
 
-    def test_reorder_missing_task_id(self):
+    def test_full_order_must_name_every_task_on_the_job(self):
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/reorder-tasks/',
-            {'direction': 'up'},
+            {'task_ids': [self.b.pk, self.a.pk]},
             format='json',
         )
         self.assertEqual(response.status_code, 400)
+        self.assertIn('task_ids', response.data)
+        self.assertEqual(self._order(), ['A', 'B', 'C'])
 
-    def test_reorder_invalid_direction(self):
+    def test_full_order_rejects_a_task_from_another_job(self):
+        other = Job.objects.create(
+            job_number='C2-R-002', name='Other', contact=self.contact,
+        )
+        stranger = _stamp_task(other, self.scheme, 'X', sort_order=0)
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/reorder-tasks/',
-            {'task_id': self.a.pk, 'direction': 'sideways'},
+            {'task_ids': [self.a.pk, self.b.pk, stranger.pk]},
             format='json',
         )
         self.assertEqual(response.status_code, 400)
+        self.assertIn('task_ids', response.data)
+        self.assertEqual(self._order(), ['A', 'B', 'C'])
 
-    def test_reorder_requires_can_manage_jobs(self):
-        worker = User.objects.create_user(username='r_worker', password='pass')
+    def test_full_order_rejects_duplicates(self):
+        response = self.client.post(
+            f'/api/jobs/{self.job.pk}/reorder-tasks/',
+            {'task_ids': [self.a.pk, self.a.pk, self.b.pk, self.c.pk]},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('task_ids', response.data)
+
+    def test_full_order_rejects_a_non_list(self):
+        response = self.client.post(
+            f'/api/jobs/{self.job.pk}/reorder-tasks/',
+            {'task_ids': 'abc'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('task_ids', response.data)
+
+    def test_full_order_requires_can_manage_jobs(self):
+        worker = User.objects.create_user(username='r_worker2', password='pass')
         self.client.force_authenticate(user=worker)
         response = self.client.post(
             f'/api/jobs/{self.job.pk}/reorder-tasks/',
-            {'task_id': self.a.pk, 'direction': 'down'},
+            {'task_ids': [self.c.pk, self.a.pk, self.b.pk]},
             format='json',
         )
         self.assertEqual(response.status_code, 403)
+        self.assertEqual(self._order(), ['A', 'B', 'C'])
 
 
 class JobPatchValidationErrorTest(TestCase):

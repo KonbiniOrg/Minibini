@@ -2,16 +2,13 @@
   // THE task row — one shared fragment for every task (tasks are one flat
   // level since the better-fees subtask removal, 2026-08).
   import TaskActivityIndicator from './TaskActivityIndicator.svelte';
+  import DragHandle from '../DragHandle.svelte';
   import {
     fmtMoney, fmtWorkerTime, taskTotalInfo, taskTotal, taskActual,
   } from '../../lib/taskTotals.js';
 
   let {
     task,
-    // Position among the job's tasks, for the reorder arrows' disabled
-    // state (the backend swap is job-scoped to match).
-    taskIdx = 0,
-    taskCount = 1,
     readonly = false,
     jobLocked = false,
     jobOnHold = false,
@@ -25,7 +22,10 @@
     onDeleteTask = null,
     onCancelTask = null,
     onAddMaterial = null,
-    onReorder = null,
+    // Drag-to-reorder (issue #513): the task group's sortable handleRef,
+    // passed only when this row may be dragged (TaskTree decides). Null =
+    // no handle.
+    dragHandle = null,
     // Bundle-selection checkbox (Task 3) — off by default so every other
     // consumer of this shared row renders unchanged.
     bundleMode = false,
@@ -112,29 +112,32 @@
     <td class="move-cell">{#if !isTerminal}<input type="radio" name="move-target" value={task.task_id} bind:group={selectedTaskId}>{/if}</td>
   {/if}
   <td>
-    <button type="button" class="link-btn" onclick={() => onTaskClick(task)}>{task.name}</button>
-    {#if awaitingMaterials}<span class="badge-awaiting" title="A pending material isn't in stock — bleps are refused until it arrives">waiting on materials</span>{/if}
+    <!-- Handle beside the name, not inline with it: a long name wraps next to the
+         handle instead of dropping below it (the name button is one unbreakable box). -->
+    <div class="name-cell">
+      {#if dragHandle}<DragHandle attach={dragHandle} label={`Drag to reorder ${task.name}`} />{/if}
+      <div class="name-main">
+        <button type="button" class="link-btn" onclick={() => onTaskClick(task)}>{task.name}</button>
+        {#if awaitingMaterials}<span class="badge-awaiting" title="A pending material isn't in stock — bleps are refused until it arrives">Waiting on materials</span>{/if}
+      </div>
+    </div>
   </td>
-  {#if showAssignee}<td>{task.assignee_name || ''} {#if !readonly && !isTerminal && canManage && !jobOnHold}<button type="button" class="small-btn" onclick={() => onAssignTask(task)}>assign</button>{/if}</td>{/if}
-  <td class="text-right">{fmtWorkerTime(task.est_worker_time)}</td>
-  {#if showStatus}<td>{#if task.invoice}<a class="badge-invoiced" href={`#/invoices/${task.invoice.id}`} title="Billed on this invoice">INVOICED</a>{:else}<TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason}<br><span class="blocked-reason preserve-breaks">{task.blocked_reason}</span>{/if}{/if}</td>{/if}
-  <td class="text-right">{withUnit(task.est_qty)}</td>
-  <td class="text-right">{withUnit(taskActual(task))}</td>
-  <td class="text-right">{fmtMoney(task.effective_rate)}</td>
-  <td class="text-right" class:est-total={taskTotalInfo(task).isEstimate}>{fmtMoney(taskTotal(task))}</td>
+  {#if showAssignee}<td class="assignee-cell">{task.assignee_name || ''} {#if !readonly && !isTerminal && canManage && !jobOnHold}<button type="button" class="small-btn" onclick={() => onAssignTask(task)}>assign</button>{/if}</td>{/if}
+  <td class="text-right figure">{fmtWorkerTime(task.est_worker_time)}</td>
+  {#if showStatus}<td>{#if task.invoice}<a class="badge-invoiced" href={`#/invoices/${task.invoice.id}`} title="Billed on this invoice">Invoiced</a>{:else}<TaskActivityIndicator {task} />{#if task.status === 'blocked' && task.blocked_reason}<br><span class="blocked-reason preserve-breaks">{task.blocked_reason}</span>{/if}{/if}</td>{/if}
+  <td class="text-right figure">{withUnit(task.est_qty)}</td>
+  <td class="text-right figure">{withUnit(taskActual(task))}</td>
+  <td class="text-right figure">{fmtMoney(task.effective_rate)}</td>
+  <td class="text-right figure" class:est-total={taskTotalInfo(task).isEstimate}>{fmtMoney(taskTotal(task))}</td>
   {#if !readonly && !jobLocked}
     <td class="actions-cell row-actions">
       {#if !isTerminal}
         {#if onEditTask && !jobOnHold && canEditTask}<button type="button" onclick={() => onEditTask(task)}>edit</button>{/if}
-        {#if onDeleteTask && !jobOnHold && canDelete && !task.has_bleps}<button type="button" onclick={() => onDeleteTask(task)}>del</button>{/if}
+        {#if onDeleteTask && !jobOnHold && canDelete && !task.has_bleps}<button type="button" class="danger" onclick={() => onDeleteTask(task)}>del</button>{/if}
         {#if onCancelTask && !jobOnHold && canCancel}<button type="button" onclick={() => onCancelTask(task)}>cancel</button>{/if}
         {#if onAddMaterial && !jobOnHold}<button type="button" onclick={() => onAddMaterial(task)}>+mat</button>{/if}
       {:else if onDeleteTask && !jobOnHold && canDelete && !task.has_bleps}
-        <button type="button" onclick={() => onDeleteTask(task)}>del</button>
-      {/if}
-      {#if canManage && onReorder}
-        <button type="button" onclick={() => onReorder(task.task_id, 'up')} disabled={taskIdx === 0}>&#9650;</button>
-        <button type="button" onclick={() => onReorder(task.task_id, 'down')} disabled={taskIdx === taskCount - 1}>&#9660;</button>
+        <button type="button" class="danger" onclick={() => onDeleteTask(task)}>del</button>
       {/if}
     </td>
   {:else if !readonly}
@@ -148,35 +151,35 @@
   .move-cell { text-align: center; width: 24px; padding-left: 4px; padding-right: 4px; }
   /* Bundle-selection checkbox column (Task 3) — same footprint as move-cell. */
   .bundle-cell { text-align: center; width: 24px; padding-left: 4px; padding-right: 4px; }
-  .bundle-claimed { font-size: 11px; color: #888; font-style: italic; }
+  .bundle-claimed { font-size: var(--text-sm); color: var(--text-muted); font-style: italic; }
   .text-right { text-align: right; }
   td { padding: 6px 10px; vertical-align: top; }
-  .est-total { color: #888; }
+  .name-cell { display: flex; align-items: flex-start; }
+  /* Assignee and its "assign" button share one line; Name gives up the width. */
+  .assignee-cell { white-space: nowrap; }
+  .name-main { flex: 1; min-width: 0; }
+  .est-total { color: var(--text-muted); }
 
   .link-btn {
     background: none; border: none; padding: 0; margin: 0;
-    color: #1d4ed8; cursor: pointer; font-size: inherit;
+    color: #1d4ed8; cursor: pointer; font: inherit;  /* the table's font, not the button default */
     text-decoration: underline; text-align: left;
   }
   .link-btn:hover { color: #1e40af; }
-  .small-btn {
-    font-size: 11px; padding: 1px 5px; margin-left: 4px;
-    cursor: pointer; border: 1px solid #ccc; background: #fff; border-radius: 3px;
-  }
-  .small-btn:hover { background: #f0f0f0; }
+  /* Buttons (incl. .small-btn) are styled by TaskTree's table-wide button rule. */
 
   .badge-awaiting {
     display: inline-block;
     margin-left: 6px;
-    padding: 1px 6px;
-    font-size: 11px;
-    border-radius: 3px;
+    /* A tag: outlined pill (shadcn table-badge style) — the round shape sets it apart from buttons. */
+    padding: 0 8px;
+    font-size: var(--text-sm);
+    border-radius: 999px;
     background: #fef3c7;
     border: 1px solid #d97706;
     color: #92400e;
     white-space: nowrap;
   }
-  .blocked-reason { font-size: 11px; color: #991b1b; }
-  .actions-cell { max-width: 12em; }
+  .blocked-reason { font-size: var(--text-sm); color: #991b1b; }
   /* .badge-invoiced and .row-actions come from app.css. */
 </style>

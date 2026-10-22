@@ -1457,26 +1457,22 @@ class TaskService:
         task.delete()
 
     @staticmethod
-    def reorder_tasks(task_id, direction):
-        """Reorder a task among the job's tasks — delegates to
-        BundlingService. (Tasks are one flat level — better-fees spec §3 —
-        so the peer group is simply the job's task list.)"""
-        from apps.core.services import BundlingService
+    def set_task_order(job, task_ids):
+        """Put the job's tasks in exactly the order of `task_ids` (issue
+        #513: drag-and-drop moves a task several places at once).
 
-        try:
-            task = Task.objects.get(pk=task_id)
-        except Task.DoesNotExist:
-            raise NotFoundError(f'Task {task_id} not found')
-        _assert_job_not_frozen(task.job, 'reorder tasks on this job')
-        _assert_job_not_on_hold(task.job, 'reorder tasks on this job')
+        `task_ids` must name every task on the job once; validation, locking,
+        and per-instance saves are ReorderService.set_order's. Numbered from 1,
+        as Task.save() numbers new tasks, so only moved tasks are saved.
+        """
+        from apps.core.services import ReorderService
 
-        items_qs = Task.objects.filter(job=task.job)
-
-        BundlingService.reorder_container_items(
-            items_qs, 'task', task_id, direction,
+        _assert_job_not_frozen(job, 'reorder tasks on this job')
+        _assert_job_not_on_hold(job, 'reorder tasks on this job')
+        ReorderService.set_order(
+            Task.objects.filter(job=job), task_ids,
+            field='sort_order', start=1, error_field='task_ids',
         )
-        task.refresh_from_db()
-        return task
 
     @staticmethod
     def assign(task, assignee_id, worker_queue=None, est_worker_time=None):

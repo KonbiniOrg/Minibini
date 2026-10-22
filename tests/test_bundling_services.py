@@ -118,3 +118,69 @@ class TemplateServiceReorderTest(BundlingTestBase):
         self.a2.refresh_from_db()
         self.assertEqual(self.a1.sort_order, 2)
         self.assertEqual(self.a2.sort_order, 1)
+
+
+class ReorderServiceSetOrderTest(BundlingTestBase):
+    """ReorderService.set_order: the shared full-order reorder (issue #513).
+    Every drag-and-drop list uses it; tasks are the first caller."""
+
+    def setUp(self):
+        super().setUp()
+        self.scheme = RateScheme.objects.get(pk=1)  # from fixture
+        self.tasks = []
+        for n, name in enumerate(['A', 'B', 'C'], start=1):
+            t = Task(job=self.job, name=name, sort_order=n, est_qty=Decimal('1'))
+            t.stamp_from_scheme(self.scheme)
+            t.save()
+            self.tasks.append(t)
+        self.a, self.b, self.c = self.tasks
+        self.qs = Task.objects.filter(job=self.job)
+
+    def names_in_order(self):
+        return list(self.qs.order_by('sort_order', 'pk').values_list('name', flat=True))
+
+    def test_applies_the_whole_order(self):
+        BundlingService.set_order(self.qs, [self.c.pk, self.a.pk, self.b.pk])
+        self.assertEqual(self.names_in_order(), ['C', 'A', 'B'])
+
+    def test_numbers_from_start(self):
+        BundlingService.set_order(self.qs, [self.c.pk, self.a.pk, self.b.pk], start=1)
+        self.c.refresh_from_db()
+        self.assertEqual(self.c.sort_order, 1)
+
+    def test_saves_only_items_whose_position_changed(self):
+        from unittest import mock
+        with mock.patch.object(Task, 'save', autospec=True, side_effect=Task.save) as save:
+            # Swap B and C; A stays at 1.
+            BundlingService.set_order(self.qs, [self.a.pk, self.c.pk, self.b.pk])
+        saved = {call.args[0].pk for call in save.call_args_list}
+        self.assertEqual(saved, {self.b.pk, self.c.pk})
+
+    def test_refuses_a_partial_list(self):
+        with self.assertRaises(ValidationError) as ctx:
+            BundlingService.set_order(self.qs, [self.b.pk, self.a.pk], error_field='task_ids')
+        self.assertIn('task_ids', ctx.exception.message_dict)
+        self.assertEqual(self.names_in_order(), ['A', 'B', 'C'])
+
+    def test_refuses_a_foreign_id(self):
+        other_job = JobService.create_job(name='Other', contact=self.contact)
+        x = Task(job=other_job, name='X', sort_order=1, est_qty=Decimal('1'))
+        x.stamp_from_scheme(self.scheme)
+        x.save()
+        with self.assertRaises(ValidationError):
+            BundlingService.set_order(self.qs, [self.a.pk, self.b.pk, self.c.pk, x.pk])
+
+    def test_refuses_duplicates(self):
+        with self.assertRaises(ValidationError):
+            BundlingService.set_order(self.qs, [self.a.pk, self.a.pk, self.b.pk, self.c.pk])
+
+    def test_refuses_a_non_list(self):
+        for bad in ('abc', None, [self.a.pk, 'b', self.c.pk], [True, self.b.pk, self.c.pk]):
+            with self.subTest(bad=bad), self.assertRaises(ValidationError):
+                BundlingService.set_order(self.qs, bad)
+
+    def test_custom_field(self):
+        """Line items order by line_number; the field is a parameter."""
+        BundlingService.set_order(self.qs, [self.b.pk, self.c.pk, self.a.pk], field='sort_order', start=10)
+        self.b.refresh_from_db()
+        self.assertEqual(self.b.sort_order, 10)

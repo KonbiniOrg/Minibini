@@ -818,3 +818,16 @@ tr.grand td { font-weight:600; border-top:2px solid var(--doc-border); backgroun
   border-bottom: 2px solid white;
   font-weight: bold;
 }
+
+/* ── Readability tokens + semantic roles (from the type-scale spike) ──────────
+   Inert by design: custom properties and the .figure class change
+   nothing until a component opts in. Adopted table by table; first user is the
+   job Tasks table (TaskTree.svelte). Values match the type-scale spike. */
+:root {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;  /* type-scale spike's face */
+  --text-sm: 14px;      /* table body and headers */
+  --text-fg: #0a0a0a;
+  --text-muted: #666666; /* 5.7:1 on white, 5.1:1 on the palest band — AA */
+}
+/* A number in a cell: aligned digits, never split across lines. */
+.figure { font-variant-numeric: tabular-nums; white-space: nowrap; }
