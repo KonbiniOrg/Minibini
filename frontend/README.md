@@ -320,7 +320,7 @@ Clear `formError`/`errors` at submit start and on open/cancel.
 
 - Global styles live in `frontend/src/css/app.css`, imported via `main.js`
   **and** `portal-main.js` — global changes reach the customer portal too.
-- No CSS frameworks. Semantic HTML with minimal global styles.
+- Semantic HTML with minimal global styles.
 - **app.css is organized in three sections** — (1) BASE: tokens, element
   defaults, utilities, the page frame; (2) SHARED: families any page may use;
   (3) PAGE KINDS: vocabulary tied to the three page categories of the

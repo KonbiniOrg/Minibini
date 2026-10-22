@@ -750,7 +750,7 @@ correct: `revise_estimate` is a faithful copy of an existing revision
 - Vite dev server on `:9000` proxying `/api/*` to Django on `:8000`;
   prod build emits `dist/` served by nginx.
 - Hash-based routing via `svelte-spa-router`.
-- No CSS framework; semantic HTML and per-component `<style>` blocks.
+- Semantic HTML and per-component `<style>` blocks.
 
 **Second Vite entry — customer portal.** `frontend/portal/` is a
 separate entry point (listed in `vite.config.js`
