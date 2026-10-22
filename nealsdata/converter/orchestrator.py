@@ -32,7 +32,7 @@ def _is_active_card(card):
 class NealsDataConverter:
     def __init__(self, excel_path, csv_path, output_path,
                  limit=100, verbose=False, seed_path=None,
-                 all_vendors=False, now=None):
+                 all_vendors=False, now=None, seed_user_limit=None):
         self.loader = ExcelDataLoader(excel_path, verbose=verbose)
         self.csv_loader = KanbanCsvLoader(csv_path)
         self.output_path = output_path
@@ -53,6 +53,8 @@ class NealsDataConverter:
         self.vendor_skipped_name_only = 0
         self.verbose = verbose
         self.seed_path = str(seed_path) if seed_path else str(_DEFAULT_SEED_PATH)
+        # Keep only the first N nealseed users (file order); None keeps all.
+        self.seed_user_limit = seed_user_limit
         self.fixture_data = []
         self._pk_counters = defaultdict(int)
         self.csv_cards = []

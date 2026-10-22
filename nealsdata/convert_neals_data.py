@@ -28,6 +28,9 @@ def build_parser():
                    help='Also import the newest --limit vendor orgs from the '
                         'Bills sheet even when none of their Bills yields a '
                         'PO (default: only vendors that get a PO)')
+    p.add_argument('--seed-users', type=int, default=None,
+                   help='Keep only the first N users from nealseed.json '
+                        '(file order; default: all)')
     p.add_argument('--verbose', action='store_true')
     return p
 
@@ -50,6 +53,7 @@ def main():
     NealsDataConverter(
         excel_path=excel, csv_path=csv_path, output_path=output,
         limit=args.limit, verbose=args.verbose, all_vendors=args.all_vendors,
+        seed_user_limit=args.seed_users,
     ).convert()
 
 
