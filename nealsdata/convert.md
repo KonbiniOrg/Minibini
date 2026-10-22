@@ -423,10 +423,32 @@ case.)
   **17:00** (weekends allowed). **One worker per job**: a job's tasks go to the
   same user (rotation advances per job, not per blep), packed back-to-back
   with a deterministic 5–30-minute gap between bleps — which is what makes
-  worker-days carry several bleps. If that worker (then everyone) is booked
-  across a job's window, a new worker is **minted** (`_mint_user`) as the
-  pressure valve (with the cutoff + blep clock above, real data at limits
-  25–400 mints none).
+  worker-days carry several bleps.
+- **Generated (minted) users** — the converter's only source of users beyond
+  the seed. The seed users are a fixed pool; `--seed-users N` only ever drops
+  seed users (N above the seed's count keeps them all, it never generates up
+  to N). A user is minted (`_mint_user`) **only** as the placement fallback:
+  when a blep fits neither its job's worker nor any rotation user anywhere in
+  its window. That can still happen with genuinely tight data — a finished job
+  with more task hours than its few workdays hold (one worker-day is
+  09:15–17:00, 7¾ h), several short jobs stacked on the same days, or a small
+  pool (`--seed-users` low; `0` leaves no pool, so one worker is minted up
+  front). Nothing caps the count: each overflowing blep mints another.
+  - **What a minted user is**: username `worker{N}` (next free N from 2), named
+    "Worker{N} Worker", active, non-staff; password hash and permissions cloned from
+    the first seed user whose username starts with `worker` (none in the first
+    6 → a placeholder hash and `can_manage_time`).
+  - **Where it's used**: it joins *this pass's* placement rotation, so after
+    its overflow blep it also picks up ordinary bleps (which makes minted
+    workers look like regular staff). It is **not** added to
+    `c.rotation_user_pks`, so it gets no project-manager roles or queued
+    current work.
+  - **Round-trip hazard**: minted users land in the output fixture; if a DB
+    loaded from it is dumped back into `nealseed.json`, they become seed users
+    and the next run mints on top of them (how worker2–9 entered the seed).
+  - Real data (2026-10-14 export, `--seed-users 6`) mints **none** at limits
+    25–400 since the 2026-10-22 fixes (blep cutoff + blep clock above). Before
+    them, window collapses — not real capacity shortage — minted 4–13.
 - **Shifts**: one `core.shift` per (user, local calendar day) with bleps — a
   realistic workday span, not a band coterminal with the bleps: `start` =
   09:00 local, `end` = 17:00 local clamped to the blep clock and never before
@@ -865,8 +887,8 @@ The script invents data where the sources don't say:
   is fixed-seeded so regen is stable.
 - **Bleps + Shifts** are entirely synthetic — one blep per complete task, its
   length pegged to the (invented) worker-time estimate, placed in the job's date
-  window and wrapped in enclosing shifts. Extra worker users are minted if the
-  rotation pool can't absorb the load. Real shop time was never in the sources.
+  window and wrapped in enclosing shifts. Extra worker users are minted only if a
+  blep can't fit any rotation user in its window (§4). Real shop time was never in the sources.
 - **entered_qty actuals** and **invoice paid amounts** are derived (thirds-rule
   vs est_qty; invoice line-item total), not real.
 - **Material unit costs** are the PLI purchase price when matched, else
