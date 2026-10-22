@@ -231,11 +231,16 @@ slots by design. Raise `--limit` to get more archives.
     Job through the **Estimates sheet's `Invoice Reference` column**: each
     spine job's estimate rows contribute their `Invoice Reference` values,
     and an Invoices-sheet row whose `Reference` matches one of them belongs
-    to that job. Invoices no spine estimate points at are skipped. (The
-    FreeAgent `Project` column is not used here — it only feeds vendor
-    discovery in `build_contacts_and_businesses`.) Stashes each emitted line's classification (`task`,
-    `material`, `lineitem`, `skip`) on `c.invoice_line_kinds` for the
-    next phase. Sets `sent_date` on `open`/`paid` invoices (= the FreeAgent
+    to that job. Invoices no spine estimate points at are skipped — except
+    **deposit invoices**, which FreeAgent never links that way: they join a
+    job by the job number in their line's description or by the final
+    invoice that deducts them (`deposits.plan_deposits`; §4 "Deposits").
+    (The FreeAgent `Project` column is not used here — it only feeds vendor
+    discovery in `build_contacts_and_businesses`.) Stashes each emitted
+    line's classification (`task`, `material`, `lineitem`, `deposit`,
+    `deposit_credit`) on `c.invoice_line_kinds` for the next phase, and
+    emits the `invoicelineitemsource` claim row of every paired deposit
+    credit. Sets `sent_date` on `open`/`paid` invoices (= the FreeAgent
     invoice Date) and `qbo_amount_paid` on `paid` invoices (= that invoice's
     own line-item total; `draft` invoices stay null-dated — §8).
 11. **`reconcile`**: cross-model fixups in a fixed order — see §5.
@@ -551,6 +556,58 @@ Pickup-marker checklist lines never become Tasks. The marker test itself
 reconcile pass 6.5, which uses it as the "all deliverables shipped" half
 of the completion gate.
 
+### Deposits (`deposits.py`, applied by `build_invoices`)
+
+Neal's collects a materials deposit on many jobs. FreeAgent has no deposit
+concept: the deposit is a separate single-line invoice ("Materials deposit
+for job 07445") and the final invoice later carries a negative line
+("Material Deposit (Inv 12345)"). The app models exactly this (invoicing doc
+§Deposits): a line in a deposit accounting category (`DEP`) on a paid invoice
+is a deposit; the final invoice deducts it with a credit line that *claims*
+the deposit line through an `invoicelineitemsource` row of type `deposit`.
+Designed 2026-10-21 (the rules below are the durable record).
+
+- **Recognising lines.** A *deposit charge* is a line whose description
+  contains "deposit" with `qty × price > 0`; an invoice with one is a
+  *deposit invoice*. A *deduction* is such a line with a negative total.
+  Numbers are pulled from descriptions as runs of **four or more digits**
+  (`number_tokens`), so dates and `-R2` suffixes never match. Job numbers
+  are zero-padded five digits and invoice references are unpadded, and the
+  ranges overlap, so the **leading zero** decides: a padded token is only
+  ever a job; an unpadded token on a deduction names a deposit invoice
+  first, a spine job second; a token that resolves to neither is noise.
+- **Placing a deposit invoice** on a spine job, first rule that applies:
+  the Estimates-sheet `Invoice Reference` link (wins over the description);
+  a single job token in its deposit line(s) (two distinct jobs → skipped as
+  ambiguous); or being named by a deduction that pairs (below). Otherwise
+  it is not emitted. A deposit never creates a job. A deposit on an
+  in-progress job (paid, nothing deducted yet) is emitted standalone — that
+  is the state the board's deposit pill and the wizard's credit atom exist
+  for (RM 2026-10-21).
+- **Pairing a deduction** (on a placed, non-cancelled invoice F on job J)
+  with a deposit line: candidates are the invoice its token names, else
+  the deposit invoices placed on J. A candidate pairs when **every present
+  test passes**: invoice token == the deposit's reference; `abs(deduction
+  total)` == the deposit line's total or the sheet's `Net Amount` /
+  `Total Value`; every job token on either line == J. The amount test is
+  always present; a missing invoice or job number is disregarded (RM). Plus
+  the app's own rules: the deposit must map to `paid` (never deduct money
+  not held); a deposit line pairs once (the model's `unique_together`), the
+  first deduction in sheet order wins; a `cancelled` F never pairs (the
+  app deletes claims on cancel) while a `draft` F may. No date-order test.
+- **Emission.** A deposit invoice is emitted like any other (status from
+  FreeAgent — recent deposits can be `open`), **exempt from the Neal's-
+  swimlane force-to-draft rule** (the deposit was sent long before the
+  final was drafted; the drafted final still holds its claim). Deposit
+  charge lines take `DEP`, kind `deposit`. A paired deduction becomes the
+  app's credit shape: qty `1.00`, price = negated deposit line total, `DEP`,
+  FreeAgent's description kept, kind `deposit_credit`, plus the claim row.
+  An unpaired deduction is a plain `SVC` line of kind `lineitem` (the
+  keyword pick would file "Material Deposit" under `MTL` and the wiring
+  pass would claim a Task for it). Neither deposit kind ever claims an atom.
+- **Verbose summary** prints placed / paired / standalone / skipped (non-
+  spine or ambiguous) / plain counts (`c.deposit_summary`).
+
 ### Units mapping
 
 `build_configuration` writes `units_list` mirroring
@@ -601,7 +658,14 @@ archives on converted data. What that means per record:
   version chains included. Invoice QBO fields are blanked (`qbo_amount_paid`,
   `qbo_id`, `qbo_payment_status`) because the importer never sets them.
 - **Source rows** (`estimatelineitemsource`, `invoicelineitemsource`,
-  agreement-line refs): none; the importer cannot express them.
+  agreement-line refs): none; the importer cannot express them. The
+  estimate rows and deposit-credit claim rows are dropped by
+  `archive_old_jobs` itself (they exist before it runs); the heuristic
+  invoice wiring and agreement refs skip archived jobs. A paired deposit
+  credit keeps its `DEP` category and shape; without its claim row the app
+  reads it as a plain negative deposit-category line (`is_deposit_line`
+  needs a non-negative total), a shape the importer's spreadsheet can
+  carry.
 - **Deliverables, shipments, bleps, shifts, earmarks, POs and PO lines**:
   none. Deliverable-shaped estimate lines stay as estimate lines, and a
   `Fake Deliverable` is removed (the verbose count is decremented).
@@ -735,6 +799,7 @@ nealsdata/
     parsing.py            pure helpers: dates, decimals, names, references,
                           checklist parser, classification of line items
     build.py              all builders; the bulk of the code
+    deposits.py           deposit invoice placement + deduction pairing (§4 "Deposits")
     reconcile.py          cross-model fixups (the 9 passes above)
     orchestrator.py       NealsDataConverter — phase wiring + state container
 ```
@@ -849,12 +914,26 @@ The pipeline is covered by:
   rule and every row of the §4 shape), `ArchivedJobsDownstreamSkipTest` (the
   builder guards), `ArchivedJobHistoryTest` (importer-shaped history rows),
   and `ConvertEndToEndTest.test_archive_rule_holds_end_to_end`.
+  `ConvertEndToEndTest.test_deposits_translated_end_to_end` asserts the
+  deposit invariants on the real export (claims point from a `DEP` credit
+  to a `DEP` line on a paid invoice of the same job, no double claim, no
+  deduction classified as work, a standalone deposit exists).
+- `tests/test_neals_deposits.py` — dataset-free tests of
+  `deposits.plan_deposits` (placement, every pairing test and refusal,
+  padded/unpadded tokens, noise, once-only pairing, two lines on one
+  deposit invoice), of `build_invoices` applying the plan (DEP lines,
+  credit shape, claim row, plain deductions, the force-to-draft exemption,
+  the wiring pass leaving both kinds alone), and of `archive_old_jobs`
+  dropping invoice claim rows.
 - `tests/test_neals_fixture.py` — loads the generated `converted.json`
   into the test database and runs `validate_data` over it. This is the
   end-to-end safety net; it also asserts bleps/shifts load and that the
   enclosure / no-overlap / task-not-pending invariants report no errors, and
   (`test_archived_jobs_present_and_valid`) that archived jobs load and pass
-  the archived-job checks.
+  the archived-job checks, and (`test_deposits_load_as_the_app_models_them`)
+  that every converted deposit credit is a real deduction of a real deposit
+  line and a standalone paid deposit is offered as a credit atom by
+  `InvoiceWizardService.get_source_pool`.
 - `tests/test_neals_archive_parity.py` — `ConverterImporterParityTest` loads
   `converted.json` and checks that every archived job is reproduced, field
   for field, by `ArchiveImportService` from a payload built off that job.
@@ -870,8 +949,8 @@ Run them with:
 
 ```bash
 python manage.py test tests.test_neals_parsing tests.test_neals_loaders \
-    tests.test_neals_builders tests.test_neals_fixture \
-    tests.test_neals_archive_parity
+    tests.test_neals_builders tests.test_neals_deposits \
+    tests.test_neals_fixture tests.test_neals_archive_parity
 ```
 
 Per `CLAUDE.md`, only one agent/process may run the Django test suite at a

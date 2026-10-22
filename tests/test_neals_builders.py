@@ -814,9 +814,10 @@ class InvoiceBuilderTest(unittest.TestCase):
         # Invoice lines have no source-linked atom to inherit an AC from at
         # load time, so the converter must emit one on every line (mirrors
         # the estimate-line rule above). The value must be one of the four
-        # seeded categories.
+        # seeded categories, or DEP for deposit charges and credits
+        # (convert.md §4 "Deposits").
         build.build_invoices(self.c)
-        seeded = {self.c.ac_by_code[code] for code in ('SVC', 'MTL', 'PRD', 'DLV')}
+        seeded = {self.c.ac_by_code[code] for code in ('SVC', 'MTL', 'PRD', 'DLV', 'DEP')}
         lis = self._models('invoicing.invoicelineitem')
         self.assertTrue(lis, 'expected invoice line items in the fixture')
         for li in lis:
@@ -1876,6 +1877,55 @@ class ConvertEndToEndTest(unittest.TestCase):
             elif f['model'] == 'inventory.material' and fl.get('job') in archived:
                 # the material side of the PO link is nulled on an archive
                 self.assertIsNone(fl.get('po_line_item'), 'archived material keeps PO line')
+
+
+    @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),
+                         'datasets not present')
+    def test_deposits_translated_end_to_end(self):
+        """convert.md §4 "Deposits": deposit invoices land on their jobs, paired
+        deductions are credits claiming a DEP line on a paid invoice of the
+        same job, and no deduction masquerades as work."""
+        fd, path = tempfile.mkstemp(suffix='.json')
+        os.close(fd)
+        self.addCleanup(os.unlink, path)
+        c = NealsDataConverter(XLSX, CSV, output_path=path, limit=60)
+        c.convert()
+        dep_ac = c.ac_by_code['DEP']
+        inv_job = {f['pk']: f['fields']['job'] for f in c.fixture_data
+                   if f['model'] == 'invoicing.invoice'}
+        inv_status = {f['pk']: f['fields']['status'] for f in c.fixture_data
+                      if f['model'] == 'invoicing.invoice'}
+        lines = {f['pk']: f['fields'] for f in c.fixture_data
+                 if f['model'] == 'invoicing.invoicelineitem'}
+        claims = [f['fields'] for f in c.fixture_data
+                  if f['model'] == 'invoicing.invoicelineitemsource'
+                  and f['fields']['source_type'] == 'deposit']
+        self.assertGreater(c.deposit_summary['paired'], 0)
+        self.assertGreater(c.deposit_summary['standalone'], 0)
+        self.assertEqual(len(claims), len({cl['source_pk'] for cl in claims}),
+                         'a deposit line claimed twice')
+        for cl in claims:
+            credit, dep = lines[cl['invoice_line_item']], lines[cl['source_pk']]
+            self.assertEqual(credit['accounting_category'], dep_ac)
+            self.assertEqual(dep['accounting_category'], dep_ac)
+            self.assertLess(Decimal(credit['price']), 0)
+            self.assertEqual(credit['qty'], '1.00')
+            self.assertEqual(Decimal(credit['price']),
+                             -(Decimal(dep['qty']) * Decimal(dep['price'])))
+            self.assertEqual(inv_job[credit['invoice']], inv_job[dep['invoice']])
+            self.assertEqual(inv_status[dep['invoice']], 'paid')
+            self.assertEqual(c.invoice_line_kinds[cl['invoice_line_item']], 'deposit_credit')
+            self.assertEqual(c.invoice_line_kinds[cl['source_pk']], 'deposit')
+        for pk, fl in lines.items():
+            if 'deposit' in fl['description'].lower() and Decimal(fl['price']) * Decimal(fl['qty']) < 0:
+                self.assertIn(c.invoice_line_kinds[pk], ('deposit_credit', 'lineitem'),
+                              f'deduction {pk} classified as work')
+        # a standalone paid deposit exists and is a DEP line on a paid invoice
+        claimed = {cl['source_pk'] for cl in claims}
+        standalone = [pk for pk, fl in lines.items()
+                      if c.invoice_line_kinds.get(pk) == 'deposit' and pk not in claimed]
+        self.assertTrue(standalone)
+        self.assertTrue(all(lines[pk]['accounting_category'] == dep_ac for pk in standalone))
 
 
 @unittest.skipUnless(os.path.exists(XLSX) and os.path.exists(CSV),

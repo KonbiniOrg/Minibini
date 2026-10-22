@@ -16,6 +16,7 @@ from decimal import Decimal
 from dateutil.relativedelta import relativedelta
 
 from nealsdata.converter import parsing as P
+from nealsdata.converter import deposits as DEP
 
 # Mirrors apps.contacts' phone-digit stripping (converter stays standalone).
 _PHONE_STRIP = re.compile(r'[\s\-.()+]')
@@ -1538,6 +1539,18 @@ def archive_old_jobs(c, cutoff):
                 and (f['fields'].get('source_type'),
                      f['fields'].get('source_pk')) in atoms):
             drop.add((f['model'], f['pk']))
+    # Invoice claim rows: the heuristic wiring runs after this pass and
+    # skips archived jobs, but deposit credits claim their deposit line at
+    # build_invoices time — drop those here so an archived job carries no
+    # source rows by construction (spec §6), not by phase ordering.
+    archived_invoices = {f['pk'] for f in fx if f['model'] == 'invoicing.invoice'
+                         and f['fields'].get('job') in outcome}
+    archived_lines = {f['pk'] for f in fx if f['model'] == 'invoicing.invoicelineitem'
+                      and f['fields'].get('invoice') in archived_invoices}
+    for f in fx:
+        if (f['model'] == 'invoicing.invoicelineitemsource'
+                and f['fields'].get('invoice_line_item') in archived_lines):
+            drop.add((f['model'], f['pk']))
     c.fixture_data = [f for f in fx if (f['model'], f['pk']) not in drop]
 
 
@@ -1840,6 +1853,31 @@ def build_invoices(c):
         all_pairs.append((current_container, current_lis))
 
     # ------------------------------------------------------------------
+    # 2a. Deposits (convert.md §4 "Deposits"): FreeAgent deposit invoices
+    #     are never named by the Estimates sheet, so they join a job by the
+    #     job number in their line's description, or by the deduction that
+    #     names them. The plan also decides which deductions become real
+    #     credits (claiming their deposit line) and which stay plain lines.
+    # ------------------------------------------------------------------
+    spine_numbers = {}
+    for base_ref in c.jobs:
+        n = DEP.ref_number(P.base_reference(base_ref))
+        if n is not None:
+            spine_numbers[n] = base_ref
+    plan = DEP.plan_deposits(
+        all_pairs, spine_numbers, dict(inv_ref_to_base),
+        lambda container: _map_invoice_status(
+            (container.get('Status') or '').strip(), container.get('Paid Date')))
+    for ref_str, base_ref in plan.placed.items():
+        if ref_str not in inv_ref_to_job:
+            inv_ref_to_job[ref_str] = c.jobs[base_ref]['job_pk']
+            inv_ref_to_base[ref_str] = base_ref
+    c.deposit_summary = dict(plan.counts)
+    li_pk_by_key = {}    # (invoice ref, line index) -> invoicelineitem pk
+    lines_by_ref = {str(cont.get('Reference') or '').strip(): lrs
+                    for cont, lrs in all_pairs}
+
+    # ------------------------------------------------------------------
     # 3. Emit matched invoices and their line items
     # ------------------------------------------------------------------
     for container, lis in all_pairs:
@@ -1855,10 +1893,13 @@ def build_invoices(c):
         status = _map_invoice_status(fa_status, paid_date)
 
         # Invoice-stage 'Neal's do' jobs: an invoice may exist but has not
-        # been sent to the customer — force it to draft.
+        # been sent to the customer — force it to draft. Deposit invoices
+        # are exempt: the deposit was sent (and usually paid) long before
+        # the final was drafted, and the deposit pill matters most here.
         card = c.jobs.get(base_ref, {}).get('card', {})
         if ((card.get('Stage') or '').strip().lower() == 'invoice'
-                and _is_neals_swimlane(card)):
+                and _is_neals_swimlane(card)
+                and ref_str not in plan.deposit_invoices):
             status = 'draft'
 
         raw_date = container.get('Date')
@@ -1889,18 +1930,39 @@ def build_invoices(c):
         job_li_total = c.invoice_totals.get(base_ref, Decimal('0'))
         inv_total = Decimal('0')   # this invoice's own line total (for paid amount)
 
-        for li_row in lis:
+        for idx, li_row in enumerate(lis):
             item_type = (li_row.get('Item Type') or '').strip()
             description = str(li_row.get('Description') or '').strip()
-            classification = P.classify_line_item(item_type, description)
+            key = (ref_str, idx)
+            if key in plan.deposit_lines:
+                classification = DEP.KIND_DEPOSIT
+            elif key in plan.credits:
+                classification = DEP.KIND_CREDIT
+            elif key in plan.plain:
+                classification = 'lineitem'      # a credit-like freeform line
+            else:
+                classification = P.classify_line_item(item_type, description)
             if classification == 'skip':
                 continue
 
             line_number += 1
             qty = P.parse_decimal(li_row.get('Quantity'))
             price = P.parse_decimal(li_row.get('Price'))
+            if classification == DEP.KIND_CREDIT:
+                # The app's credit shape: qty 1 at the negated deposit total.
+                dep_ref, dep_idx = plan.credits[key]
+                qty = Decimal('1')
+                price = -DEP.line_amount(lines_by_ref[dep_ref][dep_idx])
+            if classification in (DEP.KIND_DEPOSIT, DEP.KIND_CREDIT):
+                ac_code = 'DEP'
+            elif key in plan.plain:
+                ac_code = 'SVC'
+            else:
+                ac_code = P.pick_invoice_line_ac(item_type, description,
+                                                 classification)
 
             li_pk = c.next_pk('invoicing.invoicelineitem')
+            li_pk_by_key[key] = li_pk
             c.add_fixture('invoicing.invoicelineitem', li_pk, {
                 'invoice':             inv_pk,
                 'inventory_item':     None,
@@ -1912,10 +1974,9 @@ def build_invoices(c):
                 # Every line needs an AC (mirrors the estimate-line rule):
                 # deterministic, plausible pick across the four seeded
                 # categories — DLV/PRD/MTL/SVC by description + Item Type +
-                # classification. build_seed runs first, so ac_by_code is set.
-                'accounting_category': c.ac_by_code.get(
-                    P.pick_invoice_line_ac(item_type, description,
-                                           classification)),
+                # classification; deposit charges and credits take DEP.
+                # build_seed runs first, so ac_by_code is set.
+                'accounting_category': c.ac_by_code.get(ac_code),
             })
             # Stash classification for the source-link builder; the LI model
             # itself has no item_type field, so this is the only place to
@@ -1928,6 +1989,22 @@ def build_invoices(c):
         c.invoice_totals[base_ref] = job_li_total
         if status == 'paid':
             inv_fields['qbo_amount_paid'] = f'{inv_total.quantize(Decimal("0.01")):.2f}'
+
+    # ------------------------------------------------------------------
+    # 4. Deposit claims: each paired credit claims its deposit line. Emitted
+    #    here (not by the heuristic build_invoice_line_item_sources, which
+    #    skips drafts) because a draft final holding a claimed credit is a
+    #    legal app state. Both lines exist: a credit only pairs with a
+    #    placed deposit invoice.
+    # ------------------------------------------------------------------
+    for credit_key, dep_key in sorted(plan.credits.items(),
+                                      key=lambda kv: li_pk_by_key[kv[0]]):
+        row_pk = c.next_pk('invoicing.invoicelineitemsource')
+        c.add_fixture('invoicing.invoicelineitemsource', row_pk, {
+            'invoice_line_item': li_pk_by_key[credit_key],
+            'source_type':       'deposit',
+            'source_pk':         li_pk_by_key[dep_key],
+        })
 
 
 def build_synthetic_estimate_sources(c):

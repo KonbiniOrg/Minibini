@@ -78,7 +78,8 @@ class NealsDataConverter:
         self.cut_task = {}          # base_ref -> task_pk (first task whose name has 'cut')
         self.invoice_totals = {}    # base_ref -> Decimal total of qty*price across job's invoice lines
         self.fake_deliverable_count = 0  # jobs that got a synthetic 'Fake Deliverable'
-        self.invoice_line_kinds = {}  # invoicelineitem pk -> 'task' | 'material' | 'lineitem' | 'skip'
+        self.invoice_line_kinds = {}  # invoicelineitem pk -> 'task' | 'material' | 'lineitem' | 'deposit' | 'deposit_credit'
+        self.deposit_summary = {}     # build_invoices: placed/paired/standalone/skipped/plain counts
 
     # --- fixture plumbing -------------------------------------------------
     def next_pk(self, model):
@@ -191,3 +192,8 @@ class NealsDataConverter:
             print(f'  {n:6} {model}')
         print(f'  {len(c.archived_job_pks)} jobs archived (completed/rejected/cancelled on or before {build.archive_cutoff(c.now):%Y-%m-%d})')
         print(f'  {c.fake_deliverable_count} jobs got a synthetic \'Fake Deliverable\' (review these)')
+        d = c.deposit_summary
+        print(f"  {d.get('placed', 0)} deposit invoices placed "
+              f"({d.get('paired', 0)} paired with a deduction, {d.get('standalone', 0)} standalone); "
+              f"{d.get('skipped', 0)} deposit invoices on non-spine or ambiguous jobs skipped; "
+              f"{d.get('plain', 0)} deductions left as plain lines")
