@@ -194,7 +194,6 @@ The primary UI is a Svelte 5 SPA at `frontend/`, built with Vite and using hash-
 - **API client:** `src/lib/api.js` — handles CSRF tokens, session-based auth (no JWT)
 - **Stores:** `src/stores/auth.js` (user state, login/logout), `src/stores/viewMode.js` (full/lite toggle)
 - **Auth flow:** On mount, checks `/api/auth/me/`. Shows `LoginPage` if unauthenticated, otherwise renders nav + router
-- **No CSS frameworks** — semantic HTML, same conventions as Django templates
 - **Dev:** Vite on `:9000` proxies `/api/*` to Django on `:8000`
 - **Prod:** `npm run build` → `dist/` served by nginx
 
