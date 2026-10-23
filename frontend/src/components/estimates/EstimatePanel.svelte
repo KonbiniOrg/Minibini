@@ -16,6 +16,8 @@
   import { getJobWs, rememberMode } from '../../stores/jobWorkspace.js';
   import { user } from '../../stores/auth.js';
   import LoadState from '../LoadState.svelte';
+  import TabHeader from '../TabHeader.svelte';
+  import EmptyState from '../EmptyState.svelte';
 
   let { job, estimateId, onJobChange = () => {} } = $props();
 
@@ -425,9 +427,11 @@
 {#if estimateId}
   <LoadState loading={docLoading} {error}>
   {#if estimate}
-  <div class="page-body">
-  <div class="toolbar">
-    <span class="page-title" class:superseded={isSuperseded}>Estimate: {estimate.estimate_number}-{estimate.version}</span>
+  <section class="page-body" aria-labelledby="tab-estimate">
+  <TabHeader id="tab-estimate" class="toolbar"
+    title={`Estimate: ${estimate.estimate_number}-${estimate.version}`}
+    muted={isSuperseded}>
+    {#snippet badges()}
     {#if canManageJobs && validNextStatuses.length > 0}
       <span class="status-select-wrapper">
         <!-- value-controlled like JobHeader's pill: selects keep their
@@ -447,6 +451,8 @@
            "accepted", so the CSS class keys off the real status. -->
       <span class="status-badge status-{estimate.status}">{estimate.is_amended ? 'amended' : estimate.status}</span>
     {/if}
+    {/snippet}
+    {#snippet actions()}
     {#if canManageJobs && estimate.status === 'draft'}
       <button type="button" class="action-link" onclick={handleSendEmail}>Send Email</button>
     {/if}
@@ -474,10 +480,12 @@
         {creatingChangeOrder ? 'Creating…' : 'Create Change Order'}
       </button>
     {/if}
+    {/snippet}
+  </TabHeader>
     <!-- Compact date chips (RM 2026-08-09): number/job/status live in the
          header and surrounding context; the parent-revision link is covered
-         by the DocSubnav version pills. Dates only, right end of the title
-         row. -->
+         by the DocSubnav version pills. Dates only — the tab's key numbers,
+         on their own row under the tab header. -->
     <div class="stat-chips doc-stat-chips" class:superseded={isSuperseded}>
       <div class="stat-chip">
         <div class="stat-chip-header">Created</div>
@@ -496,7 +504,6 @@
         <div class="stat-chip-body"><span class:muted={!estimate.closed_date}>{estimate.closed_date ? fmtDate(estimate.closed_date) : '-'}</span></div>
       </div>
     </div>
-  </div>
 
   {#if isSuperseded}
     <p><em>This estimate has been superseded and cannot be modified.</em></p>
@@ -531,25 +538,30 @@
       onReorder={handleReorderDoc}
     />
   {/if}
-  </div>
+  </section>
   {/if}
   </LoadState>
 {:else}
 <LoadState loading={!listLoaded}>
-  <div class="page-body">
+  <section class="page-body" aria-labelledby="tab-estimate">
+    <TabHeader id="tab-estimate" class="toolbar" title="Estimates" titleHidden />
     <!-- Estimates belong to the quoting phase (draft/submitted): on a job
          past that (hand-approved estimate-less, or later) the backend
          refuses the create, so the button hides with a hint instead. -->
     {#if job?.can_manage && (job?.status === 'draft' || job?.status === 'submitted')}
-      <button type="button" onclick={startEstimate} disabled={startingEstimate}>
-        {startingEstimate ? 'Starting…' : 'Start Estimate'}
-      </button>
+      <EmptyState text="No estimates yet. Start one to quote this job.">
+        {#snippet action()}
+          <button type="button" onclick={startEstimate} disabled={startingEstimate}>
+            {startingEstimate ? 'Starting…' : 'Start Estimate'}
+          </button>
+        {/snippet}
+      </EmptyState>
     {:else if job?.can_manage}
-      <p>No estimates. This job is past the estimating phase.</p>
+      <EmptyState text="No estimates. This job is past the estimating phase." />
     {:else}
-      <p>No estimates yet.</p>
+      <EmptyState text="No estimates yet." />
     {/if}
-  </div>
+  </section>
 </LoadState>
 {/if}
 
@@ -576,7 +588,7 @@
   table { border-collapse: collapse; }
   th, td { padding: 6px 10px; }
 
-  /* .toolbar / .action-link / .page-title come from app.css. */
+  /* .toolbar / .action-link come from app.css; the tab header is TabHeader. */
   .status-line { margin: 8px 0 16px; display: flex; align-items: center; gap: 12px; }
   /* Pill styling/colors come from the global .status-badge / .status-{status}
      classes (app.css); the select keeps its local control styling. */

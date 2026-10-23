@@ -214,6 +214,53 @@ just the two idioms every consumer of the kit follows:
   a silent refresh, then show a specific "…refreshed" message via the
   global overlay instead of the generic error text.
 
+### Job tab structure
+
+Every tab of the job page (Overview, Estimates — change orders ride this
+tab — Tasks, Invoices, Shipments, POs, Emails, History) has one semantic
+shape (2026-10-21):
+
+```
+<section class="page-body" aria-labelledby="tab-<name>">   one region per tab
+  <TabHeader id="tab-<name>" title=… {badges} {actions} />  <header><h2>…</h2> badges, actions right
+  key numbers (the document tabs' stat chips), own row
+  <section><h3>Sub-section</h3> … table (thead; tfoot for totals)</section>
+  <EmptyState text="One sentence saying what to do next." {action} />
+</section>
+```
+
+- **Headings:** the job's `<h1>` (JobHeader) → one `<h2>` per tab (the
+  TabHeader title) → `<h3>` per sub-section. No skipped levels; modals are
+  their own outline. Overview's six summary-block titles are `<h3>`s.
+- **`TabHeader.svelte`** (`src/components/`): `id`, `title`, optional
+  `badges` / `actions` snippets, `muted` (superseded document), `class`,
+  `titleHidden`. With `titleHidden` the h2 stays (screen readers, heading
+  order) but isn't shown: Overview, Tasks, Shipments, POs, Emails, and
+  History pass it, because their title only repeats the rail tab. The rail
+  tab is the visible title there (`JobNavRail` marks it `aria-current="page"`
+  and weights it). The document tabs keep a visible title: it's the
+  document's number, not the tab name. With no documents yet, the Estimates
+  and Invoices tabs hide their title too ("Estimates" / "Invoices" only
+  repeats the rail).
+  The document tabs (estimate, change order, invoice) and Tasks pass
+  `class="toolbar"` to keep the shared `.toolbar` button look. Shaped like
+  the shadcn plan's PageHeader so it can be swapped later.
+- **Document tabs:** the document's title ("Estimate: EST-…-2", "CO-3",
+  "Invoice: …") is the h2; status pill/select goes in `badges`;
+  `DocSubnav` stays above the region and `DocModeBar` inside it,
+  unchanged. With no document yet, the h2 is the tab name ("Estimates").
+- **Actions** that persist live in the header's right-hand group. An
+  action that only exists because the tab is empty (Start Estimate, Start
+  Invoice, Add Deposit Invoice) rides the empty state instead.
+- **Empty states:** `EmptyState.svelte` (`text`, optional `action`
+  snippet). A text-only empty list inside a `DataTable` keeps using its
+  `emptyText` (same muted look).
+- **Loading:** `LoadState` everywhere, including the Emails tab.
+
+Tests: `tests/routes/JobTabStructure.test.js` (one case per tab: region,
+h2 in the header, actions in the header, heading order) and
+`e2e/specs/job-tabs-structure.spec.js` (same checks on a seeded job).
+
 ### Timestamps: day names expire after a week
 
 App-wide display convention (RM, 2026-07-06): a bare day name ("Sat
@@ -320,7 +367,14 @@ Clear `formError`/`errors` at submit start and on open/cancel.
 
 - Global styles live in `frontend/src/css/app.css`, imported via `main.js`
   **and** `portal-main.js` — global changes reach the customer portal too.
-- No CSS frameworks. Semantic HTML with minimal global styles.
+- Semantic HTML with minimal global styles.
+- **One app font: Inter.** Self-hosted (`@fontsource-variable/inter`,
+  imported in both entry points), set once on `body` as `var(--font-sans)`
+  with `tabular-nums` (Inter's default digits vary in width; ours don't, so
+  number columns align and counts don't shift nearby controls); form
+  controls inherit it. Components never name their own sans face —
+  only `var(--font-sans)`, `inherit`, or a monospace stack for code-like
+  fields and board figures. `tests/appFont.test.js` enforces this.
 - **app.css is organized in three sections** — (1) BASE: tokens, element
   defaults, utilities, the page frame; (2) SHARED: families any page may use;
   (3) PAGE KINDS: vocabulary tied to the three page categories of the
@@ -476,7 +530,9 @@ Clear `formError`/`errors` at submit start and on open/cancel.
   hand-write a loading/error branch. `TasksPanel` degrades partially by
   design and shows a `role="status"` notice naming what failed; the one
   remaining silent site (`SchedulePage`) is logged in LATER.md.
-- No lite-content decisions yet: no `lite:`/`phone:` flags are set anywhere.
+- Lite-content decisions are just starting: the only `lite:`/`phone:` flags
+  set so far are on the Settings QBO sync log (`components/qbo/QBOSyncLog.svelte`,
+  2026-10-17); every other table renders identically in lite and full.
 - Lite still fetches full data; toggling density re-renders without a refetch.
 - Full reference: `docs/designs/architecture-and-conventions.md` §6.
 
@@ -486,25 +542,28 @@ Clear `formError`/`errors` at submit start and on open/cancel.
   pattern above: one `localStorage` key (`minibini_job_ws`), an
   LRU-capped map (50 jobs) instead of a key-per-job, so retention stays
   trivial. Per job it remembers which document each section (estimate,
-  invoice) last showed, each document's `lines`/`reconcile` mode (keyed
-  by document id, not section), and the job context band's
-  collapsed/expanded state.
+  invoice) last showed, each document's `edit`/`customer`/`reorder` mode
+  (keyed by document id — `est:`/`inv:`/`co:` + id — not section), and
+  the job context band's collapsed/expanded state.
 - The URL is always the source of truth for *what's currently
   displayed* (`#/jobs/:jobId/estimate/:docId`, etc.) — the store only
   answers "where did I leave off" when a bare section route or the
   context band mounts. `getJobWs(jobId)` reads the whole per-job
   record; `rememberSection` / `rememberMode` / `rememberBand` write one
   slice each.
-- Restoring a remembered `reconcile` mode is validated against the
-  document's live status (only offered on a draft) before being
-  applied — see `docs/designs/jobs-and-tasks.md` §9.6.
+- Restoring a remembered mode is validated at the read site: a
+  remembered `reorder` falls back to `edit` when the document can't be
+  edited (not a draft, or no manage rights), and the legacy values
+  `lines`/`reconcile` from the old two-mode panel normalize to `edit`
+  (`EstimatePanel` / `InvoicePanel`) — see `docs/designs/jobs-and-tasks.md`
+  §9.6.
 - Routes: every job section is a real route under `#/jobs/:jobId/…`
   (`estimate[/:docId]`, `invoice[/:docId]`, `tasks[/:taskId]`,
   `shipments`, `pos`, `emails`, `history`). Old top-level document
   routes (`#/estimates/:id`, `#/invoices/:id`, and their `/wizard`
   variants) still resolve — via small redirect-shim route components
   that translate to the job-scoped URL (and, for the wizard variants,
-  remember reconcile mode first) — so existing bookmarks and emitted
+  remember `edit` mode first) — so existing bookmarks and emitted
   links keep working.
 - All `#/jobs/:id[/section]` routes resolve to **one** component,
   `routes/jobs/JobWorkspace.svelte`, registered through a single shared

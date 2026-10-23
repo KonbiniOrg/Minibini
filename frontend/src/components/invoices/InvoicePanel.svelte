@@ -14,6 +14,8 @@
   import { getJobWs, rememberMode } from '../../stores/jobWorkspace.js';
   import { formatMoney } from '../../lib/format.js';
   import LoadState from '../LoadState.svelte';
+  import TabHeader from '../TabHeader.svelte';
+  import EmptyState from '../EmptyState.svelte';
 
   let { job, invoiceId, onJobChange = () => {} } = $props();
 
@@ -402,10 +404,12 @@
 {#if invoiceId}
   <LoadState loading={docLoading} {error}>
   {#if invoice}
-  <div class="page-body">
-  <div class="toolbar">
-    <span class="page-title">Invoice: {invoice.display_number}</span>
+  <section class="page-body" aria-labelledby="tab-invoice">
+  <TabHeader id="tab-invoice" class="toolbar" title={`Invoice: ${invoice.display_number}`}>
+    {#snippet badges()}
     <span class="status-badge status-{invoice.status}">{invoice.status}</span>
+    {/snippet}
+    {#snippet actions()}
     {#if $canManageFinancials}
       {#if allLinesHaveCategory}
         <button type="button" class="action-link" onclick={() => { sendOpen = true; }}>
@@ -423,10 +427,13 @@
         Revise (coming soon)
       </button>
     {/if}
+    {/snippet}
+  </TabHeader>
     <!-- Compact date chips (RM 2026-08-09): number/status live in the header;
-         dates + payment facts ride the right end of the title row. QBO id is
-         a hover title rather than burning a chip on a raw id. closed_date is
-         only ever stamped on the paid transition, so it reads "Paid". -->
+         dates + payment facts are the tab's key numbers, on their own row
+         under the tab header. QBO id is a hover title rather than burning a
+         chip on a raw id. closed_date is only ever stamped on the paid
+         transition, so it reads "Paid". -->
     <div class="stat-chips doc-stat-chips">
       <div class="stat-chip">
         <div class="stat-chip-header">Created</div>
@@ -459,7 +466,6 @@
         </div>
       </div>
     </div>
-  </div>
 
   {#if invoice.status === 'draft' && unappliedCredits.length > 0}
     <div class="deposit-credit-notice">
@@ -502,13 +508,16 @@
       onReorder={handleReorderDoc}
     />
   {/if}
-  </div>
+  </section>
   {/if}
   </LoadState>
 {:else}
 <LoadState loading={!listLoaded}>
-  <div class="page-body">
+  <section class="page-body" aria-labelledby="tab-invoice">
+    <TabHeader id="tab-invoice" class="toolbar" title="Invoices" titleHidden />
     {#if job?.can_manage && jobBillable}
+      <EmptyState text="No invoices yet. Start one to bill this job.">
+      {#snippet action()}
       <button type="button" onclick={startInvoice} disabled={startingInvoice}>
         {startingInvoice ? 'Starting…' : 'Start Invoice'}
       </button>
@@ -527,12 +536,14 @@
           {depositButtonLabel}
         </button>
       {/if}
+      {/snippet}
+      </EmptyState>
     {:else if job?.can_manage}
-      <p>No invoices yet. Invoicing becomes available once the job is approved.</p>
+      <EmptyState text="No invoices yet. Invoicing becomes available once the job is approved." />
     {:else}
-      <p>No invoices yet.</p>
+      <EmptyState text="No invoices yet." />
     {/if}
-  </div>
+  </section>
 </LoadState>
 {/if}
 
@@ -564,7 +575,7 @@
   }
   .new-invoice-btn:hover:not(:disabled) { background: #f1f5f9; }
   .new-invoice-btn:disabled { opacity: 0.6; cursor: default; }
-  /* .toolbar / .action-link / .page-title come from app.css. */
+  /* .toolbar / .action-link come from app.css; the tab header is TabHeader. */
   /* Status pill styling and colors come from the global .status-badge /
      .status-{status} classes (app.css). */
   .late-flag { color: #b91c1c; font-weight: 600; }

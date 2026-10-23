@@ -6,6 +6,7 @@
   import { api, errorMessage } from '../../lib/api.js';
   import LoadState from '../LoadState.svelte';
   import DataTable from '../DataTable.svelte';
+  import TabHeader from '../TabHeader.svelte';
 
   let { job } = $props();
 
@@ -35,12 +36,13 @@
   }
 </script>
 
-<div class="page-body">
+<section class="page-body" aria-labelledby="tab-pos">
+  <TabHeader id="tab-pos" title="Purchase orders" titleHidden />
   <LoadState {loading} error={errorMsg}>
     <DataTable
       rows={purchaseOrders}
       key={(po) => po.po_id}
-      emptyText="No purchase orders touch this job yet."
+      emptyText="No purchase orders touch this job yet. Order its materials from Purchasing."
       columns={[
         { id: 'number', label: 'PO #',   cell: numberCell },
         { id: 'status', label: 'Status', cell: statusCell },
@@ -49,7 +51,7 @@
       ]}
     />
   </LoadState>
-</div>
+</section>
 
 
 {#snippet numberCell(po)}<a href={`#/purchase-orders/${po.po_id}`}>{po.po_number}</a>{/snippet}

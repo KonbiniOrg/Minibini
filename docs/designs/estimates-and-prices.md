@@ -3360,8 +3360,9 @@ rule (§12 intro).
 its drafting modal — renders only when `mode === 'edit'`; Customer and
 Reorder are read-only document projections and never show it.
 
-**Date chips.** The toolbar carries the same `.stat-chips doc-stat-chips`
-strip as the estimate/invoice panels — Created / Sent / Expires / Closed,
+**Date chips.** The tab carries the same `.stat-chips doc-stat-chips`
+strip as the estimate/invoice panels (its own row under the `TabHeader`
+since 2026-10-21 — see `frontend/README.md` → "Job tab structure") — Created / Sent / Expires / Closed,
 `fmtDate(co.{created,sent,expiration,closed}_date)`, muted `-` when a date
 is null — always rendered once the CO is loaded.
 

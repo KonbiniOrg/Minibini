@@ -23,6 +23,6 @@
 {/if}
 
 <style>
-  .portal { max-width: 720px; margin: 2em auto; font-family: sans-serif; }
+  .portal { max-width: 720px; margin: 2em auto; }
   .err { color: #b00; }
 </style>

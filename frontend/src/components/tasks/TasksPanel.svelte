@@ -15,6 +15,8 @@
   import Modal from '../Modal.svelte';
   import BundleModal from '../docsurface/BundleModal.svelte';
   import LoadState from '../LoadState.svelte';
+  import TabHeader from '../TabHeader.svelte';
+  import EmptyState from '../EmptyState.svelte';
 
   let { job, onJobChange = () => {} } = $props();
 
@@ -602,14 +604,9 @@
 </script>
 
 <LoadState {loading}>
-  <div class="page-body">
-  {#if loadFailures.length}
-    <p class="load-degraded" role="status">
-      Some details couldn't be loaded ({loadFailures.join(', ')}). Tasks are shown without them.
-      <button type="button" onclick={loadPanelData}>Retry</button>
-    </p>
-  {/if}
-  <div class="toolbar">
+  <section class="page-body" aria-labelledby="tab-tasks">
+  <TabHeader id="tab-tasks" class="toolbar" title="Tasks" titleHidden>
+    {#snippet actions()}
     {#if !jobLocked}
       {#if !job?.on_hold}
         <button type="button" onclick={() => { pickerOpen = true; }}>Add Work</button>
@@ -634,7 +631,14 @@
         Bundle {selected.length} selected into a line…
       </button>
     {/if}
-  </div>
+    {/snippet}
+  </TabHeader>
+  {#if loadFailures.length}
+    <p class="load-degraded" role="status">
+      Some details couldn't be loaded ({loadFailures.join(', ')}). Tasks are shown without them.
+      <button type="button" onclick={loadPanelData}>Retry</button>
+    </p>
+  {/if}
   {#if canBundle}
     <p class="estimate-context">
       Bundling into estimate {draftEstimate.estimate_number} (draft) —
@@ -651,6 +655,11 @@
     </p>
   {/if}
 
+  {#if enrichedTasks.length === 0 && jobMaterials.length === 0 && jobExpenses.length === 0}
+    <EmptyState text={!jobLocked && !job?.on_hold
+      ? 'No tasks yet. Use Add Work to plan this job.'
+      : 'No tasks on this job.'} />
+  {:else}
   <TaskTree
     tasks={enrichedTasks}
     {jobMaterials}
@@ -685,6 +694,7 @@
     bundleClaimedLabel={draftCO ? 'on change order' : 'estimated'}
     bundleClaimedTitle={draftCO ? 'Already on the draft change order' : 'Already on the draft estimate'}
   />
+  {/if}
 
   <!-- Modals -->
   <WorkItemForm
@@ -783,13 +793,13 @@
     onConflict={handleBundleConflict}
     onClose={() => { bundleModalOpen = false; }}
   />
-  </div>
+  </section>
 </LoadState>
 
 <style>
   .load-degraded { background: #fff7e6; border: 1px solid #f0c060; padding: 6px 10px; margin-bottom: 8px; }
   .load-degraded button { margin-left: 8px; }
-  /* .toolbar (and its buttons) come from app.css. */
+  /* .toolbar (and its buttons) come from app.css; the tab header is TabHeader. */
 
   .estimate-context { color: #888; font-size: 13px; margin: 4px 0 12px; }
 

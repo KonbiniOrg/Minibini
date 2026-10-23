@@ -1,5 +1,5 @@
 // Per-job workspace position: which document each section last showed, each
-// document's lines/reconcile mode, and the context band's collapse state.
+// document's edit/customer/reorder mode, and the context band's collapse state.
 // ONE localStorage key holding an LRU-capped map (retention stays trivial).
 // URLs are the source of truth for what's displayed; this store only answers
 // "where did I leave off?" when a bare section route or the band mounts.

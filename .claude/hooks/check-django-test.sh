@@ -12,11 +12,17 @@
 # a rule trips, stays silent otherwise.
 input=$(cat)
 c=$(printf '%s' "$input" | jq -r '.tool_input.command // ""' 2>/dev/null)
-case "$c" in
-  *"manage.py test"*) ;;
-  *) exit 0 ;;
-esac
+# Only an actual `manage.py test` invocation counts: quoted text is dropped
+# first, so `pgrep -f "manage.py test"` or `grep "manage.py test"` pass, and
+# `test` must be the whole subcommand (not `testserver`). Commands wrapped in
+# a quoted `bash -c "..."` are not seen.
+unquoted=$(printf '%s' "$c" | sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g")
+printf '%s' "$unquoted" | grep -Eq '(^|[[:space:];&|(/])manage\.py[[:space:]]+test([[:space:]]|$)' || exit 0
 deny() {
+  # Personal hook log (~/.claude/hooks/hook-log.sh), when this machine has it.
+  if [ -f "$HOME/.claude/hooks/hook-log.sh" ]; then
+    . "$HOME/.claude/hooks/hook-log.sh" && hook_log check-django-test deny "$c"
+  fi
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$1"
   exit 0
 }

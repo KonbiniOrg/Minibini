@@ -2103,7 +2103,7 @@ task, so the table stripes alternate task groups in CSS
 
 **Table exemplar (design-system workstream).** The Tasks table is the first
 table with the readability conventions other tables will adopt one at a time:
-Inter via `--font-sans`; one 14px text size (`--text-sm`) for cells, headers,
+Inter (the app font, `--font-sans`); one 14px text size (`--text-sm`) for cells, headers,
 tags, and buttons; muted text `--text-muted` (#666, AA on the yellow bands);
 bold only in headers; status tags as outlined pills (label in body colour,
 colour on dot and border); buttons in the style of shadcn's Button
@@ -2461,9 +2461,10 @@ old `COLineItemsSection.svelte` and the diff builders it read
 "last-remembered document" / "restore where I left off" behavior above
 reads and writes. One `localStorage` key (`minibini_job_ws`) holds an
 LRU-capped map (50 jobs) of, per job: which document each section last
-showed (`sections`), each document's lines/reconcile mode (`modes`,
-keyed by *document* id, not section — so leaving invoice #22 in
-reconcile mode can't leak into invoice #23), and the context band's
+showed (`sections`), each document's edit/customer/reorder mode
+(`modes`, keyed by *document* id — `est:`/`inv:`/`co:` + id — not
+section — so leaving invoice #22 in reorder mode can't leak into
+invoice #23), and the context band's
 collapse state (`band`). The URL is always the source of truth for
 *what's currently displayed*; the store only answers "where did I
 leave off" when a bare section route or the band mounts.
@@ -2476,31 +2477,33 @@ preview (`EmailPanel`). It fetches nothing while collapsed; expanding
 it triggers the one-time `/api/emails/?job=` fetch. Collapse state
 persists per job via `rememberBand`, read back by `getJobWs` on mount.
 
-**Reconcile mode is a mode of the document panel, not a route.**
-`EstimatePanel` / `InvoicePanel` each hold a `mode` state (`'lines'` |
-`'reconcile'`) and render the shared `ReconcileMode.svelte`
-(`components/wizards/`) — the former `EstimateWizardPage` /
-`InvoiceWizardPage` two-column source-pool ⇄ line-items surface,
-unchanged in behavior, now parameterized per `docType` — in place of
-the line-items view. Toggling calls `rememberMode(jobId, docId, mode)`;
-restoring a remembered `'reconcile'` mode is **validated against the
-document's live status** — reconcile is only offered on a draft, so a
-document that was sent/accepted/superseded since the mode was last
-remembered falls back to `'lines'` rather than resurrecting an editing
-surface on a closed document. This delivers two standing LATER.md
-wizard entries by construction (one component, one in-place toggle,
-same panel, same job load): merging the atom-pull view into the detail
-page as a toggle, and making the Estimate/Invoice atom-pull UIs
-consistent with each other.
+**Document modes are a mode of the document panel, not a route.**
+`EstimatePanel` / `InvoicePanel` / `ChangeOrderPanel` each hold a `mode`
+state (`'edit'` | `'customer'` | `'reorder'`), switched in place by
+`DocModeBar` — the docsurface kit's three-mode surface
+(`architecture-and-conventions.md` §5.5b). It replaced (2026-08-08) the
+earlier two-mode `'lines'` | `'reconcile'` toggle and its
+`ReconcileMode.svelte` (`components/wizards/`, deleted in `27cc1c10`),
+which had itself absorbed the former `EstimateWizardPage` /
+`InvoiceWizardPage` — delivering two standing LATER.md wizard entries
+by construction: merging the atom-pull view into the detail page, and
+making the Estimate/Invoice atom-pull UIs consistent with each other.
+Toggling calls `rememberMode(jobId, docKey, mode)`; restoring a
+remembered mode is **validated at the read site** — a remembered
+`'reorder'` falls back to `'edit'` when the document can't be edited
+(not a draft, or no manage rights), so a closed document never
+resurrects an editing surface, and the legacy values `'lines'` /
+`'reconcile'` still sitting in users' `localStorage` normalize to
+`'edit'` (estimate and invoice panels).
 
 **Redirect shims** keep every old bookmark and emitter working:
 
 | Old route | Shim | Lands on |
 |---|---|---|
 | `#/estimates/:id` | `EstimateDetailPage.svelte` (now a ~12-line redirect) | `#/jobs/:jobId/estimate/:id` |
-| `#/estimates/:id/wizard` | `EstimateWizardRedirect.svelte` | same, after `rememberMode(job, id, 'reconcile')` — lands in reconcile mode |
+| `#/estimates/:id/wizard` | `EstimateWizardRedirect.svelte` | same, after `rememberMode(job, 'est:' + id, 'edit')` — lands in edit mode |
 | `#/invoices/:id` | `InvoiceDetailPage.svelte` (now a ~12-line redirect) | `#/jobs/:jobId/invoice/:id` |
-| `#/invoices/:id/wizard` | `InvoiceWizardRedirect.svelte` | same, remembering reconcile mode first |
+| `#/invoices/:id/wizard` | `InvoiceWizardRedirect.svelte` | same, remembering edit mode first |
 | `#/jobs/:id/edit`, `#/jobs/:id/duplicate` | `JobRedirectToOverview.svelte` | `#/jobs/:id` |
 
 `Job.nav_targets` (the `SerializerMethodField` the old rail used to

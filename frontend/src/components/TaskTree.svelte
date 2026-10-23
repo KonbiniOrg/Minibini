@@ -272,7 +272,7 @@
   .task-tree-table :global(.drag-preview) {
     display: flex; align-items: center; gap: 8px;
     max-width: 420px; padding: 6px 12px;
-    font-family: var(--font-sans); font-size: var(--text-sm); color: var(--text-fg);
+    font-size: var(--text-sm); color: var(--text-fg);
     background: #fff; border: 1px solid #8f8f8f; border-radius: 6px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); cursor: grabbing;
   }
@@ -292,9 +292,7 @@
      inert tokens in app.css. Rules: one text size (14px), one muted grey that
      passes AA on the yellow bands, bold only in headers, tags are outlined
      pills and buttons are bordered rectangles (shadcn outline/sm). */
-  /* Inter in this table only: much narrower than the page's Verdana, so cells
-     wrap less; buttons inherit it (font-family: inherit below). */
-  .task-tree-table { color: var(--text-fg); font-family: var(--font-sans); }
+  .task-tree-table { color: var(--text-fg); }
   .task-tree-table :global(td) { font-size: var(--text-sm); }
   .task-tree-table :global(.material-row.consumed),
   .task-tree-table :global(.material-row.released) { color: var(--text-muted); }
@@ -326,7 +324,7 @@
     /* shadcn Button variant="outline" size="sm": fixed 28px height, soft
        border (#8f8f8f, 3.3:1 — visible as a control), white, grey on hover. */
     display: inline-flex; align-items: center; box-sizing: border-box; height: 28px;
-    font-family: inherit; font-size: var(--text-sm); line-height: 1;
+    font-size: var(--text-sm); line-height: 1;
     padding: 0 10px; margin: 2px 4px 2px 0;
     border: 1px solid #8f8f8f; border-radius: 6px; background: #fff;
     color: var(--text-fg); cursor: pointer;

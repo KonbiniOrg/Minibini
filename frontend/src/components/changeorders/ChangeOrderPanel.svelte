@@ -24,6 +24,7 @@
   import { buildDeliverableRows } from '../../lib/changeOrderDiff.js';
   import { getJobWs, rememberMode } from '../../stores/jobWorkspace.js';
   import LoadState from '../LoadState.svelte';
+  import TabHeader from '../TabHeader.svelte';
 
   let {
     job,
@@ -383,11 +384,13 @@
     <DocSubnav items={subnavItems} section="estimate" />
   {/if}
 
-  <div class="page-body">
-  <!-- CO toolbar -->
-  <div class="toolbar">
-    <span class="page-title">{co.change_order_number || `CO #${co.change_order_id}`}</span>
+  <section class="page-body" aria-labelledby="tab-change-order">
+  <TabHeader id="tab-change-order" class="toolbar"
+    title={co.change_order_number || `CO #${co.change_order_id}`}>
+    {#snippet badges()}
     <span class="status-badge status-{co.status}">{changeOrderDisplayStatus(co, siblingCOs)}</span>
+    {/snippet}
+    {#snippet actions()}
     {#if canManageJobs}
       {#if isDraft}
         <button type="button" onclick={handleSaveButton} disabled={actionBusy}>
@@ -416,10 +419,12 @@
         </button>
       {/if}
     {/if}
+    {/snippet}
+  </TabHeader>
     <!-- Compact date chips (mirrors EstimatePanel): number/job/status live in
          the header and surrounding context; the parent-revision link is
-         covered by the DocSubnav version pills. Dates only, right end of the
-         title row. -->
+         covered by the DocSubnav version pills. Dates only — the tab's key
+         numbers, on their own row under the tab header. -->
     <div class="stat-chips doc-stat-chips">
       <div class="stat-chip">
         <div class="stat-chip-header">Created</div>
@@ -438,7 +443,6 @@
         <div class="stat-chip-body"><span class:muted={!co.closed_date}>{co.closed_date ? fmtDate(co.closed_date) : '-'}</span></div>
       </div>
     </div>
-  </div>
 
   <DocModeBar {mode} onMode={setMode} {modes} labels={modeLabels} />
 
@@ -474,7 +478,7 @@
       onReorder={handleReorderDoc}
     />
   {/if}
-  </div>
+  </section>
 {/if}
 </LoadState>
 
@@ -513,10 +517,10 @@
   .error { color: #a8071a; padding: 16px; }
   .start-new-buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 
-  /* .toolbar / .page-title come from app.css. */
+  /* .toolbar comes from app.css; the tab header is TabHeader. */
 
-  /* Pushes Discard to the far right in the draft toolbar */
-  .toolbar-spacer { flex: 1; }
+  /* Sets Discard apart from the draft's other actions. */
+  .toolbar-spacer { width: 16px; }
 
   /* Status pill styling and colors come from the global .status-badge /
      .status-{status} classes (app.css). */

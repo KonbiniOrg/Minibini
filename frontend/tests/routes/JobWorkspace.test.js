@@ -126,7 +126,7 @@ describe('JobWorkspace routing (persistent shell)', () => {
     expect(container.querySelector('.context-band')).not.toBeNull();
     expect(container.querySelector('.rail-link.active').dataset.section).toBe('estimate');
     await findByText('Line items');
-    await waitFor(() => expect(container.querySelector('.page-title')).toHaveTextContent('CO-5'));
+    await waitFor(() => expect(within(container).queryByRole('heading', { level: 2 })).toHaveTextContent('CO-5'));
   });
 
   it('refetches when the job itself changes', async () => {
@@ -178,12 +178,12 @@ describe('JobWorkspace sections', () => {
 
   it('shipments: shell + shipments panel', async () => {
     const { findByText } = await mountAt('#/jobs/3/shipments');
-    expect(await findByText('This job has no deliverables yet.')).toBeInTheDocument();
+    expect(await findByText('This job has no deliverables yet. Add deliverables to the job before shipping.')).toBeInTheDocument();
   });
 
   it('pos: shell + job-filtered PO panel', async () => {
     const { findByText } = await mountAt('#/jobs/3/pos');
-    expect(await findByText('No purchase orders touch this job yet.')).toBeInTheDocument();
+    expect(await findByText('No purchase orders touch this job yet. Order its materials from Purchasing.')).toBeInTheDocument();
     expect(api.get).toHaveBeenCalledWith('/api/purchase-orders/?job=3');
   });
 

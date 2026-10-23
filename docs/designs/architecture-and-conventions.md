@@ -750,7 +750,7 @@ correct: `revise_estimate` is a faithful copy of an existing revision
 - Vite dev server on `:9000` proxying `/api/*` to Django on `:8000`;
   prod build emits `dist/` served by nginx.
 - Hash-based routing via `svelte-spa-router`.
-- No CSS framework; semantic HTML and per-component `<style>` blocks.
+- Semantic HTML and per-component `<style>` blocks.
 
 **Second Vite entry — customer portal.** `frontend/portal/` is a
 separate entry point (listed in `vite.config.js`
@@ -923,6 +923,19 @@ the 2026-07-08 workspace-restructure design):
    existed and was retired, in case a future surface reaches for the
    same shape again.
 
+**Job tab structure (2026-10-21).** Every section body inside
+`JobShell` (the eight rail tabs; change orders ride Estimates) renders the
+same shape: a `<section class="page-body" aria-labelledby>` region whose
+first child is `TabHeader` (`<header>` with the tab's one `<h2>`, badges,
+then actions on the right), then key numbers (the document tabs' stat
+chips, on their own row), then `<h3>` sub-sections, with empty states
+through `EmptyState`. Heading order is h1 (JobHeader) → h2 (tab) → h3
+(sub-section), never skipped. The document tabs keep `DocSubnav` (above
+the region) and `DocModeBar` (inside it) as they were; the docsurface
+kit's sub-section headings (`Line Items`, `Deliverables`, the customer
+views' document title, the uncovered-work pool) stay `<h3>`. Details and
+the component API: `frontend/README.md` → "Job tab structure".
+
 **Detailed pages** (the skip-list for generic sweeps — keep current as
 passes complete):
 
@@ -987,7 +1000,9 @@ page-specific names or references:
 `frontend/src/components/docsurface/` holds a ten-component kit
 shared by the estimate, invoice, **and change-order** editing surfaces
 (the CO panel grew the same mode bar 2026-08-09 — see
-`docs/plans/2026-08-06-better-fees.md` §9.3). It replaced the old
+`docs/plans/2026-08-06-better-fees.md` §9.3, a shipped plan deleted
+2026-08-17; read it with `git show bb266817^:docs/plans/2026-08-06-better-fees.md`).
+It replaced the old
 two-column `ReconcileMode` wizard presentation (§5.5a's job-page
 taxonomy, above) in the 2026-08-08 "skeleton phase": estimates and
 invoices both moved from a two-mode ("lines"/"reconcile") panel to a
@@ -996,7 +1011,7 @@ place at one URL. Once a document leaves draft (or the viewer lacks
 manage rights) the surface is read-only: Reorder drops out and the
 Edit mode relabels to **Detail** (same component, `canEdit=false`;
 RM 2026-08-09) — the bar reads Detail / Customer. Design authority:
-`docs/plans/2026-08-06-better-fees.md` §9 and its wireframe artifact;
+`docs/plans/2026-08-06-better-fees.md` §9 (in git history, as above) and its wireframe artifact;
 build-to-the-artifact was the standing instruction for this work.
 Consumer detail: `estimates-and-prices.md` §12 (estimate) and §14.9a
 (change order — its Customer mode uses `COCustomerView`, a
@@ -1237,7 +1252,8 @@ blep wrapper.
 ## 6. View mode: density and layout
 
 Two independent axes (design: `docs/plans/2026-10-08-view-mode-seams.md`,
-2026-10-08):
+2026-10-08 — a shipped plan deleted 2026-10-18; read it with
+`git show 604712c3^:docs/plans/2026-10-08-view-mode-seams.md`):
 
 - **Density** — `lite` / `full`. A *user preference* about how much data is
   in front of them: some people want everything, some want only what the
@@ -1370,9 +1386,10 @@ question. There is no layout toggle: layout is a device fact.
 
 Done (2026-10, `feature/lite-view`): both stores, `DataTable`, `LoadState`
 at every fetch site, all plain list tables migrated, header-less
-label/value tables converted to `<dl>`. **No lite-content decisions have
-been made**: no migrated table sets a `lite`/`phone` flag, so lite and full
-currently render identical lists. RM is finishing the Full UI first; the
+label/value tables converted to `<dl>`. **Lite-content decisions are just
+starting**: the only table that sets `lite`/`phone` flags is the Settings
+QBO sync log (`components/qbo/QBOSyncLog.svelte`, 2026-10-17); every other
+table renders identically in lite and full. RM is finishing the Full UI first; the
 per-page lite inventory (spec §7) then decides the flags. Remaining after
 that: the phone shell and its `phone: false` flags, toggle consolidation,
 server-side density persistence.
@@ -1908,7 +1925,8 @@ the stub resolution flips to signed tokens when that work lands.
 
 `GET /api/setup/status/` (`apps/core/setup_gates.gate_status`) returns
 per-area `{available, message}` from **live predicates** (no stored flag;
-spec: docs/plans/qbo-setup-import-spec.md Part 3). Consumers:
+spec: docs/plans/qbo-setup-import-spec.md Part 3 — deleted 2026-07-26;
+`git show 3592b7ef^:docs/plans/qbo-setup-import-spec.md`). Consumers:
 `stores/setupStatus.js` (refreshed on auth and after gate-flipping
 actions), the Sidebar (unavailable entries render as greyed spans with a
 `SetupCallout` floating hint on hover), an App-level route guard
@@ -2057,9 +2075,10 @@ Concrete items, smallest first:
   belongs on the service.
 
 - **View-mode rollout.** Plumbing and the list-table consolidation are in
-  (§6); lite still shows everything. Remaining, in order: Full UI work,
-  then the per-page lite inventory (`docs/plans/2026-10-08-view-mode-seams.md`
-  §7) sets `lite:` flags, then the phone shell, toggle consolidation, and
+  (§6); lite still shows everything except the QBO sync log's flagged
+  columns (§6.4). Remaining, in order: Full UI work, then the per-page lite
+  inventory (`docs/plans/2026-10-08-view-mode-seams.md` §7, in git history —
+  see §6) sets `lite:` flags, then the phone shell, toggle consolidation, and
   server-side density persistence.
 
 - **Pick a signals-vs-services convention.** `apps/jobs/signals.py` is
