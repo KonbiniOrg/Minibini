@@ -4,12 +4,6 @@ on:
   push:
     branches: [main]
 
-# One staging deploy at a time. A newer push replaces a queued (not yet
-# started) deploy; a running deploy is never cancelled mid-migrate.
-concurrency:
-  group: deploy-staging
-  cancel-in-progress: false
-
 # Deploys run `docker compose` against one server; never let two overlap.
 concurrency:
   group: deploy-staging
