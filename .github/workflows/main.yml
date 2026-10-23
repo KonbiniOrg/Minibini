@@ -1,9 +1,8 @@
 name: CI/CD – Application with Docker
 
 on:
-  pull_request:
+  push:
     branches: [main]
-    types: [closed]
 
 # Deploys run `docker compose` against one server; never let two overlap.
 concurrency:
