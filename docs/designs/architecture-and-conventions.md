@@ -923,6 +923,19 @@ the 2026-07-08 workspace-restructure design):
    existed and was retired, in case a future surface reaches for the
    same shape again.
 
+**Job tab structure (2026-10-21).** Every section body inside
+`JobShell` (the eight rail tabs; change orders ride Estimates) renders the
+same shape: a `<section class="page-body" aria-labelledby>` region whose
+first child is `TabHeader` (`<header>` with the tab's one `<h2>`, badges,
+then actions on the right), then key numbers (the document tabs' stat
+chips, on their own row), then `<h3>` sub-sections, with empty states
+through `EmptyState`. Heading order is h1 (JobHeader) → h2 (tab) → h3
+(sub-section), never skipped. The document tabs keep `DocSubnav` (above
+the region) and `DocModeBar` (inside it) as they were; the docsurface
+kit's sub-section headings (`Line Items`, `Deliverables`, the customer
+views' document title, the uncovered-work pool) stay `<h3>`. Details and
+the component API: `frontend/README.md` → "Job tab structure".
+
 **Detailed pages** (the skip-list for generic sweeps — keep current as
 passes complete):
 

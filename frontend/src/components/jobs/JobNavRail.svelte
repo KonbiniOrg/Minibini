@@ -29,6 +29,7 @@
         class="rail-link"
         class:overview={s.key === 'overview'}
         class:active={current === s.key}
+        aria-current={current === s.key ? 'page' : undefined}
         data-section={s.key}
         href={s.href}
       >{s.label}</a>
@@ -71,7 +72,10 @@
     border-bottom: 2px solid transparent;
   }
   .rail-link:hover { color: #1f2937; }
-  .rail-link.active { color: #1f2937; border-bottom-color: #1f2937; }
+  .rail-link.active { color: #111827; border-bottom: 3px solid #111827; }
+  /* The current tab is the page's title (tabs with no visible heading of their
+     own hide their h2), so it carries title weight. */
+  .rail-link.active { font-weight: 800; }
   /* Overview is first among the sections but set apart: it's "up a level",
      not a sibling document category. */
   .rail-link.overview { margin-right: 32px; }

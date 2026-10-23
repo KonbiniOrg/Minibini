@@ -25,6 +25,12 @@ describe('JobNavRail', () => {
     expect(getByRole('link', { name: 'Tasks' })).not.toHaveClass('active');
   });
 
+  it('marks the current section as the page (aria-current) — the tab is the title', () => {
+    const { getByRole } = render(JobNavRail, { props: { job, current: 'tasks' } });
+    expect(getByRole('link', { name: 'Tasks' })).toHaveAttribute('aria-current', 'page');
+    expect(getByRole('link', { name: 'Overview' })).not.toHaveAttribute('aria-current');
+  });
+
   it('marks a non-overview section active', () => {
     const { getByRole } = render(JobNavRail, { props: { job, current: 'invoice' } });
     expect(getByRole('link', { name: 'Invoices' })).toHaveClass('active');

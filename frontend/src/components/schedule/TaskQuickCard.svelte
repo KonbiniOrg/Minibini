@@ -225,7 +225,6 @@
     position: relative; width: 360px; max-width: 92vw;
     background: #fff; border-radius: 10px; overflow: hidden;
     box-shadow: 0 12px 40px rgba(0,0,0,0.25);
-    font-family: ui-sans-serif, system-ui, sans-serif;
   }
   .card-accent { height: 5px; }
   .close {

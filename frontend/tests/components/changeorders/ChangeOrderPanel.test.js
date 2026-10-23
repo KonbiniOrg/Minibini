@@ -620,11 +620,11 @@ describe('ChangeOrderPanel nav-list freshness', () => {
     });
     const navFetches = () => api.get.mock.calls.filter(([u]) => u.startsWith('/api/estimates/?job=')).length;
     const { rerender, container } = render(ChangeOrderPanel, { props: { job: JOB, coId: 3 } });
-    await waitFor(() => expect(container.querySelector('.page-title')).toHaveTextContent('CO-3'));
+    await waitFor(() => expect(within(container).queryByRole('heading', { level: 2 })).toHaveTextContent('CO-3'));
     await waitFor(() => expect(navFetches()).toBe(1));
 
     await rerender({ job: JOB, coId: 4 });
-    await waitFor(() => expect(container.querySelector('.page-title')).toHaveTextContent('CO-4'));
+    await waitFor(() => expect(within(container).queryByRole('heading', { level: 2 })).toHaveTextContent('CO-4'));
     await waitFor(() => expect(navFetches()).toBe(2));
   });
 });

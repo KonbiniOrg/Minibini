@@ -123,9 +123,9 @@
 
 </script>
 
-<section class="section">
+<section class="section" aria-labelledby="co-deliverables-title">
   <div class="section-head">
-    <h3>Deliverables</h3>
+    <h3 id="co-deliverables-title">Deliverables</h3>
     <span class="spacer"></span>
     {#if canEdit}
       <button type="button" onclick={openNew}>+ New deliverable</button>
