@@ -172,6 +172,11 @@ def build_seed(c):
     from nealsdata.converter.loaders import load_seed_records
 
     records = load_seed_records(c.seed_path)
+    limit = getattr(c, 'seed_user_limit', None)
+    if limit is not None:
+        users = [r for r in records if r['model'] == 'core.user']
+        dropped = {id(r) for r in users[limit:]}
+        records = [r for r in records if id(r) not in dropped]
     for rec in records:
         model = rec['model']
         fields = rec['fields']
@@ -2465,6 +2470,26 @@ def _dataset_now(c):
     return newest or datetime(_FALLBACK_YEAR, 12, 31, tzinfo=timezone.utc)
 
 
+# Bleps are invented only for jobs that start on or after this many days
+# before the dataset's newest date (RM 2026-10-22).
+_BLEP_CUTOFF_DAYS = 21
+
+
+def _blep_clock(c):
+    """(newest_date, now) for blep placement.
+
+    Dataset dates are stored as midnight UTC and mean that whole calendar day,
+    so the newest date is a full local workday: `now` is that day's workday
+    end. Clamped to the end of the converter's run day (local) — bleps may be
+    stamped later on the day the converter runs, never after it.
+    """
+    newest_date = _dataset_now(c).astimezone(timezone.utc).date()
+    run_day = c.now.astimezone(_WORKDAY_TZ).date()
+    run_day_end = datetime.combine(run_day + timedelta(days=1), time(0, 0),
+                                   tzinfo=_WORKDAY_TZ).astimezone(timezone.utc)
+    return newest_date, min(_workday_dt(newest_date, _WORKDAY_END), run_day_end)
+
+
 def _mint_user(c):
     """Create a new worker user for blep overflow; return its pk.
 
@@ -2580,8 +2605,15 @@ def build_bleps_and_shifts(c):
     active window, and no user's bleps overlap. Each (user, day) with bleps gets
     one Shift tightly enclosing that day's bleps (so the shift↔blep enclosure
     invariant holds). Runs after reconcile (final task statuses + job dates).
+
+    Every unfinished job (no completed_date) gets bleps across its whole
+    window, however long ago it started. A finished job gets them only when it
+    STARTED on or after the cutoff date (`_BLEP_CUTOFF_DAYS` before the
+    dataset's newest date); one spanning the cutoff gets none, so no finished
+    job is part invented and part real (RM 2026-10-22).
     """
-    now = _dataset_now(c)
+    newest_date, now = _blep_clock(c)
+    cutoff_date = newest_date - timedelta(days=_BLEP_CUTOFF_DAYS)
     job_by_pk = {f['pk']: f['fields']
                  for f in c.fixture_data if f['model'] == 'jobs.job'}
 
@@ -2604,9 +2636,7 @@ def build_bleps_and_shifts(c):
 
         A finished job (has a completed_date) ends when it completed. An
         unfinished/current job (no completed_date — in_progress, work_complete,
-        on_hold) has ongoing work, so its window runs to `now`. That keeps
-        eff_upper >= horizon, so a complete Task on a current job is never skipped
-        by the horizon below — it always gets a supporting blep."""
+        on_hold) has ongoing work, so its window runs to `now`."""
         job = job_by_pk.get(tf['fields']['job'], {})
         lower = (_aware(job.get('start_date'))
                  or _aware(job.get('created_date'))
@@ -2624,11 +2654,15 @@ def build_bleps_and_shifts(c):
                                   _WORKDAY_END)
         return lower, min(now, max(upper, day_end))
 
-    # Three-week horizon: keep the dataset's time-tracking recent, anchored to the
-    # dataset's "now". Finished work older than this is dropped (those jobs are out
-    # of scope). Unfinished jobs always fall inside the window because their window
-    # upper is `now` (see _window) — so their complete Tasks are never orphaned.
-    horizon = now - timedelta(weeks=3)
+    def _in_scope(tf):
+        """True when the task's job is unfinished (no completed_date — exempt
+        from the cutoff), or starts on/after the cutoff date (dates read as
+        their stored UTC calendar day). A job with no dates is in scope."""
+        job = job_by_pk.get(tf['fields']['job'], {})
+        if not job.get('completed_date'):
+            return True
+        start = _aware(job.get('start_date')) or _aware(job.get('created_date'))
+        return start is None or start.astimezone(timezone.utc).date() >= cutoff_date
 
     for counter, tf in enumerate(complete):
         fields = tf['fields']
@@ -2637,31 +2671,20 @@ def build_bleps_and_shifts(c):
 
         # entered_qty complete tasks bill on actual_qty (no bleps drive it), so
         # invent one with the thirds rule vs est_qty (fallback base 1). Set for
-        # EVERY complete task — even an old finished one too old to get a blep
-        # (the horizon skip below) — so nothing can invoice at zero.
+        # EVERY complete task — even one whose job started before the cutoff
+        # and so gets no blep (below) — so nothing can invoice at zero.
         if fields.get('qty_source') == 'entered_qty':
             base = (Decimal(fields['est_qty'])
                     if fields.get('est_qty') not in (None, '') else Decimal('1'))
             actual = (base * P.thirds_factor(counter)).quantize(Decimal('0.01'))
             fields['actual_qty'] = f'{actual:.2f}'
 
-        lower, eff_upper = _window(tf)
-
-        # A FINISHED job whose work ended more than three weeks ago gets no blep
-        # (out of scope). Unfinished jobs never hit this (eff_upper == now). A
-        # survivor that *started* before the horizon is clamped into the window.
-        if eff_upper < horizon:
+        # A finished job that started before the cutoff gets no bleps at all —
+        # not squeezed into the sliver after the cutoff (that compression is
+        # what minted workers: weeks of work crammed into one workday).
+        if not _in_scope(tf):
             continue
-        clamped = max(lower, horizon)
-        if clamped >= eff_upper:
-            # The horizon clamp collapsed the window (a finished job whose
-            # completion sits right at the boundary) — back off to the start
-            # of the job's final local workday so its bleps land there,
-            # instead of the defensive path minting a worker per task at a
-            # single collapsed instant. Never before the job's own start.
-            clamped = max(lower, min(
-                clamped, _workday_dt(_local_date(eff_upper), _BLEP_DAY_START)))
-        lower = clamped
+        lower, eff_upper = _window(tf)
 
         # Blep length: est_worker_time × thirds factor, floored to whole minutes
         # (≥ 1 minute).

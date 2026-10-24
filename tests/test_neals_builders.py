@@ -71,6 +71,25 @@ class BaseBuildersTest(unittest.TestCase):
         self.assertEqual(self.c.ac_by_code.get('SVC'), self.c.ac_svc_pk)
         self.assertIn('Shop labor', self.c.scheme_by_name)
 
+    def test_seed_user_limit_caps_seed_users(self):
+        # seed_user_limit keeps only the first N nealseed users (file order).
+        c = NealsDataConverter(XLSX, CSV, output_path='/tmp/x.json', limit=5,
+                               seed_user_limit=6)
+        build.build_seed(c)
+        names = [u['fields']['username'] for u in c.fixture_data
+                 if u['model'] == 'core.user']
+        self.assertEqual(len(names), 6)
+        self.assertEqual(names[-1], 'system')
+        self.assertEqual(set(c.user_by_username), set(names))
+        self.assertNotIn(c.user_by_username['system'], c.rotation_user_pks)
+
+    def test_seed_user_limit_default_keeps_all_seed_users(self):
+        build.build_seed(self.c)
+        from nealsdata.converter.loaders import load_seed_records
+        seed = [r for r in load_seed_records(self.c.seed_path)
+                if r['model'] == 'core.user']
+        self.assertEqual(len(self._models('core.user')), len(seed))
+
     def test_build_configuration_numbering_keys(self):
         build.build_configuration(self.c)
         config = {f['pk'] for f in self._models('core.configuration')}
@@ -1361,10 +1380,12 @@ class PromoteWorkCompleteJobsTheGateWouldCloseTest(unittest.TestCase):
 
 
 class BlepHorizonTest(unittest.TestCase):
-    """build_bleps_and_shifts only emits bleps within three weeks of the
-    dataset's "now". A FINISHED job (has completed_date) older than that is
-    dropped; an UNFINISHED/current job always bleps its complete Tasks because its
-    window runs to `now`. Synthetic fixture data for exact scenarios."""
+    """build_bleps_and_shifts invents bleps for every unfinished job (no
+    completed_date), and for a finished job only when it STARTED on or after
+    the cutoff date (three weeks before the dataset's newest date) — a finished
+    job spanning the cutoff gets no bleps at all, so none is part-invented. The blep clock runs to the end of the
+    newest date's local workday, never past the end of the converter's run
+    day. Synthetic fixture data for exact scenarios."""
 
     def _make_converter(self):
         c = NealsDataConverter('/dev/null', '/dev/null', output_path='/tmp/x.json')
@@ -1399,7 +1420,7 @@ class BlepHorizonTest(unittest.TestCase):
 
     def test_old_finished_job_gets_no_blep_recent_one_does(self):
         c = self._make_converter()
-        # now = 2026-06-10 → horizon = 2026-05-20.
+        # newest date 2026-06-10 → cutoff 2026-05-20.
         recent = self._job(c, 'completed', '2026-06-01T00:00:00+00:00',
                            '2026-06-10T00:00:00+00:00')
         rt = self._task(c, recent)
@@ -1411,43 +1432,95 @@ class BlepHorizonTest(unittest.TestCase):
         self.assertIn(rt, task_pks)
         self.assertNotIn(ot, task_pks)
 
-    def test_no_blep_starts_before_the_horizon(self):
+    def test_finished_job_spanning_cutoff_gets_no_bleps(self):
+        # RM 2026-10-22: no part-invented jobs — a job that started before the
+        # cutoff and finished after it is dropped, not squeezed into the
+        # sliver after the cutoff.
         c = self._make_converter()
-        # now = 2026-06-10 (horizon 2026-05-20). A job that started long ago but
-        # completed inside the window is clamped, not skipped.
         recent = self._job(c, 'completed', '2026-06-09T00:00:00+00:00',
                            '2026-06-10T00:00:00+00:00')
         self._task(c, recent)
         straddle = self._job(c, 'completed', '2026-01-01T00:00:00+00:00',
                              '2026-06-05T00:00:00+00:00')
-        self._task(c, straddle)
+        st = self._task(c, straddle)
         build.build_bleps_and_shifts(c)
-        bleps = self._bleps(c)
-        self.assertTrue(bleps)
-        for b in bleps:
-            self.assertGreaterEqual(b['fields']['start_time'][:10], '2026-05-20')
+        task_pks = {b['fields']['task'] for b in self._bleps(c)}
+        self.assertTrue(task_pks)
+        self.assertNotIn(st, task_pks)
 
-    def test_unfinished_job_started_long_ago_still_bleps(self):
-        # The core fix: a long-running in_progress job (started well before the
-        # horizon, no completed_date) must still blep its complete Tasks — its
-        # window runs to `now`, so the horizon never skips it.
+    def test_unfinished_job_is_exempt_from_cutoff(self):
+        # RM 2026-10-22: an unfinished job (no completed_date) bleps its
+        # complete Tasks however long ago it started, across its real window.
         c = self._make_converter()
         anchor = self._job(c, 'completed', '2026-06-01T00:00:00+00:00',
-                           '2026-06-10T00:00:00+00:00')  # now = 2026-06-10
+                           '2026-06-10T00:00:00+00:00')
         self._task(c, anchor)
-        ip = self._job(c, 'in_progress', '2026-01-01T00:00:00+00:00')  # >3wk before
-        t = self._task(c, ip)
+        for status in ('in_progress', 'work_complete', 'on_hold'):
+            self._task(c, self._job(c, status, '2026-01-01T00:00:00+00:00'))
+        build.build_bleps_and_shifts(c)
+        blepped = {b['fields']['task'] for b in self._bleps(c)}
+        tasks = [f for f in c.fixture_data if f['model'] == 'jobs.task']
+        for tf in tasks:
+            self.assertIn(tf['pk'], blepped)
+        first = min(b['fields']['start_time'] for b in self._bleps(c))
+        self.assertLess(first[:10], '2026-05-20')  # not clamped to the cutoff
+
+    def test_job_starting_on_cutoff_date_gets_bleps(self):
+        c = self._make_converter()
+        self._job(c, 'completed', '2026-06-01T00:00:00+00:00',
+                  '2026-06-10T00:00:00+00:00')  # newest date → cutoff 05-20
+        on = self._job(c, 'in_progress', '2026-05-20T00:00:00+00:00')
+        t = self._task(c, on)
         build.build_bleps_and_shifts(c)
         self.assertIn(t, {b['fields']['task'] for b in self._bleps(c)})
 
+    def test_job_starting_on_newest_date_bleps_without_minting(self):
+        # A job dated the dataset's newest day used to get a zero-width window
+        # (midnight UTC = the previous local evening) and minted a worker per
+        # complete task. Its newest day is a whole local workday now.
+        c = self._make_converter()
+        self._job(c, 'completed', '2026-06-01T00:00:00+00:00',
+                  '2026-06-10T00:00:00+00:00')
+        ip = self._job(c, 'in_progress', '2026-06-10T00:00:00+00:00')
+        tasks = [self._task(c, ip, ewt='01:00:00') for _ in range(4)]
+        users_before = len([f for f in c.fixture_data if f['model'] == 'core.user'])
+        build.build_bleps_and_shifts(c)
+        users_after = len([f for f in c.fixture_data if f['model'] == 'core.user'])
+        self.assertEqual(users_after, users_before)
+        bleps = [b for b in self._bleps(c) if b['fields']['task'] in tasks]
+        self.assertEqual(len(bleps), 4)
+        for b in bleps:
+            start = datetime.fromisoformat(b['fields']['start_time'])
+            self.assertEqual(start.astimezone(build._WORKDAY_TZ).date().isoformat(),
+                             '2026-06-10')
+
+    def test_blep_clock_never_passes_end_of_run_day(self):
+        # Run "today" is 2026-06-08 (local); the dataset's newest date is
+        # later. Bleps may be future-stamped within the run day, never after.
+        from zoneinfo import ZoneInfo
+        c = self._make_converter()
+        c.now = datetime(2026, 6, 8, 12, 0, tzinfo=ZoneInfo('America/Los_Angeles'))
+        self._job(c, 'completed', '2026-06-01T00:00:00+00:00',
+                  '2026-06-10T00:00:00+00:00')
+        ip = self._job(c, 'in_progress', '2026-06-05T00:00:00+00:00')
+        for _ in range(20):    # more than fits 06-05..06-08 for two workers
+            self._task(c, ip, ewt='03:00:00')
+        build.build_bleps_and_shifts(c)
+        limit = datetime(2026, 6, 9, 0, 0, tzinfo=ZoneInfo('America/Los_Angeles'))
+        bleps = self._bleps(c)
+        self.assertTrue(bleps)
+        for b in bleps:
+            self.assertLessEqual(datetime.fromisoformat(b['fields']['end_time']), limit)
+
     def test_in_scope_complete_tasks_always_blepped(self):
-        # Every complete Task on a current (unfinished) job or a job finished
-        # within the horizon gets a blep; only an old finished job may be skipped.
+        # Every complete Task on an unfinished job, or a finished job that
+        # started on/after the cutoff, gets a blep; a finished job started
+        # before the cutoff gets none.
         c = self._make_converter()
         ip = self._job(c, 'in_progress', '2026-01-01T00:00:00+00:00')
         wc = self._job(c, 'work_complete', '2026-02-01T00:00:00+00:00')
         recent = self._job(c, 'completed', '2026-06-01T00:00:00+00:00',
-                           '2026-06-08T00:00:00+00:00')  # now = 2026-06-08
+                           '2026-06-08T00:00:00+00:00')  # newest date 2026-06-08
         old = self._job(c, 'completed', '2026-03-01T00:00:00+00:00',
                         '2026-03-15T00:00:00+00:00')
         in_scope = [self._task(c, ip), self._task(c, wc), self._task(c, recent)]
@@ -1456,7 +1529,7 @@ class BlepHorizonTest(unittest.TestCase):
         task_pks = {b['fields']['task'] for b in self._bleps(c)}
         for t in in_scope:
             self.assertIn(t, task_pks)
-        self.assertNotIn(old_task, task_pks)  # out of scope: finished long ago
+        self.assertNotIn(old_task, task_pks)
 
 
 class AssignCurrentWorkTest(unittest.TestCase):
@@ -2365,8 +2438,10 @@ class BlepShiftSynthesisTest(unittest.TestCase):
         c._pk_counters['core.user'] = 2
         return c
 
+    # start within the blep cutoff (21 days before the newest date, 02-05):
+    # only jobs starting on/after it get bleps.
     def _add_job(self, c, pk, status='completed',
-                 start='2026-01-05T00:00:00+00:00',
+                 start='2026-01-20T00:00:00+00:00',
                  completed='2026-02-05T00:00:00+00:00'):
         c.add_fixture('jobs.job', pk, {
             'job_number': f'J{pk}', 'name': 'j', 'contact': 1, 'status': status,
@@ -3571,8 +3646,10 @@ class ArchivedJobsDownstreamSkipTest(unittest.TestCase):
 
     def test_bleps_skip_archived(self):
         c = self._c()
+        # Newest date 01-10 keeps the live job (started 01-01) inside the
+        # blep cutoff, so only the archived skip is under test.
         arch = self._job(c, 'completed', archived=True,
-                         completed='2026-02-05T00:00:00+00:00')
+                         completed='2026-01-10T00:00:00+00:00')
         live = self._job(c, 'in_progress')
         at = self._task(c, arch)
         lt = self._task(c, live)

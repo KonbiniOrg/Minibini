@@ -83,7 +83,7 @@ If Neal renames a stage on the board, update `_STAGE_TO_JOB_STATUS` in
 ## 2. Running it
 
 ```bash
-python nealsdata/convert_neals_data.py [--limit N] [--all-vendors] [--verbose]
+python nealsdata/convert_neals_data.py [--limit N] [--all-vendors] [--seed-users N] [--verbose]
 ```
 
 The default `--limit 100` caps how many Jobs are built from the most recent
@@ -135,7 +135,9 @@ slots by design. Raise `--limit` to get more archives.
    active seed user except `system`), and `c.scheme_fields_by_pk` (each
    seeded RateScheme's full fields dict, for stamping the money block onto
    every Task — §4). Records a seed worker's fields as the clone template
-   for minting extra users (§4).
+   for minting extra users (§4). `--seed-users N` (temporary, 2026-10-22)
+   keeps only the first N seed users in file order; `--seed-users 6` stops at
+   `system`. Default keeps them all.
 4. **`build_configuration`**: emits the `core.configuration` entries the
    app needs at runtime (numbering patterns + counters, `units_list`,
    retention windows, `default_material_markup_percent` = `20`).
@@ -258,8 +260,8 @@ slots by design. Raise `--limit` to get more archives.
     status). Assigns a random `project_manager` from the seed rotation pool to
     every Job beyond `draft`; draft jobs keep a null PM.
 13. **`build_bleps_and_shifts`**: runs *after* reconcile (needs final task
-    statuses + job dates). Emits one Blep per complete Task **within a three-week
-    horizon**, the Shifts that enclose them, and `actual_qty` for complete
+    statuses + job dates). Emits one Blep per complete Task on an unfinished
+    job, or a finished job that **starts on/after the blep cutoff**, the Shifts that enclose them, and `actual_qty` for complete
     `entered_qty` tasks (§4).
 13a. **`assign_current_work`**: runs *after* `build_bleps_and_shifts`. Gives each
     rotation worker up to three random **pending** Tasks drawn from
@@ -390,43 +392,73 @@ case.)
 
 `build_bleps_and_shifts` (after reconcile) gives the dataset time-tracking data:
 
-- **One Blep per complete Task** (real-side only), **within a three-week
-  horizon** — `horizon = _dataset_now − 3 weeks`. Length =
+- **One Blep per complete Task** (real-side only) on every **unfinished** job
+  (no `completed_date`), and on a **finished** job that **starts on or after
+  the cutoff date** — `cutoff = newest dataset date − 21 days`
+  (`_BLEP_CUTOFF_DAYS`; dates compared as their stored UTC calendar day).
+  Length =
   `est_worker_time × {1.0, 1.10, 0.95}` on a deterministic ⅓-rotation index
   (`P.thirds_factor`), floored to whole minutes. The task's **`assignee`** is set
   to the blep's user (the worker who logged the time).
-- **Scope invariant**: every complete Task on a **current** job — *unfinished*
-  (no `completed_date`: in_progress / work_complete / on_hold) **or** *finished
-  within the horizon* (`completed_date ≥ horizon`) — always gets a blep. Only a
-  **finished** job whose `completed_date` is older than the horizon is dropped (it
-  is out of scope; its complete Tasks may be blep-less). This is enforced by the
-  window's upper bound (next bullet): an unfinished job's window runs to
-  `_dataset_now`, so it can never fall before the horizon.
+- **Scope invariant** (RM 2026-10-22): **no finished job is part invented.** A
+  finished job whose working period spans the cutoff gets **no** bleps at all;
+  its complete Tasks are blep-less. **Unfinished jobs** (in_progress /
+  work_complete / on_hold) are **exempt from the cutoff entirely**: every
+  complete Task gets a blep, placed across the job's whole real window however
+  long ago it started. (This replaced a three-week horizon that
+  clamped older jobs' windows to the horizon, squeezing weeks of work into one
+  workday and minting a worker per overflowing task.)
+- **Blep clock** (`_blep_clock`): dataset dates are midnight UTC and mean that
+  whole day, so the newest date is a full local workday — `now` = 17:00 local on
+  it, clamped to the end of the converter's run day (bleps may be
+  future-stamped later on the run day, never after it). Before this, a job
+  dated the newest day had a zero-width window and minted a worker per task.
 - **Placement** satisfies two invariants at once: each blep falls inside its
   **job's active window** `[start_date or created_date → completed_date (finished)
-  or _dataset_now (unfinished)]`, clamped to ≤ `_dataset_now` (no future bleps)
-  and to ≥ the horizon (when that clamp would collapse the window — a job
-  completed right at the boundary — it backs off to the job's final local
-  workday instead); and **no user's bleps overlap**. The synthetic workday is
+  or the blep clock (unfinished)]`, clamped to ≤ the blep clock; and **no
+  user's bleps overlap**. The synthetic workday is
   defined in the shop's **local timezone** (`_WORKDAY_TZ`, mirrors
   `settings.TIME_ZONE`) and converted to UTC per calendar day: shifts open at
   **09:00 local**, bleps pack from **09:15** (a clock-in lead-in), close at
   **17:00** (weekends allowed). **One worker per job**: a job's tasks go to the
   same user (rotation advances per job, not per blep), packed back-to-back
   with a deterministic 5–30-minute gap between bleps — which is what makes
-  worker-days carry several bleps. If that worker (then everyone) is booked
-  across a job's window, a new worker is **minted** (`_mint_user`) as the
-  pressure valve.
+  worker-days carry several bleps.
+- **Generated (minted) users** — the converter's only source of users beyond
+  the seed. The seed users are a fixed pool; `--seed-users N` only ever drops
+  seed users (N above the seed's count keeps them all, it never generates up
+  to N). A user is minted (`_mint_user`) **only** as the placement fallback:
+  when a blep fits neither its job's worker nor any rotation user anywhere in
+  its window. That can still happen with genuinely tight data — a finished job
+  with more task hours than its few workdays hold (one worker-day is
+  09:15–17:00, 7¾ h), several short jobs stacked on the same days, or a small
+  pool (`--seed-users` low; `0` leaves no pool, so one worker is minted up
+  front). Nothing caps the count: each overflowing blep mints another.
+  - **What a minted user is**: username `worker{N}` (next free N from 2), named
+    "Worker{N} Worker", active, non-staff; password hash and permissions cloned from
+    the first seed user whose username starts with `worker` (none in the first
+    6 → a placeholder hash and `can_manage_time`).
+  - **Where it's used**: it joins *this pass's* placement rotation, so after
+    its overflow blep it also picks up ordinary bleps (which makes minted
+    workers look like regular staff). It is **not** added to
+    `c.rotation_user_pks`, so it gets no project-manager roles or queued
+    current work.
+  - **Round-trip hazard**: minted users land in the output fixture; if a DB
+    loaded from it is dumped back into `nealseed.json`, they become seed users
+    and the next run mints on top of them (how worker2–9 entered the seed).
+  - Real data (2026-10-14 export, `--seed-users 6`) mints **none** at limits
+    25–400 since the 2026-10-22 fixes (blep cutoff + blep clock above). Before
+    them, window collapses — not real capacity shortage — minted 4–13.
 - **Shifts**: one `core.shift` per (user, local calendar day) with bleps — a
   realistic workday span, not a band coterminal with the bleps: `start` =
-  09:00 local, `end` = 17:00 local clamped to `_dataset_now` and never before
+  09:00 local, `end` = 17:00 local clamped to the blep clock and never before
   the last blep end, so the shift↔blep enclosure invariant holds with slack.
   `loaddata` bypasses `Blep.save()`/`Shift.save()`, so all timestamps are
   emitted pre-floored to the minute.
 - **entered_qty actuals**: a complete task on an `entered_qty` scheme gets an
   `actual_qty = est_qty × {thirds}` (fallback base `1` when `est_qty` is null)
   so it doesn't invoice at zero. This is set for **every** complete task — even
-  ones too old for a blep under the horizon — so historical work never invoices
+  ones on jobs started before the blep cutoff — so historical work never invoices
   at zero. `elapsed_time` tasks derive qty from their bleps and need no
   explicit actual (fixed charges are plain document lines with no actuals at all).
 
@@ -749,9 +781,8 @@ one clock (§2).
    under Needs Pickup. `build_history` keys "Job closed out" off the final
    status, so the transition entry follows; `build_shipments` ships the
    job via its marker path as before. Consequence: a promoted job is a
-   *finished* job for the blep horizon (§4), so one completed more than
-   three weeks ago loses its synthetic bleps like any other old completed
-   job.
+   finished job like any other; whether it gets bleps depends only on its
+   start date vs the blep cutoff (§4).
 7. **Task status from job** — cancel ALL tasks on cancelled/rejected jobs;
    cancel still-PENDING tasks on work_complete/completed jobs (the app's
    work-complete gate forbids a non-terminal task on a closed job; checked
@@ -856,8 +887,8 @@ The script invents data where the sources don't say:
   is fixed-seeded so regen is stable.
 - **Bleps + Shifts** are entirely synthetic — one blep per complete task, its
   length pegged to the (invented) worker-time estimate, placed in the job's date
-  window and wrapped in enclosing shifts. Extra worker users are minted if the
-  rotation pool can't absorb the load. Real shop time was never in the sources.
+  window and wrapped in enclosing shifts. Extra worker users are minted only if a
+  blep can't fit any rotation user in its window (§4). Real shop time was never in the sources.
 - **entered_qty actuals** and **invoice paid amounts** are derived (thirds-rule
   vs est_qty; invoice line-item total), not real.
 - **Material unit costs** are the PLI purchase price when matched, else
